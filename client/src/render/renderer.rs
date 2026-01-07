@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
@@ -200,6 +200,66 @@ impl Renderer {
     }
 
     fn render_tilemap_layer(&self, state: &GameState, layer_type: LayerType) {
+        // Convert LayerType to ChunkLayerType for chunk rendering
+        let chunk_layer_type = match layer_type {
+            LayerType::Ground => ChunkLayerType::Ground,
+            LayerType::Objects => ChunkLayerType::Objects,
+            LayerType::Overhead => ChunkLayerType::Overhead,
+        };
+
+        // Try to render from chunks if any are loaded
+        let chunks = state.chunk_manager.chunks();
+        if !chunks.is_empty() {
+            // Render from chunk manager
+            for (coord, chunk) in chunks.iter() {
+                let chunk_offset_x = coord.x * CHUNK_SIZE as i32;
+                let chunk_offset_y = coord.y * CHUNK_SIZE as i32;
+
+                // Find the layer
+                for layer in &chunk.layers {
+                    if layer.layer_type != chunk_layer_type {
+                        continue;
+                    }
+
+                    // Render tiles in isometric order
+                    for local_y in 0..CHUNK_SIZE {
+                        for local_x in 0..CHUNK_SIZE {
+                            let world_x = chunk_offset_x + local_x as i32;
+                            let world_y = chunk_offset_y + local_y as i32;
+
+                            let idx = (local_y * CHUNK_SIZE + local_x) as usize;
+                            let tile_id = layer.tiles.get(idx).copied().unwrap_or(0);
+
+                            if tile_id == 0 {
+                                continue;
+                            }
+
+                            let (screen_x, screen_y) = world_to_screen(world_x as f32, world_y as f32, &state.camera);
+
+                            // Culling: skip tiles outside viewport
+                            let margin = TILE_WIDTH * 2.0;
+                            if screen_x < -margin || screen_x > screen_width() + margin {
+                                continue;
+                            }
+                            if screen_y < -margin || screen_y > screen_height() + margin {
+                                continue;
+                            }
+
+                            let color = get_tile_color(tile_id);
+                            self.draw_isometric_tile(screen_x, screen_y, color);
+
+                            // Draw collision indicator in debug mode
+                            if state.debug_mode && chunk.collision.get(idx).copied().unwrap_or(false) {
+                                self.draw_collision_indicator(screen_x, screen_y);
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
+        // Fallback: render from old tilemap if no chunks loaded
         let tilemap = &state.tilemap;
 
         for layer in &tilemap.layers {

@@ -32,6 +32,9 @@ pub enum ClientMessage {
 
     #[serde(rename = "useItem")]
     UseItem { slot_index: u32 },
+
+    #[serde(rename = "requestChunk")]
+    RequestChunk { chunk_x: i32, chunk_y: i32 },
 }
 
 impl ClientMessage {
@@ -78,6 +81,11 @@ impl ClientMessage {
             ClientMessage::UseItem { slot_index } => {
                 data.insert("slot_index".into(), Value::Integer((*slot_index as i64).into()));
                 "useItem"
+            }
+            ClientMessage::RequestChunk { chunk_x, chunk_y } => {
+                data.insert("chunkX".into(), Value::Integer((*chunk_x as i64).into()));
+                data.insert("chunkY".into(), Value::Integer((*chunk_y as i64).into()));
+                "requestChunk"
             }
         };
 

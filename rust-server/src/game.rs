@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
+use crate::chunk::ChunkCoord;
 use crate::item::{self, GroundItem, Inventory, ItemType};
-use crate::npc::{Npc, NpcState, NpcType, NpcUpdate};
+use crate::npc::{Npc, NpcType, NpcUpdate};
 use crate::protocol::ServerMessage;
-use crate::tilemap::Tilemap;
+use crate::world::World;
 
 // ============================================================================
 // Constants
@@ -220,7 +222,9 @@ pub struct GameRoom {
     players: RwLock<HashMap<String, Player>>,
     npcs: RwLock<HashMap<String, Npc>>,
     ground_items: RwLock<HashMap<String, GroundItem>>,
-    tilemap: Tilemap,
+    world: Arc<World>,
+    /// Track which chunk each player is in for streaming updates
+    player_chunks: RwLock<HashMap<String, ChunkCoord>>,
     tick: RwLock<u64>,
     broadcast_tx: broadcast::Sender<ServerMessage>,
 }
@@ -228,13 +232,13 @@ pub struct GameRoom {
 impl GameRoom {
     pub fn new(name: &str) -> Self {
         let (tx, _) = broadcast::channel(256);
-        let tilemap = Tilemap::new_test_map(MAP_WIDTH, MAP_HEIGHT);
+        let world = Arc::new(World::new("maps/world_0"));
 
-        // Spawn initial NPCs (grid positions)
+        // Spawn initial NPCs (grid positions) - in chunk (0,0)
         let mut npcs = HashMap::new();
         let npc_spawns: Vec<(i32, i32)> = vec![
-            (10, 10),
-            (12, 8),
+            (19, 9),
+            (19, 8),
             (8, 12),
             (20, 15),
             (15, 20),
@@ -251,7 +255,8 @@ impl GameRoom {
             players: RwLock::new(HashMap::new()),
             npcs: RwLock::new(npcs),
             ground_items: RwLock::new(HashMap::new()),
-            tilemap,
+            world,
+            player_chunks: RwLock::new(HashMap::new()),
             tick: RwLock::new(0),
             broadcast_tx: tx,
         }
@@ -267,10 +272,15 @@ impl GameRoom {
     }
 
     pub async fn reserve_player(&self, player_id: &str, name: &str) {
+        let (spawn_x, spawn_y) = self.world.get_spawn_position().await;
         let mut players = self.players.write().await;
-        let (spawn_x, spawn_y) = self.tilemap.get_safe_spawn();
         let player = Player::new(player_id, name, spawn_x, spawn_y);
         players.insert(player_id.to_string(), player);
+
+        // Track player's starting chunk
+        let chunk = ChunkCoord::from_world(spawn_x, spawn_y);
+        let mut chunks = self.player_chunks.write().await;
+        chunks.insert(player_id.to_string(), chunk);
     }
 
     /// Reserve player with saved data from database
@@ -900,45 +910,43 @@ impl GameRoom {
             self.broadcast(ServerMessage::PlayerRespawned { id, x, y, hp }).await;
         }
 
-        // Update player positions (grid-based, only alive players)
+        // Collect pending moves (id, target_x, target_y)
+        let pending_moves: Vec<(String, i32, i32)> = {
+            let players = self.players.read().await;
+            players.values()
+                .filter(|p| p.active && !p.is_dead)
+                .filter(|p| (p.move_dx != 0 || p.move_dy != 0))
+                .filter(|p| current_time - p.last_move_time >= MOVE_COOLDOWN_MS)
+                .map(|p| (p.id.clone(), p.x + p.move_dx, p.y + p.move_dy))
+                .collect()
+        };
+
+        // Check walkability for each pending move (async world check)
+        let mut valid_moves: Vec<(String, i32, i32)> = Vec::new();
+        for (id, target_x, target_y) in pending_moves {
+            if self.world.is_tile_walkable(target_x, target_y).await {
+                valid_moves.push((id, target_x, target_y));
+            }
+        }
+
+        // Apply valid moves and collect player updates
         let mut player_updates = Vec::new();
         {
             let mut players = self.players.write().await;
-            for player in players.values_mut() {
+
+            // Apply valid moves
+            for (id, target_x, target_y) in valid_moves {
+                if let Some(player) = players.get_mut(&id) {
+                    player.x = target_x;
+                    player.y = target_y;
+                    player.last_move_time = current_time;
+                }
+            }
+
+            // Generate player updates
+            for player in players.values() {
                 if !player.active {
                     continue;
-                }
-
-                // Dead players don't move
-                if player.is_dead {
-                    player_updates.push(PlayerUpdate {
-                        id: player.id.clone(),
-                        x: player.x,
-                        y: player.y,
-                        direction: player.direction as u8,
-                        hp: player.hp,
-                        max_hp: player.max_hp,
-                        level: player.level,
-                        exp: player.exp,
-                        exp_to_next_level: player.exp_to_next_level,
-                        gold: player.inventory.gold,
-                    });
-                    continue;
-                }
-
-                // Grid-based movement with cooldown
-                if (player.move_dx != 0 || player.move_dy != 0)
-                    && current_time - player.last_move_time >= MOVE_COOLDOWN_MS
-                {
-                    let target_x = player.x + player.move_dx;
-                    let target_y = player.y + player.move_dy;
-
-                    // Check if target tile is walkable
-                    if self.tilemap.is_tile_walkable(target_x, target_y) {
-                        player.x = target_x;
-                        player.y = target_y;
-                        player.last_move_time = current_time;
-                    }
                 }
 
                 player_updates.push(PlayerUpdate {
@@ -1062,5 +1070,47 @@ impl GameRoom {
             npcs: npc_updates,
         })
         .await;
+    }
+
+    /// Handle chunk request from client
+    pub async fn handle_chunk_request(&self, chunk_x: i32, chunk_y: i32) -> Option<ServerMessage> {
+        use crate::protocol::ChunkLayerData;
+
+        let coord = ChunkCoord::new(chunk_x, chunk_y);
+        if let Some(chunk) = self.world.get_chunk_data(coord).await {
+            let layers: Vec<ChunkLayerData> = chunk.layers.iter().map(|layer| {
+                ChunkLayerData {
+                    layer_type: layer.layer_type as u8,
+                    tiles: layer.tiles.clone(),
+                }
+            }).collect();
+
+            let collision = chunk.pack_collision();
+
+            Some(ServerMessage::ChunkData {
+                chunk_x,
+                chunk_y,
+                layers,
+                collision,
+            })
+        } else {
+            Some(ServerMessage::ChunkNotFound { chunk_x, chunk_y })
+        }
+    }
+
+    /// Get the World reference for chunk operations
+    pub fn world(&self) -> &Arc<World> {
+        &self.world
+    }
+
+    /// Update player's current chunk and return true if changed
+    pub async fn update_player_chunk(&self, player_id: &str, new_chunk: ChunkCoord) -> bool {
+        let mut chunks = self.player_chunks.write().await;
+        let old_chunk = chunks.get(player_id).copied();
+        if old_chunk != Some(new_chunk) {
+            chunks.insert(player_id.to_string(), new_chunk);
+            return true;
+        }
+        false
     }
 }

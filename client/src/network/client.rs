@@ -710,6 +710,47 @@ impl NetworkClient {
                 }
             }
 
+            "chunkData" => {
+                if let Some(value) = data {
+                    let chunk_x = extract_i32(value, "chunkX").unwrap_or(0);
+                    let chunk_y = extract_i32(value, "chunkY").unwrap_or(0);
+
+                    // Parse layers array
+                    let mut layers: Vec<(u8, Vec<u32>)> = Vec::new();
+                    if let Some(layers_arr) = extract_array(value, "layers") {
+                        for layer_value in layers_arr {
+                            let layer_type = extract_u8(layer_value, "layerType").unwrap_or(0);
+                            let tiles: Vec<u32> = extract_array(layer_value, "tiles")
+                                .map(|arr| arr.iter()
+                                    .filter_map(|v| v.as_u64().map(|u| u as u32))
+                                    .collect())
+                                .unwrap_or_default();
+                            layers.push((layer_type, tiles));
+                        }
+                    }
+
+                    // Parse collision bytes
+                    let collision: Vec<u8> = extract_array(value, "collision")
+                        .map(|arr| arr.iter()
+                            .filter_map(|v| v.as_u64().map(|u| u as u8))
+                            .collect())
+                        .unwrap_or_default();
+
+                    log::debug!("Received chunk data: ({}, {}) with {} layers, {} collision bytes",
+                        chunk_x, chunk_y, layers.len(), collision.len());
+
+                    state.chunk_manager.load_chunk(chunk_x, chunk_y, layers, &collision);
+                }
+            }
+
+            "chunkNotFound" => {
+                if let Some(value) = data {
+                    let chunk_x = extract_i32(value, "chunkX").unwrap_or(0);
+                    let chunk_y = extract_i32(value, "chunkY").unwrap_or(0);
+                    log::warn!("Chunk not found: ({}, {})", chunk_x, chunk_y);
+                }
+            }
+
             _ => {
                 log::debug!("Unhandled message type: {}", msg_type);
             }

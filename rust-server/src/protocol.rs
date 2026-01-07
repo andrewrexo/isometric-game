@@ -33,6 +33,9 @@ pub enum ClientMessage {
 
     #[serde(rename = "register")]
     Register { username: String, password: String },
+
+    #[serde(rename = "requestChunk")]
+    RequestChunk { chunk_x: i32, chunk_y: i32 },
 }
 
 // ============================================================================
@@ -140,6 +143,23 @@ pub enum ServerMessage {
         code: u32,
         message: String,
     },
+    ChunkData {
+        chunk_x: i32,
+        chunk_y: i32,
+        layers: Vec<ChunkLayerData>,
+        collision: Vec<u8>, // Packed collision bits
+    },
+    ChunkNotFound {
+        chunk_x: i32,
+        chunk_y: i32,
+    },
+}
+
+/// Layer data for chunk transmission
+#[derive(Debug, Clone, Serialize)]
+pub struct ChunkLayerData {
+    pub layer_type: u8, // 0=Ground, 1=Objects, 2=Overhead
+    pub tiles: Vec<u32>,
 }
 
 impl ServerMessage {
@@ -165,6 +185,8 @@ impl ServerMessage {
             ServerMessage::InventoryUpdate { .. } => "inventoryUpdate",
             ServerMessage::ItemUsed { .. } => "itemUsed",
             ServerMessage::Error { .. } => "error",
+            ServerMessage::ChunkData { .. } => "chunkData",
+            ServerMessage::ChunkNotFound { .. } => "chunkNotFound",
         }
     }
 }
@@ -519,6 +541,66 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             ));
             Value::Map(map)
         }
+        ServerMessage::ChunkData {
+            chunk_x,
+            chunk_y,
+            layers,
+            collision,
+        } => {
+            let mut map = Vec::new();
+            map.push((
+                Value::String("chunkX".into()),
+                Value::Integer((*chunk_x as i64).into()),
+            ));
+            map.push((
+                Value::String("chunkY".into()),
+                Value::Integer((*chunk_y as i64).into()),
+            ));
+
+            // Encode layers
+            let layer_values: Vec<Value> = layers
+                .iter()
+                .map(|l| {
+                    let mut lmap = Vec::new();
+                    lmap.push((
+                        Value::String("layerType".into()),
+                        Value::Integer((l.layer_type as i64).into()),
+                    ));
+                    let tiles: Vec<Value> = l
+                        .tiles
+                        .iter()
+                        .map(|&t| Value::Integer((t as i64).into()))
+                        .collect();
+                    lmap.push((Value::String("tiles".into()), Value::Array(tiles)));
+                    Value::Map(lmap)
+                })
+                .collect();
+            map.push((Value::String("layers".into()), Value::Array(layer_values)));
+
+            // Encode collision as binary
+            let collision_bytes: Vec<Value> = collision
+                .iter()
+                .map(|&b| Value::Integer((b as i64).into()))
+                .collect();
+            map.push((
+                Value::String("collision".into()),
+                Value::Array(collision_bytes),
+            ));
+
+            Value::Map(map)
+        }
+        ServerMessage::ChunkNotFound { chunk_x, chunk_y } => {
+            let mut map = Vec::new();
+            map.push((
+                Value::String("chunkX".into()),
+                Value::Integer((*chunk_x as i64).into()),
+            ));
+            map.push((
+                Value::String("chunkY".into()),
+                Value::Integer((*chunk_y as i64).into()),
+            ));
+            Value::Map(map)
+        }
     };
 
     // Encode as [13, "msg_type", data] - matching Colyseus ROOM_DATA format
@@ -607,6 +689,11 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
             let password = extract_string(msg_data, "password").unwrap_or_default();
             Ok(ClientMessage::Register { username, password })
         }
+        "requestChunk" => {
+            let chunk_x = extract_i32(msg_data, "chunkX").unwrap_or(0);
+            let chunk_y = extract_i32(msg_data, "chunkY").unwrap_or(0);
+            Ok(ClientMessage::RequestChunk { chunk_x, chunk_y })
+        }
         _ => Err(format!("Unknown message type: {}", msg_type)),
     }
 }
@@ -632,6 +719,18 @@ fn extract_f32(value: &rmpv::Value, key: &str) -> Option<f32> {
                     .map(|f| f as f32)
                     .or_else(|| v.as_i64().map(|i| i as f32))
                     .or_else(|| v.as_u64().map(|u| u as f32))
+            })
+    })
+}
+
+fn extract_i32(value: &rmpv::Value, key: &str) -> Option<i32> {
+    value.as_map().and_then(|map| {
+        map.iter()
+            .find(|(k, _)| k.as_str() == Some(key))
+            .and_then(|(_, v)| {
+                v.as_i64()
+                    .map(|i| i as i32)
+                    .or_else(|| v.as_u64().map(|u| u as i32))
             })
     })
 }

@@ -3,6 +3,7 @@ use super::entities::Player;
 use super::item::{GroundItem, Inventory};
 use super::npc::Npc;
 use super::tilemap::Tilemap;
+use super::chunk::ChunkManager;
 
 pub struct Camera {
     pub x: f32,
@@ -77,6 +78,7 @@ pub struct GameState {
 
     // World
     pub tilemap: Tilemap,
+    pub chunk_manager: ChunkManager,
     pub players: HashMap<String, Player>,
     pub npcs: HashMap<String, Npc>,
     pub ground_items: HashMap<String, GroundItem>,
@@ -104,7 +106,7 @@ pub struct GameState {
 
 impl GameState {
     pub fn new() -> Self {
-        // Create a test tilemap (32x32 tiles)
+        // Create a test tilemap (32x32 tiles) - kept for compatibility
         let tilemap = Tilemap::new_test_map(32, 32);
 
         Self {
@@ -112,6 +114,7 @@ impl GameState {
             local_player_id: None,
             selected_character_name: None,
             tilemap,
+            chunk_manager: ChunkManager::new(),
             players: HashMap::new(),
             npcs: HashMap::new(),
             ground_items: HashMap::new(),

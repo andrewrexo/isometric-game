@@ -22,12 +22,14 @@ use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
+mod chunk;
 mod db;
 mod game;
 mod item;
 mod npc;
 mod protocol;
 mod tilemap;
+mod world;
 
 use db::Database;
 use game::{GameRoom, Player, PlayerUpdate};
@@ -389,6 +391,23 @@ async fn handle_socket(
         let _ = sender.send(Message::Binary(bytes)).await;
     }
 
+    // Get player's position and send nearby chunks
+    if let Some((px, py)) = room.get_player_position(&player_id).await {
+        let player_chunk = chunk::ChunkCoord::from_world(px, py);
+
+        // Preload and send chunks in a 3x3 area around the player
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let coord = chunk::ChunkCoord::new(player_chunk.x + dx, player_chunk.y + dy);
+                if let Some(chunk_msg) = room.handle_chunk_request(coord.x, coord.y).await {
+                    if let Ok(bytes) = protocol::encode_server_message(&chunk_msg) {
+                        let _ = sender.send(Message::Binary(bytes)).await;
+                    }
+                }
+            }
+        }
+    }
+
     // Send existing players to this client
     for existing_player in room.get_all_players().await {
         if existing_player.id != player_id {
@@ -522,6 +541,13 @@ async fn handle_client_message(
         }
         ClientMessage::UseItem { slot_index } => {
             room.handle_use_item(player_id, slot_index).await;
+        }
+        ClientMessage::RequestChunk { chunk_x, chunk_y } => {
+            // Chunk data is sent back via the broadcast channel for now
+            // In a production system, you'd send directly to requesting client
+            if let Some(chunk_msg) = room.handle_chunk_request(chunk_x, chunk_y).await {
+                room.broadcast(chunk_msg).await;
+            }
         }
         _ => {
             // Other messages not yet implemented
