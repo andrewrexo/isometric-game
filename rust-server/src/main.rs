@@ -37,11 +37,19 @@ use protocol::{ClientMessage, ServerMessage};
 // App State
 // ============================================================================
 
+/// Game session data for a connected player
+#[derive(Clone)]
+struct GameSession {
+    room_id: String,
+    player_id: String,
+    username: String, // For DB persistence
+}
+
 #[derive(Clone)]
 struct AppState {
     rooms: Arc<DashMap<String, Arc<GameRoom>>>,
-    // Session ID -> (Room ID, Player ID)
-    sessions: Arc<DashMap<String, (String, String)>>,
+    // Session ID -> GameSession
+    sessions: Arc<DashMap<String, GameSession>>,
     // Auth token -> (Username, Player DB ID)
     auth_sessions: AuthSessions,
     db: Arc<Database>,
@@ -162,14 +170,18 @@ async fn login_account(
             let token = Uuid::new_v4().to_string();
             state.auth_sessions.insert(token.clone(), (req.username.clone(), player.id));
 
-            // Update last login
+            // Update last login (save existing data with updated timestamp)
             let _ = state.db.save_player(
                 &req.username,
                 player.x,
                 player.y,
                 player.hp,
+                player.max_hp,
                 player.level,
                 player.exp,
+                player.exp_to_next_level,
+                player.gold,
+                &player.inventory_json,
             ).await;
 
             info!("Player logged in: {}", req.username);
@@ -243,15 +255,43 @@ async fn matchmake_join_or_create(
     let player_id = session_id.clone();
     let player_name = options
         .name
-        .unwrap_or_else(|| format!("Player{}", &session_id[..4]));
+        .clone()
+        .unwrap_or_else(|| format!("Guest{}", &session_id[..4]));
 
-    // Reserve the session
-    state
-        .sessions
-        .insert(session_id.clone(), (room_id.clone(), player_id.clone()));
+    // Try to load existing player data from database
+    let player_data = state.db.get_player_by_username(&player_name).await.ok().flatten();
 
-    // Pre-create player (will be activated on WebSocket connect)
-    room.reserve_player(&player_id, &player_name).await;
+    // Reserve the session with username for persistence
+    state.sessions.insert(
+        session_id.clone(),
+        GameSession {
+            room_id: room_id.clone(),
+            player_id: player_id.clone(),
+            username: player_name.clone(),
+        },
+    );
+
+    // Pre-create player with saved data or defaults
+    if let Some(data) = player_data {
+        // Load saved player
+        info!("Loading saved player: {} at ({}, {})", player_name, data.x, data.y);
+        room.reserve_player_with_data(
+            &player_id,
+            &player_name,
+            data.x as i32,
+            data.y as i32,
+            data.hp,
+            data.max_hp,
+            data.level,
+            data.exp,
+            data.exp_to_next_level,
+            data.gold,
+            &data.inventory_json,
+        ).await;
+    } else {
+        // New player with defaults
+        room.reserve_player(&player_id, &player_name).await;
+    }
 
     let client_count = room.player_count().await;
 
@@ -299,10 +339,12 @@ async fn ws_handler(
     let session_data = state.sessions.get(&session_id).map(|s| s.clone());
 
     match session_data {
-        Some((expected_room_id, player_id)) if expected_room_id == room_id => {
+        Some(session) if session.room_id == room_id => {
             // Valid session, upgrade to WebSocket
+            let player_id = session.player_id.clone();
+            let username = session.username.clone();
             ws.on_upgrade(move |socket| {
-                handle_socket(socket, state, room_id, player_id, session_id)
+                handle_socket(socket, state, room_id, player_id, session_id, username)
             })
         }
         _ => {
@@ -319,6 +361,7 @@ async fn handle_socket(
     room_id: String,
     player_id: String,
     session_id: String,
+    username: String,
 ) {
     let (mut sender, mut receiver) = socket.split();
 
@@ -421,8 +464,29 @@ async fn handle_socket(
         _ = &mut recv_task => send_task.abort(),
     }
 
-    // Cleanup
+    // Cleanup - save player data before removing
     info!("Player {} disconnected from room {}", player_id, room_id);
+
+    // Save player state to database
+    if let Some(save_data) = room.get_player_save_data(&player_id).await {
+        if let Err(e) = state.db.save_player(
+            &username,
+            save_data.x,
+            save_data.y,
+            save_data.hp,
+            save_data.max_hp,
+            save_data.level,
+            save_data.exp,
+            save_data.exp_to_next_level,
+            save_data.gold,
+            &save_data.inventory_json,
+        ).await {
+            error!("Failed to save player {} on disconnect: {}", username, e);
+        } else {
+            info!("Saved player {} to database on disconnect", username);
+        }
+    }
+
     state.sessions.remove(&session_id);
     room.remove_player(&player_id).await;
 
@@ -491,6 +555,50 @@ async fn main() {
             interval.tick().await;
             for room in tick_state.rooms.iter() {
                 room.tick().await;
+            }
+        }
+    });
+
+    // Spawn auto-save loop (every 30 seconds)
+    let save_state = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+
+            let mut saved_count = 0;
+            // Iterate through all active sessions and save their players
+            for session in save_state.sessions.iter() {
+                let session_data = session.value().clone();
+                let room_id = &session_data.room_id;
+                let player_id = &session_data.player_id;
+                let username = &session_data.username;
+
+                // Get the room and player save data
+                if let Some(room) = save_state.rooms.get(room_id) {
+                    if let Some(save_data) = room.get_player_save_data(player_id).await {
+                        if let Err(e) = save_state.db.save_player(
+                            username,
+                            save_data.x,
+                            save_data.y,
+                            save_data.hp,
+                            save_data.max_hp,
+                            save_data.level,
+                            save_data.exp,
+                            save_data.exp_to_next_level,
+                            save_data.gold,
+                            &save_data.inventory_json,
+                        ).await {
+                            warn!("Auto-save failed for player {}: {}", username, e);
+                        } else {
+                            saved_count += 1;
+                        }
+                    }
+                }
+            }
+
+            if saved_count > 0 {
+                info!("Auto-saved {} player(s) to database", saved_count);
             }
         }
     });

@@ -371,6 +371,11 @@ impl NetworkClient {
                             let y = extract_i32(player_value, "y");
                             let direction = extract_i32(player_value, "direction");
                             let hp = extract_i32(player_value, "hp");
+                            let max_hp = extract_i32(player_value, "maxHp");
+                            let level = extract_i32(player_value, "level");
+                            let exp = extract_i32(player_value, "exp");
+                            let exp_to_next_level = extract_i32(player_value, "expToNextLevel");
+                            let gold = extract_i32(player_value, "gold");
 
                             if let Some(player) = state.players.get_mut(&id) {
                                 if let (Some(x), Some(y)) = (x, y) {
@@ -382,6 +387,25 @@ impl NetworkClient {
                                 }
                                 if let Some(hp) = hp {
                                     player.hp = hp;
+                                }
+                                if let Some(max_hp) = max_hp {
+                                    player.max_hp = max_hp;
+                                }
+                                if let Some(level) = level {
+                                    player.level = level;
+                                }
+                                if let Some(exp) = exp {
+                                    player.exp = exp;
+                                }
+                                if let Some(exp_to_next_level) = exp_to_next_level {
+                                    player.exp_to_next_level = exp_to_next_level;
+                                }
+                            }
+
+                            // Update inventory gold for local player
+                            if state.local_player_id.as_ref() == Some(&id) {
+                                if let Some(gold) = gold {
+                                    state.inventory.gold = gold;
                                 }
                             }
                         }

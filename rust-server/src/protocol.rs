@@ -225,6 +225,11 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                         Value::Integer((p.direction as i64).into()),
                     ));
                     pmap.push((Value::String("hp".into()), Value::Integer((p.hp as i64).into())));
+                    pmap.push((Value::String("maxHp".into()), Value::Integer((p.max_hp as i64).into())));
+                    pmap.push((Value::String("level".into()), Value::Integer((p.level as i64).into())));
+                    pmap.push((Value::String("exp".into()), Value::Integer((p.exp as i64).into())));
+                    pmap.push((Value::String("expToNextLevel".into()), Value::Integer((p.exp_to_next_level as i64).into())));
+                    pmap.push((Value::String("gold".into()), Value::Integer((p.gold as i64).into())));
                     Value::Map(pmap)
                 })
                 .collect();

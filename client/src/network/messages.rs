@@ -135,6 +135,16 @@ pub struct PlayerUpdate {
     pub direction: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hp: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "maxHp")]
+    pub max_hp: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exp: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "expToNextLevel")]
+    pub exp_to_next_level: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gold: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_moving: Option<bool>,
 }

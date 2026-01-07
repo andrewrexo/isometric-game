@@ -152,6 +152,7 @@ impl InputHandler {
 
         // Attack (Space key)
         if is_key_pressed(KeyCode::Space) {
+            log::info!("Space pressed - sending Attack command");
             commands.push(InputCommand::Attack);
         }
 

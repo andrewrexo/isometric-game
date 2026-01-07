@@ -16,6 +16,9 @@ pub struct PlayerData {
     pub max_hp: i32,
     pub level: i32,
     pub exp: i32,
+    pub exp_to_next_level: i32,
+    pub gold: i32,
+    pub inventory_json: String, // JSON serialized inventory
 }
 
 pub struct Database {
@@ -36,6 +39,7 @@ impl Database {
     }
 
     async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+        // Create players table
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS players (
@@ -48,6 +52,9 @@ impl Database {
                 max_hp INTEGER DEFAULT 100,
                 level INTEGER DEFAULT 1,
                 exp INTEGER DEFAULT 0,
+                exp_to_next_level INTEGER DEFAULT 100,
+                gold INTEGER DEFAULT 0,
+                inventory_json TEXT DEFAULT '[]',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_login DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -55,6 +62,14 @@ impl Database {
         )
         .execute(pool)
         .await?;
+
+        // Add new columns if they don't exist (for existing databases)
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN exp_to_next_level INTEGER DEFAULT 100")
+            .execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN gold INTEGER DEFAULT 0")
+            .execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN inventory_json TEXT DEFAULT '[]'")
+            .execute(pool).await;
 
         tracing::info!("Database migrations complete");
         Ok(())
@@ -95,7 +110,7 @@ impl Database {
 
     pub async fn get_player_by_username(&self, username: &str) -> Result<Option<PlayerData>, sqlx::Error> {
         let row = sqlx::query(
-            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp FROM players WHERE username = ?",
+            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json FROM players WHERE username = ?",
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -111,18 +126,41 @@ impl Database {
             max_hp: r.get("max_hp"),
             level: r.get("level"),
             exp: r.get("exp"),
+            exp_to_next_level: r.get("exp_to_next_level"),
+            gold: r.get("gold"),
+            inventory_json: r.get("inventory_json"),
         }))
     }
 
-    pub async fn save_player(&self, username: &str, x: f32, y: f32, hp: i32, level: i32, exp: i32) -> Result<(), sqlx::Error> {
+    pub async fn save_player(
+        &self,
+        username: &str,
+        x: f32,
+        y: f32,
+        hp: i32,
+        max_hp: i32,
+        level: i32,
+        exp: i32,
+        exp_to_next_level: i32,
+        gold: i32,
+        inventory_json: &str,
+    ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "UPDATE players SET x = ?, y = ?, hp = ?, level = ?, exp = ?, last_login = CURRENT_TIMESTAMP WHERE username = ?",
+            r#"UPDATE players SET
+                x = ?, y = ?, hp = ?, max_hp = ?, level = ?, exp = ?,
+                exp_to_next_level = ?, gold = ?, inventory_json = ?,
+                last_login = CURRENT_TIMESTAMP
+            WHERE username = ?"#,
         )
         .bind(x)
         .bind(y)
         .bind(hp)
+        .bind(max_hp)
         .bind(level)
         .bind(exp)
+        .bind(exp_to_next_level)
+        .bind(gold)
+        .bind(inventory_json)
         .bind(username)
         .execute(&self.pool)
         .await?;

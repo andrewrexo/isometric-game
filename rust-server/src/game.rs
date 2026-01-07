@@ -27,6 +27,23 @@ const ATTACK_COOLDOWN_MS: u64 = 1000; // 1 second between attacks
 const BASE_DAMAGE: i32 = 10; // Base damage per attack
 
 // ============================================================================
+// Player Save Data (for database persistence)
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct PlayerSaveData {
+    pub x: f32,
+    pub y: f32,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub level: i32,
+    pub exp: i32,
+    pub exp_to_next_level: i32,
+    pub gold: i32,
+    pub inventory_json: String,
+}
+
+// ============================================================================
 // Direction
 // ============================================================================
 
@@ -186,6 +203,11 @@ pub struct PlayerUpdate {
     pub y: i32,
     pub direction: u8,
     pub hp: i32,
+    pub max_hp: i32,
+    pub level: i32,
+    pub exp: i32,
+    pub exp_to_next_level: i32,
+    pub gold: i32,
 }
 
 // ============================================================================
@@ -251,6 +273,53 @@ impl GameRoom {
         players.insert(player_id.to_string(), player);
     }
 
+    /// Reserve player with saved data from database
+    pub async fn reserve_player_with_data(
+        &self,
+        player_id: &str,
+        name: &str,
+        x: i32,
+        y: i32,
+        hp: i32,
+        max_hp: i32,
+        level: i32,
+        exp: i32,
+        exp_to_next_level: i32,
+        gold: i32,
+        inventory_json: &str,
+    ) {
+        let mut players = self.players.write().await;
+        let mut player = Player::new(player_id, name, x, y);
+
+        // Restore saved stats
+        player.hp = hp;
+        player.max_hp = max_hp;
+        player.level = level;
+        player.exp = exp;
+        player.exp_to_next_level = exp_to_next_level;
+        player.inventory.gold = gold;
+
+        // Restore inventory from JSON
+        if let Ok(slots) = serde_json::from_str::<Vec<(usize, u8, i32)>>(inventory_json) {
+            for (slot_idx, item_type, quantity) in slots {
+                if slot_idx < player.inventory.slots.len() {
+                    let item = item::ItemType::from_u8(item_type);
+                    player.inventory.slots[slot_idx] = Some(item::InventorySlot {
+                        item_type: item,
+                        quantity,
+                    });
+                }
+            }
+        }
+
+        tracing::info!(
+            "Restored player {} at ({}, {}) with {} HP, level {}, {} gold",
+            name, x, y, hp, level, gold
+        );
+
+        players.insert(player_id.to_string(), player);
+    }
+
     pub async fn activate_player(&self, player_id: &str) -> String {
         let mut players = self.players.write().await;
         if let Some(player) = players.get_mut(player_id) {
@@ -263,6 +332,34 @@ impl GameRoom {
     pub async fn remove_player(&self, player_id: &str) {
         let mut players = self.players.write().await;
         players.remove(player_id);
+    }
+
+    /// Get player data for saving to database
+    pub async fn get_player_save_data(&self, player_id: &str) -> Option<PlayerSaveData> {
+        let players = self.players.read().await;
+        players.get(player_id).map(|p| {
+            // Serialize inventory to JSON
+            let inventory_slots: Vec<(usize, u8, i32)> = p.inventory.slots
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, slot)| {
+                    slot.as_ref().map(|s| (idx, s.item_type as u8, s.quantity))
+                })
+                .collect();
+            let inventory_json = serde_json::to_string(&inventory_slots).unwrap_or_else(|_| "[]".to_string());
+
+            PlayerSaveData {
+                x: p.x as f32,
+                y: p.y as f32,
+                hp: p.hp,
+                max_hp: p.max_hp,
+                level: p.level,
+                exp: p.exp,
+                exp_to_next_level: p.exp_to_next_level,
+                gold: p.inventory.gold,
+                inventory_json,
+            }
+        })
     }
 
     pub async fn player_count(&self) -> usize {
@@ -342,11 +439,14 @@ impl GameRoom {
             .as_millis() as u64;
 
         // Get attacker info
-        let (attacker_name, target_id, attacker_dir) = {
+        let (attacker_name, attacker_x, attacker_y, attacker_dir, last_attack) = {
             let players = self.players.read().await;
             let player = match players.get(player_id) {
                 Some(p) => p,
-                None => return,
+                None => {
+                    tracing::warn!("Attack failed: player {} not found", player_id);
+                    return;
+                }
             };
 
             // Dead players can't attack
@@ -354,91 +454,66 @@ impl GameRoom {
                 return;
             }
 
-            // Check if player has a target
-            let target_id = match &player.target_id {
-                Some(id) => id.clone(),
-                None => {
-                    tracing::debug!("{} attacks but has no target", player.name);
-                    return;
-                }
-            };
+            (player.name.clone(), player.x, player.y, player.direction, player.last_attack_time)
+        };
 
-            // Check cooldown
-            if current_time - player.last_attack_time < ATTACK_COOLDOWN_MS {
-                let remaining = ATTACK_COOLDOWN_MS - (current_time - player.last_attack_time);
-                tracing::debug!("{} attack on cooldown ({}ms remaining)", player.name, remaining);
+        // Check cooldown
+        if current_time - last_attack < ATTACK_COOLDOWN_MS {
+            return;
+        }
+
+        // Calculate the tile position in front of the player based on facing direction
+        let (front_x, front_y) = match attacker_dir {
+            Direction::Up => (attacker_x, attacker_y - 1),
+            Direction::Down => (attacker_x, attacker_y + 1),
+            Direction::Left => (attacker_x - 1, attacker_y),
+            Direction::Right => (attacker_x + 1, attacker_y),
+            Direction::UpLeft => (attacker_x - 1, attacker_y - 1),
+            Direction::UpRight => (attacker_x + 1, attacker_y - 1),
+            Direction::DownLeft => (attacker_x - 1, attacker_y + 1),
+            Direction::DownRight => (attacker_x + 1, attacker_y + 1),
+        };
+
+        tracing::info!("{} attacks toward ({}, {}) facing {:?}", attacker_name, front_x, front_y, attacker_dir);
+
+        // Find target at the front tile - check NPCs first, then players
+        let mut target_id: Option<String> = None;
+        let mut is_npc = false;
+
+        // Check NPCs
+        {
+            let npcs = self.npcs.read().await;
+            for (npc_id, npc) in npcs.iter() {
+                if npc.is_alive() && npc.x == front_x && npc.y == front_y {
+                    target_id = Some(npc_id.clone());
+                    is_npc = true;
+                    tracing::info!("{} found NPC target: {} at ({}, {})", attacker_name, npc.name(), npc.x, npc.y);
+                    break;
+                }
+            }
+        }
+
+        // Check players if no NPC found
+        if target_id.is_none() {
+            let players = self.players.read().await;
+            for (pid, player) in players.iter() {
+                if pid != player_id && player.active && player.hp > 0 && player.x == front_x && player.y == front_y {
+                    target_id = Some(pid.clone());
+                    is_npc = false;
+                    tracing::info!("{} found player target: {} at ({}, {})", attacker_name, player.name, player.x, player.y);
+                    break;
+                }
+            }
+        }
+
+        // No valid target found
+        let target_id = match target_id {
+            Some(id) => id,
+            None => {
+                tracing::debug!("{} attack missed - no target at ({}, {})", attacker_name, front_x, front_y);
                 return;
             }
-
-            (player.name.clone(), target_id, player.direction)
         };
-
-        // Determine if target is player or NPC and get position (as f32 for distance calc)
-        let (target_x, target_y, is_npc): (f32, f32, bool) = {
-            // Check if target is an NPC
-            let npcs = self.npcs.read().await;
-            if let Some(npc) = npcs.get(&target_id) {
-                if npc.is_alive() {
-                    (npc.x as f32, npc.y as f32, true)
-                } else {
-                    tracing::debug!("{}'s NPC target {} is dead", attacker_name, target_id);
-                    return;
-                }
-            } else {
-                drop(npcs);
-                // Check if target is a player
-                let players = self.players.read().await;
-                if let Some(target) = players.get(&target_id) {
-                    if target.active && target.hp > 0 {
-                        (target.x as f32, target.y as f32, false)
-                    } else {
-                        tracing::debug!("{}'s player target {} is invalid", attacker_name, target_id);
-                        return;
-                    }
-                } else {
-                    tracing::debug!("{}'s target {} not found", attacker_name, target_id);
-                    return;
-                }
-            }
-        };
-
-        // Get attacker position for range/direction check (as f32 for distance calc)
-        let (attacker_x, attacker_y): (f32, f32) = {
-            let players = self.players.read().await;
-            match players.get(player_id) {
-                Some(p) => (p.x as f32, p.y as f32),
-                None => return,
-            }
-        };
-
-        // Check range
-        let dx = target_x - attacker_x;
-        let dy = target_y - attacker_y;
-        let distance = (dx * dx + dy * dy).sqrt();
-        if distance > ATTACK_RANGE {
-            tracing::debug!("{} attack out of range (distance: {:.2})", attacker_name, distance);
-            let msg = ServerMessage::AttackResult {
-                success: false,
-                reason: Some("Target out of range".to_string()),
-            };
-            self.broadcast(msg).await;
-            return;
-        }
-
-        // Check direction (player must be facing the target)
-        let attack_dir = Direction::from_velocity(dx, dy);
-        if !Self::directions_match(attacker_dir, attack_dir) {
-            tracing::debug!(
-                "{} attack wrong direction (facing {:?}, target {:?})",
-                attacker_name, attacker_dir, attack_dir
-            );
-            let msg = ServerMessage::AttackResult {
-                success: false,
-                reason: Some("Not facing target".to_string()),
-            };
-            self.broadcast(msg).await;
-            return;
-        }
 
         // Update attacker's last attack time
         {
@@ -483,6 +558,10 @@ impl GameRoom {
                 return;
             }
         };
+
+        // Use front position as target position for damage event
+        let target_x = front_x as f32;
+        let target_y = front_y as f32;
 
         // Broadcast damage event to all clients
         let damage_msg = ServerMessage::DamageEvent {
@@ -605,6 +684,8 @@ impl GameRoom {
     }
 
     pub async fn handle_target(&self, player_id: &str, target_id: &str) {
+        tracing::info!("Target request: player {} -> target '{}'", player_id, target_id);
+
         // Validate target exists (can be player or NPC)
         let valid_target = {
             if target_id.is_empty() {
@@ -636,7 +717,7 @@ impl GameRoom {
                     Some(target_id.to_string())
                 };
                 player.target_id = new_target.clone();
-                tracing::debug!("{} targets {:?}", player.name, new_target);
+                tracing::info!("{} now targeting {:?}", player.name, new_target);
 
                 // Broadcast target change to all clients
                 let msg = ServerMessage::TargetChanged {
@@ -836,6 +917,11 @@ impl GameRoom {
                         y: player.y,
                         direction: player.direction as u8,
                         hp: player.hp,
+                        max_hp: player.max_hp,
+                        level: player.level,
+                        exp: player.exp,
+                        exp_to_next_level: player.exp_to_next_level,
+                        gold: player.inventory.gold,
                     });
                     continue;
                 }
@@ -861,6 +947,11 @@ impl GameRoom {
                     y: player.y,
                     direction: player.direction as u8,
                     hp: player.hp,
+                    max_hp: player.max_hp,
+                    level: player.level,
+                    exp: player.exp,
+                    exp_to_next_level: player.exp_to_next_level,
+                    gold: player.inventory.gold,
                 });
             }
         }
