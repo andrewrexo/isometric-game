@@ -106,15 +106,6 @@ impl World {
                 let layer_type_str = layer_value["type"].as_str().unwrap_or("");
 
                 if layer_type_str == "tilelayer" {
-                    // Determine layer type from name
-                    let layer_type = if name.to_lowercase().contains("ground") {
-                        ChunkLayerType::Ground
-                    } else if name.to_lowercase().contains("overhead") {
-                        ChunkLayerType::Overhead
-                    } else {
-                        ChunkLayerType::Objects
-                    };
-
                     // Get tile data
                     if let Some(data) = layer_value["data"].as_array() {
                         let tiles: Vec<u32> = data
@@ -123,16 +114,35 @@ impl World {
                             .collect();
 
                         if tiles.len() == (CHUNK_SIZE * CHUNK_SIZE) as usize {
-                            // Find or create layer
-                            let layer_idx = chunk
-                                .layers
-                                .iter()
-                                .position(|l| l.layer_type == layer_type)
-                                .unwrap_or_else(|| {
-                                    chunk.layers.push(ChunkLayer::new(layer_type));
-                                    chunk.layers.len() - 1
-                                });
-                            chunk.layers[layer_idx].tiles = tiles;
+                            // Check if this is a collision layer
+                            if name.to_lowercase().contains("collision") {
+                                // Mark collision for any non-zero tile
+                                for (idx, &tile_id) in tiles.iter().enumerate() {
+                                    if tile_id != 0 {
+                                        chunk.collision[idx] = true;
+                                    }
+                                }
+                            } else {
+                                // Regular tile layer - determine type from name
+                                let layer_type = if name.to_lowercase().contains("ground") {
+                                    ChunkLayerType::Ground
+                                } else if name.to_lowercase().contains("overhead") {
+                                    ChunkLayerType::Overhead
+                                } else {
+                                    ChunkLayerType::Objects
+                                };
+
+                                // Find or create layer
+                                let layer_idx = chunk
+                                    .layers
+                                    .iter()
+                                    .position(|l| l.layer_type == layer_type)
+                                    .unwrap_or_else(|| {
+                                        chunk.layers.push(ChunkLayer::new(layer_type));
+                                        chunk.layers.len() - 1
+                                    });
+                                chunk.layers[layer_idx].tiles = tiles;
+                            }
                         }
                     }
                 } else if layer_type_str == "objectgroup" {
@@ -157,19 +167,6 @@ impl World {
                             }
                         }
                     }
-                }
-            }
-        }
-
-        // Auto-generate collision from tile types if not specified
-        // Tiles 3 (water) and 4 (rock) are collision
-        let ground_layer = &chunk.layers[0];
-        for y in 0..CHUNK_SIZE {
-            for x in 0..CHUNK_SIZE {
-                let idx = (y * CHUNK_SIZE + x) as usize;
-                let tile_id = ground_layer.tiles.get(idx).copied().unwrap_or(0);
-                if tile_id == 3 || tile_id == 4 {
-                    chunk.collision[idx] = true;
                 }
             }
         }

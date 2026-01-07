@@ -4,17 +4,91 @@ use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
 
+/// Tileset configuration
+const TILESET_TILE_WIDTH: f32 = 64.0;
+const TILESET_TILE_HEIGHT: f32 = 32.0;
+const TILESET_COLUMNS: u32 = 32;
+
 pub struct Renderer {
-    // Placeholder colors for MVP (will be replaced with textures)
     player_color: Color,
     local_player_color: Color,
+    /// Loaded tileset texture
+    tileset: Option<Texture2D>,
 }
 
 impl Renderer {
     pub async fn new() -> Self {
+        // Try to load the tileset texture
+        let tileset = match load_texture("assets/sprites/tiles.png").await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                log::info!("Loaded tileset: {}x{}", tex.width(), tex.height());
+                Some(tex)
+            }
+            Err(e) => {
+                log::warn!("Failed to load tileset: {}. Using fallback colors.", e);
+                None
+            }
+        };
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
+            tileset,
+        }
+    }
+
+    /// Get the UV rect for a tile ID in the tileset
+    /// Tiled uses 1-indexed tile IDs (0 = empty)
+    fn get_tile_uv(&self, tile_id: u32) -> Option<Rect> {
+        if tile_id == 0 {
+            return None;
+        }
+
+        let tileset = self.tileset.as_ref()?;
+        let id = tile_id - 1; // Convert to 0-indexed
+
+        let col = id % TILESET_COLUMNS;
+        let row = id / TILESET_COLUMNS;
+
+        let x = col as f32 * TILESET_TILE_WIDTH;
+        let y = row as f32 * TILESET_TILE_HEIGHT;
+
+        Some(Rect::new(
+            x / tileset.width(),
+            y / tileset.height(),
+            TILESET_TILE_WIDTH / tileset.width(),
+            TILESET_TILE_HEIGHT / tileset.height(),
+        ))
+    }
+
+    /// Draw a tile sprite from the tileset
+    fn draw_tile_sprite(&self, screen_x: f32, screen_y: f32, tile_id: u32) {
+        if let (Some(tileset), Some(uv)) = (&self.tileset, self.get_tile_uv(tile_id)) {
+            // Center the tile on screen position
+            let draw_x = screen_x - TILE_WIDTH / 2.0;
+            let draw_y = screen_y - TILE_HEIGHT / 2.0;
+
+            draw_texture_ex(
+                tileset,
+                draw_x,
+                draw_y,
+                WHITE,
+                DrawTextureParams {
+                    source: Some(Rect::new(
+                        uv.x * tileset.width(),
+                        uv.y * tileset.height(),
+                        TILESET_TILE_WIDTH,
+                        TILESET_TILE_HEIGHT,
+                    )),
+                    dest_size: Some(Vec2::new(TILE_WIDTH, TILE_HEIGHT)),
+                    ..Default::default()
+                },
+            );
+        } else {
+            // Fallback to colored tile
+            let color = get_tile_color(tile_id);
+            self.draw_isometric_tile(screen_x, screen_y, color);
         }
     }
 
@@ -245,8 +319,8 @@ impl Renderer {
                                 continue;
                             }
 
-                            let color = get_tile_color(tile_id);
-                            self.draw_isometric_tile(screen_x, screen_y, color);
+                            // Draw tile sprite (or fallback to colored tile)
+                            self.draw_tile_sprite(screen_x, screen_y, tile_id);
 
                             // Draw collision indicator in debug mode
                             if state.debug_mode && chunk.collision.get(idx).copied().unwrap_or(false) {
@@ -288,8 +362,8 @@ impl Renderer {
                         continue;
                     }
 
-                    let color = get_tile_color(tile_id);
-                    self.draw_isometric_tile(screen_x, screen_y, color);
+                    // Draw tile sprite (or fallback to colored tile)
+                    self.draw_tile_sprite(screen_x, screen_y, tile_id);
 
                     // Draw collision indicator in debug mode
                     if state.debug_mode && tilemap.collision.get(idx).copied().unwrap_or(false) {
@@ -314,16 +388,12 @@ impl Renderer {
     }
 
     fn draw_isometric_object(&self, screen_x: f32, screen_y: f32, tile_id: u32) {
-        // For now, draw objects as slightly elevated tiles
-        let color = get_tile_color(tile_id);
-        let elevated_y = screen_y - TILE_HEIGHT * 0.5;
+        // Draw shadow ellipse for objects
+        draw_ellipse(screen_x, screen_y + 4.0, 20.0, 10.0, 0.0, Color::from_rgba(0, 0, 0, 50));
 
-        // Draw shadow
-        let shadow_color = Color::from_rgba(0, 0, 0, 50);
-        self.draw_isometric_tile(screen_x, screen_y, shadow_color);
-
-        // Draw object (elevated)
-        self.draw_isometric_tile(screen_x, elevated_y, color);
+        // Draw object tile sprite (slightly elevated)
+        let elevated_y = screen_y - TILE_HEIGHT * 0.25;
+        self.draw_tile_sprite(screen_x, elevated_y, tile_id);
     }
 
     fn draw_isometric_tile(&self, screen_x: f32, screen_y: f32, color: Color) {
