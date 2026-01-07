@@ -73,6 +73,7 @@ pub struct GameState {
     // Connection
     pub connection_status: ConnectionStatus,
     pub local_player_id: Option<String>,
+    pub selected_character_name: Option<String>,
 
     // World
     pub tilemap: Tilemap,
@@ -109,6 +110,7 @@ impl GameState {
         Self {
             connection_status: ConnectionStatus::Disconnected,
             local_player_id: None,
+            selected_character_name: None,
             tilemap,
             players: HashMap::new(),
             npcs: HashMap::new(),

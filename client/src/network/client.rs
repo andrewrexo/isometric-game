@@ -23,6 +23,12 @@ struct JoinOptions {
     name: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthenticatedJoinOptions {
+    character_id: i64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum ConnectionState {
     Disconnected,
@@ -40,19 +46,66 @@ pub struct NetworkClient {
     reconnect_timer: f32,
     room_id: Option<String>,
     session_id: Option<String>,
+    // Auth fields
+    auth_token: Option<String>,
+    character_id: Option<i64>,
 }
 
 impl NetworkClient {
+    /// Legacy constructor - for backwards compatibility
     pub fn new(base_url: &str) -> Self {
+        Self::new_guest(base_url)
+    }
+
+    /// Create a guest mode client (dev mode only)
+    pub fn new_guest(base_url: &str) -> Self {
         let mut client = Self {
             sender: None,
             receiver: None,
             base_url: base_url.to_string(),
-            player_name: format!("Player{}", rand::random::<u16>() % 10000),
+            player_name: format!("Guest{}", rand::random::<u16>() % 10000),
             connection_state: ConnectionState::Disconnected,
             reconnect_timer: 0.0,
             room_id: None,
             session_id: None,
+            auth_token: None,
+            character_id: None,
+        };
+        client.start_matchmaking();
+        client
+    }
+
+    /// Create an authenticated client with a specific character
+    pub fn new_authenticated(base_url: &str, auth_token: &str, character_id: i64) -> Self {
+        let mut client = Self {
+            sender: None,
+            receiver: None,
+            base_url: base_url.to_string(),
+            player_name: String::new(), // Will be set by server from character
+            connection_state: ConnectionState::Disconnected,
+            reconnect_timer: 0.0,
+            room_id: None,
+            session_id: None,
+            auth_token: Some(auth_token.to_string()),
+            character_id: Some(character_id),
+        };
+        client.start_matchmaking();
+        client
+    }
+
+    /// Create a client with a specific player name (for simple account=character model)
+    pub fn new_with_name(base_url: &str, player_name: &str) -> Self {
+        let mut client = Self {
+            sender: None,
+            receiver: None,
+            base_url: base_url.to_string(),
+            player_name: player_name.to_string(),
+            connection_state: ConnectionState::Disconnected,
+            reconnect_timer: 0.0,
+            room_id: None,
+            session_id: None,
+            auth_token: None,
+            character_id: None,
         };
         client.start_matchmaking();
         client
@@ -66,17 +119,31 @@ impl NetworkClient {
             .replace("ws://", "http://")
             .replace("wss://", "https://");
 
-        let matchmake_url = format!("{}/matchmake/joinOrCreate/game", http_url);
-        log::info!("Matchmaking: POST {}", matchmake_url);
+        let matchmake_url = format!("{}/matchmake/joinOrCreate/game_room", http_url);
 
-        let options = JoinOptions {
-            name: self.player_name.clone(),
+        // Build request with or without auth
+        let request = ureq::post(&matchmake_url)
+            .set("Content-Type", "application/json");
+
+        let result = if let (Some(token), Some(char_id)) = (&self.auth_token, &self.character_id) {
+            // Authenticated matchmaking
+            log::info!("Matchmaking (authenticated): POST {}", matchmake_url);
+            let options = AuthenticatedJoinOptions {
+                character_id: *char_id,
+            };
+            request
+                .set("Authorization", &format!("Bearer {}", token))
+                .send_json(&options)
+        } else {
+            // Guest matchmaking
+            log::info!("Matchmaking (guest): POST {}", matchmake_url);
+            let options = JoinOptions {
+                name: self.player_name.clone(),
+            };
+            request.send_json(&options)
         };
 
-        match ureq::post(&matchmake_url)
-            .set("Content-Type", "application/json")
-            .send_json(&options)
-        {
+        match result {
             Ok(response) => {
                 match response.into_json::<MatchmakeResponse>() {
                     Ok(data) => {

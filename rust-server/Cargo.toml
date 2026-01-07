@@ -30,3 +30,6 @@ chrono = "0.4"
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
+# Password hashing
+argon2 = "0.5"

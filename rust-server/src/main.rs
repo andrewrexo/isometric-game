@@ -42,6 +42,8 @@ struct AppState {
     rooms: Arc<DashMap<String, Arc<GameRoom>>>,
     // Session ID -> (Room ID, Player ID)
     sessions: Arc<DashMap<String, (String, String)>>,
+    // Auth token -> (Username, Player DB ID)
+    auth_sessions: AuthSessions,
     db: Arc<Database>,
 }
 
@@ -55,6 +57,7 @@ impl AppState {
         Self {
             rooms: Arc::new(DashMap::new()),
             sessions: Arc::new(DashMap::new()),
+            auth_sessions: Arc::new(DashMap::new()),
             db: Arc::new(db),
         }
     }
@@ -75,7 +78,136 @@ impl AppState {
 }
 
 // ============================================================================
-// HTTP Handlers (Matchmaking)
+// HTTP Handlers - Authentication
+// ============================================================================
+
+/// Auth sessions: token -> (username, player_id)
+type AuthSessions = Arc<DashMap<String, (String, i64)>>;
+
+#[derive(Deserialize)]
+struct RegisterRequest {
+    username: String,
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    username: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct AuthResponse {
+    success: bool,
+    token: Option<String>,
+    username: Option<String>,
+    error: Option<String>,
+}
+
+async fn register_account(
+    State(state): State<AppState>,
+    Json(req): Json<RegisterRequest>,
+) -> impl IntoResponse {
+    // Validate input
+    if req.username.len() < 3 {
+        return Json(AuthResponse {
+            success: false,
+            token: None,
+            username: None,
+            error: Some("Username must be at least 3 characters".to_string()),
+        });
+    }
+    if req.password.len() < 6 {
+        return Json(AuthResponse {
+            success: false,
+            token: None,
+            username: None,
+            error: Some("Password must be at least 6 characters".to_string()),
+        });
+    }
+
+    match state.db.create_player(&req.username, &req.password).await {
+        Ok(player_id) => {
+            // Create auth token
+            let token = Uuid::new_v4().to_string();
+            state.auth_sessions.insert(token.clone(), (req.username.clone(), player_id));
+
+            info!("Account registered: {} (id: {})", req.username, player_id);
+
+            Json(AuthResponse {
+                success: true,
+                token: Some(token),
+                username: Some(req.username),
+                error: None,
+            })
+        }
+        Err(e) => {
+            Json(AuthResponse {
+                success: false,
+                token: None,
+                username: None,
+                error: Some(e),
+            })
+        }
+    }
+}
+
+async fn login_account(
+    State(state): State<AppState>,
+    Json(req): Json<LoginRequest>,
+) -> impl IntoResponse {
+    match state.db.verify_password(&req.username, &req.password).await {
+        Some(player) => {
+            // Create auth token
+            let token = Uuid::new_v4().to_string();
+            state.auth_sessions.insert(token.clone(), (req.username.clone(), player.id));
+
+            // Update last login
+            let _ = state.db.save_player(
+                &req.username,
+                player.x,
+                player.y,
+                player.hp,
+                player.level,
+                player.exp,
+            ).await;
+
+            info!("Player logged in: {}", req.username);
+
+            Json(AuthResponse {
+                success: true,
+                token: Some(token),
+                username: Some(req.username),
+                error: None,
+            })
+        }
+        None => {
+            Json(AuthResponse {
+                success: false,
+                token: None,
+                username: None,
+                error: Some("Invalid username or password".to_string()),
+            })
+        }
+    }
+}
+
+async fn logout_account(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    if let Some(auth) = headers.get("Authorization") {
+        if let Ok(auth_str) = auth.to_str() {
+            if let Some(token) = auth_str.strip_prefix("Bearer ") {
+                state.auth_sessions.remove(token);
+            }
+        }
+    }
+    Json(serde_json::json!({ "success": true }))
+}
+
+// ============================================================================
+// HTTP Handlers - Matchmaking
 // ============================================================================
 
 #[derive(Deserialize)]
@@ -365,8 +497,15 @@ async fn main() {
 
     // Build router
     let app = Router::new()
+        // Health check
         .route("/health", get(health_check))
+        // Authentication
+        .route("/api/register", post(register_account))
+        .route("/api/login", post(login_account))
+        .route("/api/logout", post(logout_account))
+        // Matchmaking
         .route("/matchmake/joinOrCreate/:room", post(matchmake_join_or_create))
+        // WebSocket
         .route("/:room_id", get(ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(state);

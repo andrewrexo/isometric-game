@@ -5,12 +5,28 @@ mod render;
 #[cfg(not(target_arch = "wasm32"))]
 mod network;
 mod input;
+#[cfg(not(target_arch = "wasm32"))]
+mod auth;
+#[cfg(not(target_arch = "wasm32"))]
+mod ui;
 
 use game::GameState;
 #[cfg(not(target_arch = "wasm32"))]
 use network::NetworkClient;
 use render::Renderer;
 use input::{InputHandler, InputCommand};
+
+#[cfg(not(target_arch = "wasm32"))]
+use ui::{Screen, ScreenState, LoginScreen, CharacterSelectScreen};
+#[cfg(not(target_arch = "wasm32"))]
+use auth::AuthSession;
+
+const SERVER_URL: &str = "http://localhost:2567";
+const WS_URL: &str = "ws://localhost:2567";
+
+// Development mode - enables guest login
+// Set to false for production builds
+const DEV_MODE: bool = true;
 
 fn window_conf() -> Conf {
     Conf {
@@ -22,6 +38,24 @@ fn window_conf() -> Conf {
     }
 }
 
+/// Application state for native builds
+#[cfg(not(target_arch = "wasm32"))]
+enum AppState {
+    Login(LoginScreen),
+    CharacterSelect(CharacterSelectScreen),
+    Playing {
+        game_state: GameState,
+        network: NetworkClient,
+        input_handler: InputHandler,
+        _session: AuthSession,
+    },
+    GuestMode {
+        game_state: GameState,
+        network: NetworkClient,
+        input_handler: InputHandler,
+    },
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     // Initialize logging
@@ -31,90 +65,176 @@ async fn main() {
     #[cfg(target_arch = "wasm32")]
     console_error_panic_hook::set_once();
 
-    // Initialize game systems
-    let mut game_state = GameState::new();
-    #[cfg(not(target_arch = "wasm32"))]
-    let mut network = NetworkClient::new("ws://localhost:2567");
     let renderer = Renderer::new().await;
-    let mut input_handler = InputHandler::new();
 
-    // For WASM demo, create a local player
+    // Native build with auth flow
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut app_state = AppState::Login(LoginScreen::new(SERVER_URL, DEV_MODE));
+
+        loop {
+            match &mut app_state {
+                AppState::Login(screen) => {
+                    let result = screen.update();
+                    screen.render();
+
+                    match result {
+                        ScreenState::ToCharacterSelect(session) => {
+                            app_state = AppState::CharacterSelect(
+                                CharacterSelectScreen::new(session, SERVER_URL)
+                            );
+                        }
+                        ScreenState::StartGameDirect { session } => {
+                            // Simple model: account = character, go directly to game
+                            let mut game_state = GameState::new();
+                            game_state.selected_character_name = Some(session.username.clone());
+
+                            // Use guest matchmaking but with authenticated session stored
+                            let network = NetworkClient::new_with_name(WS_URL, &session.username);
+                            let input_handler = InputHandler::new();
+
+                            app_state = AppState::Playing {
+                                game_state,
+                                network,
+                                input_handler,
+                                _session: session,
+                            };
+                        }
+                        ScreenState::StartGuestMode => {
+                            // Guest mode - connect without auth
+                            let game_state = GameState::new();
+                            let network = NetworkClient::new_guest(WS_URL);
+                            let input_handler = InputHandler::new();
+                            app_state = AppState::GuestMode {
+                                game_state,
+                                network,
+                                input_handler,
+                            };
+                        }
+                        _ => {}
+                    }
+                }
+
+                AppState::CharacterSelect(screen) => {
+                    let result = screen.update();
+                    screen.render();
+
+                    match result {
+                        ScreenState::StartGame { session, character_id, character_name } => {
+                            // Start game with selected character
+                            let mut game_state = GameState::new();
+                            game_state.selected_character_name = Some(character_name);
+
+                            let network = NetworkClient::new_authenticated(
+                                WS_URL,
+                                &session.token,
+                                character_id,
+                            );
+                            let input_handler = InputHandler::new();
+
+                            app_state = AppState::Playing {
+                                game_state,
+                                network,
+                                input_handler,
+                                _session: session,
+                            };
+                        }
+                        ScreenState::ToLogin => {
+                            app_state = AppState::Login(LoginScreen::new(SERVER_URL, DEV_MODE));
+                        }
+                        _ => {}
+                    }
+                }
+
+                AppState::Playing { game_state, network, input_handler, .. } |
+                AppState::GuestMode { game_state, network, input_handler } => {
+                    run_game_frame(game_state, network, input_handler, &renderer);
+                }
+            }
+
+            next_frame().await;
+        }
+    }
+
+    // WASM build - offline demo mode
     #[cfg(target_arch = "wasm32")]
     {
+        let mut game_state = GameState::new();
+
+        // Create a local player for demo
         use game::Player;
         let player = Player::new("local".to_string(), "WebPlayer".to_string(), 5.0, 5.0);
         game_state.players.insert("local".to_string(), player);
         game_state.local_player_id = Some("local".to_string());
+
+        let mut input_handler = InputHandler::new();
+
+        loop {
+            let delta = get_frame_time();
+
+            // Handle input (local only in WASM)
+            let _ = input_handler.process(&mut game_state);
+
+            // Update game state
+            let (input_dx, input_dy) = input_handler.get_movement();
+            game_state.update(delta, input_dx, input_dy);
+
+            // Render
+            clear_background(Color::from_rgba(30, 30, 40, 255));
+            renderer.render(&game_state);
+
+            // Debug info
+            if game_state.debug_mode {
+                draw_text(&format!("FPS: {}", get_fps()), 10.0, 20.0, 20.0, WHITE);
+                draw_text("WASM Demo (no network)", 10.0, 40.0, 20.0, YELLOW);
+            }
+
+            next_frame().await;
+        }
+    }
+}
+
+/// Run a single frame of gameplay
+#[cfg(not(target_arch = "wasm32"))]
+fn run_game_frame(
+    game_state: &mut GameState,
+    network: &mut NetworkClient,
+    input_handler: &mut InputHandler,
+    renderer: &Renderer,
+) {
+    let delta = get_frame_time();
+
+    // 1. Poll network messages
+    network.poll(game_state);
+
+    // 2. Handle input and send commands
+    let commands = input_handler.process(game_state);
+    for cmd in &commands {
+        use network::messages::ClientMessage;
+        let msg = match cmd {
+            InputCommand::Move { dx, dy } => ClientMessage::Move { dx: *dx, dy: *dy },
+            InputCommand::Attack => ClientMessage::Attack,
+            InputCommand::Target { entity_id } => ClientMessage::Target { entity_id: entity_id.clone() },
+            InputCommand::ClearTarget => ClientMessage::Target { entity_id: String::new() },
+            InputCommand::Chat { text } => ClientMessage::Chat { text: text.clone() },
+            InputCommand::Pickup { item_id } => ClientMessage::Pickup { item_id: item_id.clone() },
+            InputCommand::UseItem { slot_index } => ClientMessage::UseItem { slot_index: *slot_index as u32 },
+        };
+        network.send(&msg);
     }
 
-    // Main game loop
-    loop {
-        let delta = get_frame_time();
+    // 3. Update game state
+    let (input_dx, input_dy) = input_handler.get_movement();
+    game_state.update(delta, input_dx, input_dy);
 
-        // 1. Poll network messages (non-blocking) - native only
-        #[cfg(not(target_arch = "wasm32"))]
-        network.poll(&mut game_state);
+    // 4. Render
+    clear_background(Color::from_rgba(30, 30, 40, 255));
+    renderer.render(game_state);
 
-        // 2. Handle input and send commands to server
-        let commands = input_handler.process(&mut game_state);
-        #[cfg(not(target_arch = "wasm32"))]
-        for cmd in &commands {
-            use network::messages::ClientMessage;
-            let msg = match cmd {
-                InputCommand::Move { dx, dy } => ClientMessage::Move { dx: *dx, dy: *dy },
-                InputCommand::Attack => ClientMessage::Attack,
-                InputCommand::Target { entity_id } => ClientMessage::Target { entity_id: entity_id.clone() },
-                InputCommand::ClearTarget => ClientMessage::Target { entity_id: String::new() },
-                InputCommand::Chat { text } => ClientMessage::Chat { text: text.clone() },
-                InputCommand::Pickup { item_id } => ClientMessage::Pickup { item_id: item_id.clone() },
-                InputCommand::UseItem { slot_index } => ClientMessage::UseItem { slot_index: *slot_index as u32 },
-            };
-            network.send(&msg);
-        }
-        let _ = commands; // Suppress unused warning on WASM
-
-        // 3. Update game state with current input (smooth local movement)
-        let (input_dx, input_dy) = input_handler.get_movement();
-        game_state.update(delta, input_dx, input_dy);
-
-        // 4. Render
-        clear_background(Color::from_rgba(30, 30, 40, 255));
-        renderer.render(&game_state);
-
-        // 5. Debug info
-        if game_state.debug_mode {
-            draw_text(
-                &format!("FPS: {}", get_fps()),
-                10.0,
-                20.0,
-                20.0,
-                WHITE,
-            );
-            draw_text(
-                &format!("Players: {}", game_state.players.len()),
-                10.0,
-                40.0,
-                20.0,
-                WHITE,
-            );
-            #[cfg(not(target_arch = "wasm32"))]
-            draw_text(
-                &format!("Connected: {}", network.is_connected()),
-                10.0,
-                60.0,
-                20.0,
-                WHITE,
-            );
-            #[cfg(target_arch = "wasm32")]
-            draw_text(
-                "WASM Demo (no network)",
-                10.0,
-                60.0,
-                20.0,
-                WHITE,
-            );
-        }
-
-        next_frame().await
+    // 5. Debug info
+    if game_state.debug_mode {
+        draw_text(&format!("FPS: {}", get_fps()), 10.0, 20.0, 20.0, WHITE);
+        draw_text(&format!("Players: {}", game_state.players.len()), 10.0, 40.0, 20.0, WHITE);
+        draw_text(&format!("Connected: {}", network.is_connected()), 10.0, 60.0, 20.0, WHITE);
     }
 }

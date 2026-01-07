@@ -1,3 +1,7 @@
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 
@@ -56,19 +60,36 @@ impl Database {
         Ok(())
     }
 
+    /// Create a new player with hashed password
     pub async fn create_player(
         &self,
         username: &str,
-        password_hash: &str,
-    ) -> Result<i64, sqlx::Error> {
+        password: &str,
+    ) -> Result<i64, String> {
+        // Hash the password with Argon2
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        let password_hash = argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| format!("Failed to hash password: {}", e))?
+            .to_string();
+
         let result = sqlx::query(
             "INSERT INTO players (username, password_hash) VALUES (?, ?)",
         )
         .bind(username)
-        .bind(password_hash)
+        .bind(&password_hash)
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("UNIQUE constraint failed") {
+                "Username already exists".to_string()
+            } else {
+                format!("Database error: {}", e)
+            }
+        })?;
 
+        tracing::info!("Created player: {} (id: {})", username, result.last_insert_rowid());
         Ok(result.last_insert_rowid())
     }
 
@@ -122,11 +143,20 @@ impl Database {
         Ok(())
     }
 
-    pub async fn verify_password(&self, username: &str, password: &str) -> bool {
-        // Simple comparison for now - in production use bcrypt or argon2
+    /// Verify password and return player data if valid
+    pub async fn verify_password(&self, username: &str, password: &str) -> Option<PlayerData> {
         if let Ok(Some(player)) = self.get_player_by_username(username).await {
-            return player.password_hash == password;
+            // Parse the stored hash
+            if let Ok(parsed_hash) = PasswordHash::new(&player.password_hash) {
+                // Verify password against stored hash
+                if Argon2::default()
+                    .verify_password(password.as_bytes(), &parsed_hash)
+                    .is_ok()
+                {
+                    return Some(player);
+                }
+            }
         }
-        false
+        None
     }
 }
