@@ -267,8 +267,9 @@ impl NetworkClient {
                 if let Some(value) = data {
                     let id = extract_string(value, "id").unwrap_or_default();
                     let name = extract_string(value, "name").unwrap_or_default();
-                    let x = extract_f32(value, "x").unwrap_or(0.0);
-                    let y = extract_f32(value, "y").unwrap_or(0.0);
+                    // Server sends i32 grid positions
+                    let x = extract_i32(value, "x").unwrap_or(0) as f32;
+                    let y = extract_i32(value, "y").unwrap_or(0) as f32;
 
                     log::info!("Player joined: {} at ({}, {})", name, x, y);
                     let player = Player::new(id.clone(), name, x, y);
@@ -294,19 +295,20 @@ impl NetworkClient {
                         state.server_tick = tick;
                     }
 
-                    // Update players
+                    // Update players (grid positions from server)
                     if let Some(players) = extract_array(value, "players") {
                         for player_value in players {
                             let id = extract_string(player_value, "id").unwrap_or_default();
-                            let x = extract_f32(player_value, "x");
-                            let y = extract_f32(player_value, "y");
+                            // Server sends i32 grid positions
+                            let x = extract_i32(player_value, "x");
+                            let y = extract_i32(player_value, "y");
                             let direction = extract_i32(player_value, "direction");
                             let hp = extract_i32(player_value, "hp");
 
                             if let Some(player) = state.players.get_mut(&id) {
                                 if let (Some(x), Some(y)) = (x, y) {
                                     // Set server target - client will smoothly interpolate
-                                    player.set_server_position(x, y);
+                                    player.set_server_position(x as f32, y as f32);
                                 }
                                 if let Some(dir) = direction {
                                     player.direction = Direction::from_u8(dir as u8);
@@ -470,8 +472,9 @@ impl NetworkClient {
             "playerRespawned" => {
                 if let Some(value) = data {
                     let player_id = extract_string(value, "id").unwrap_or_default();
-                    let x = extract_f32(value, "x").unwrap_or(0.0);
-                    let y = extract_f32(value, "y").unwrap_or(0.0);
+                    // Server sends i32 grid positions
+                    let x = extract_i32(value, "x").unwrap_or(0) as f32;
+                    let y = extract_i32(value, "y").unwrap_or(0) as f32;
                     let hp = extract_i32(value, "hp").unwrap_or(100);
                     log::info!("Player {} respawned at ({}, {})", player_id, x, y);
 

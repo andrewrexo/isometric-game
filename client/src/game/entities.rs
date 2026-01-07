@@ -73,8 +73,9 @@ impl Direction {
 // Movement speed in tiles per second (must match server: 250ms per tile = 4 tiles/sec)
 pub const TILES_PER_SECOND: f32 = 4.0;
 
-// Visual interpolation speed (slightly faster than actual movement for responsiveness)
-const VISUAL_SPEED: f32 = 8.0;
+// Visual interpolation speed - match server speed for smooth tile-to-tile movement
+// This ensures visual movement takes exactly 250ms per tile
+const VISUAL_SPEED: f32 = 4.0;
 
 #[derive(Debug, Clone)]
 pub struct Player {

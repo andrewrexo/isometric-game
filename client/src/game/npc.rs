@@ -110,9 +110,9 @@ impl Npc {
     }
 
     /// Smooth interpolation toward grid position
-    /// Server moves NPCs at 2 tiles/sec, we interpolate faster for smoothness
+    /// Server moves NPCs at 2 tiles/sec (500ms per tile)
     pub fn update(&mut self, delta: f32) {
-        const INTERPOLATION_SPEED: f32 = 4.0; // tiles/sec (faster than server for smooth catch-up)
+        const INTERPOLATION_SPEED: f32 = 2.0; // tiles/sec - match server speed for smooth movement
 
         if self.state == NpcState::Dead {
             return;
