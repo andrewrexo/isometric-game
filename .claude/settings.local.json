@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(cargo check:*)",
+      "Bash(rustup update:*)",
+      "Bash(rustc:*)",
+      "Bash(npm install)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(curl:*)",
+      "Bash(cargo build:*)",
+      "Bash(cat:*)",
+      "Bash(npm install:*)",
+      "Bash(RUST_LOG=debug timeout 8 ./target/release/isometric-client:*)",
+      "Bash(RUST_LOG=info timeout:*)",
+      "Bash(RUST_LOG=debug timeout 6 cargo run:*)",
+      "Bash(RUST_LOG=debug timeout 8 cargo run:*)",
+      "Bash(timeout 3 npx wscat@5:*)",
+      "Bash(RUST_LOG=debug timeout 6 ./target/release/isometric-client:*)",
+      "Bash(RUST_LOG=warn timeout 5 ./target/release/isometric-client:*)",
+      "Bash(rustup target list:*)",
+      "Bash(rustup target add:*)",
+      "Bash(cargo install:*)",
+      "Bash(RUST_LOG=warn timeout 8 ./target/release/isometric-client:*)"
+    ]
+  }
+}

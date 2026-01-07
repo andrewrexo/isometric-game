@@ -1,0 +1,181 @@
+use std::collections::HashMap;
+use super::entities::Player;
+use super::item::{GroundItem, Inventory};
+use super::npc::Npc;
+use super::tilemap::Tilemap;
+
+pub struct Camera {
+    pub x: f32,
+    pub y: f32,
+    pub zoom: f32,
+    pub initialized: bool,
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            zoom: 1.0,
+            initialized: false,
+        }
+    }
+}
+
+pub struct ChatMessage {
+    pub sender_name: String,
+    pub text: String,
+    pub timestamp: f64,
+}
+
+/// Floating damage number for combat feedback
+pub struct DamageEvent {
+    pub x: f32,
+    pub y: f32,
+    pub damage: i32,
+    pub time: f64, // When the event was created (game time)
+}
+
+/// Floating level up text
+pub struct LevelUpEvent {
+    pub x: f32,
+    pub y: f32,
+    pub new_level: i32,
+    pub time: f64,
+}
+
+pub struct UiState {
+    pub chat_open: bool,
+    pub chat_input: String,
+    pub chat_messages: Vec<ChatMessage>,
+    pub inventory_open: bool,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            chat_open: false,
+            chat_input: String::new(),
+            chat_messages: Vec::new(),
+            inventory_open: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionStatus {
+    Disconnected,
+    Connecting,
+    Connected,
+}
+
+pub struct GameState {
+    // Connection
+    pub connection_status: ConnectionStatus,
+    pub local_player_id: Option<String>,
+
+    // World
+    pub tilemap: Tilemap,
+    pub players: HashMap<String, Player>,
+    pub npcs: HashMap<String, Npc>,
+    pub ground_items: HashMap<String, GroundItem>,
+
+    // Targeting
+    pub selected_entity_id: Option<String>,
+
+    // Combat feedback
+    pub damage_events: Vec<DamageEvent>,
+    pub level_up_events: Vec<LevelUpEvent>,
+
+    // Inventory
+    pub inventory: Inventory,
+
+    // Camera and UI
+    pub camera: Camera,
+    pub ui_state: UiState,
+
+    // Server tick (for ordering)
+    pub server_tick: u64,
+
+    // Debug
+    pub debug_mode: bool,
+}
+
+impl GameState {
+    pub fn new() -> Self {
+        // Create a test tilemap (32x32 tiles)
+        let tilemap = Tilemap::new_test_map(32, 32);
+
+        Self {
+            connection_status: ConnectionStatus::Disconnected,
+            local_player_id: None,
+            tilemap,
+            players: HashMap::new(),
+            npcs: HashMap::new(),
+            ground_items: HashMap::new(),
+            selected_entity_id: None,
+            damage_events: Vec::new(),
+            level_up_events: Vec::new(),
+            inventory: Inventory::new(),
+            camera: Camera::default(),
+            ui_state: UiState::default(),
+            server_tick: 0,
+            debug_mode: true,
+        }
+    }
+
+    /// Update with current input direction for smooth local movement
+    pub fn update(&mut self, delta: f32, input_dx: f32, input_dy: f32) {
+        // Update local player - smoothly interpolate visual toward server grid position
+        if let Some(local_id) = &self.local_player_id {
+            if let Some(player) = self.players.get_mut(local_id) {
+                // Update facing direction based on input
+                if input_dx != 0.0 || input_dy != 0.0 {
+                    player.direction = super::entities::Direction::from_velocity(input_dx, input_dy);
+                }
+
+                // Smoothly interpolate visual position toward server grid position
+                player.interpolate_visual(delta);
+            }
+        }
+
+        // Update other players (smooth interpolation toward their server positions)
+        if let Some(local_id) = &self.local_player_id {
+            for (id, player) in self.players.iter_mut() {
+                if id != local_id {
+                    player.update(delta);
+                }
+            }
+        } else {
+            // No local player yet - update all
+            for player in self.players.values_mut() {
+                player.update(delta);
+            }
+        }
+
+        // Update camera to follow local player
+        if let Some(local_id) = &self.local_player_id {
+            if let Some(player) = self.players.get(local_id) {
+                self.camera.x = player.x;
+                self.camera.y = player.y;
+                self.camera.initialized = true;
+            }
+        }
+
+        // Update NPCs (interpolation toward server positions)
+        for npc in self.npcs.values_mut() {
+            npc.update(delta);
+        }
+
+        // Clean up old damage events (older than 1.5 seconds)
+        let current_time = macroquad::time::get_time();
+        self.damage_events.retain(|event| current_time - event.time < 1.5);
+
+        // Clean up old level up events (older than 2.0 seconds)
+        self.level_up_events.retain(|event| current_time - event.time < 2.0);
+    }
+
+    pub fn get_local_player(&self) -> Option<&Player> {
+        self.local_player_id.as_ref().and_then(|id| self.players.get(id))
+    }
+}
