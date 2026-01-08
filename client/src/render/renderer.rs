@@ -788,6 +788,11 @@ impl Renderer {
             self.render_inventory(state);
         }
 
+        // Quest Log UI (when open)
+        if state.ui_state.quest_log_open {
+            self.render_quest_log(state);
+        }
+
         // Quick slots (always visible at bottom)
         self.render_quick_slots(state);
 
@@ -888,6 +893,71 @@ impl Renderer {
 
         // Close hint
         draw_text("Press I to close", inv_x + 10.0, inv_y + inv_height - 15.0, 12.0, GRAY);
+    }
+
+    fn render_quest_log(&self, state: &GameState) {
+        let panel_width = 350.0;
+        let panel_height = 400.0;
+        let panel_x = (screen_width() - panel_width) / 2.0;
+        let panel_y = (screen_height() - panel_height) / 2.0;
+
+        // Semi-transparent overlay
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 100));
+
+        // Panel background
+        draw_rectangle(panel_x, panel_y, panel_width, panel_height, Color::from_rgba(30, 30, 40, 240));
+        draw_rectangle_lines(panel_x, panel_y, panel_width, panel_height, 2.0, Color::from_rgba(100, 100, 120, 255));
+
+        // Title
+        let title = "Quest Log";
+        draw_text(title, panel_x + 15.0, panel_y + 28.0, 22.0, Color::from_rgba(255, 220, 100, 255));
+
+        // Separator line
+        draw_line(panel_x + 10.0, panel_y + 40.0, panel_x + panel_width - 10.0, panel_y + 40.0, 1.0, GRAY);
+
+        let mut y = panel_y + 60.0;
+        let line_height = 20.0;
+
+        if state.ui_state.active_quests.is_empty() {
+            draw_text("No active quests", panel_x + 20.0, y, 14.0, GRAY);
+            draw_text("Talk to NPCs with ! above their heads", panel_x + 20.0, y + line_height, 12.0, DARKGRAY);
+        } else {
+            for quest in &state.ui_state.active_quests {
+                // Quest name with icon
+                draw_text("*", panel_x + 15.0, y, 16.0, Color::from_rgba(255, 220, 100, 255));
+                draw_text(&quest.name, panel_x + 30.0, y, 16.0, WHITE);
+                y += line_height + 5.0;
+
+                // Objectives
+                for obj in &quest.objectives {
+                    let (check_char, status_color) = if obj.completed {
+                        ("v", Color::from_rgba(100, 255, 100, 255))
+                    } else {
+                        ("o", Color::from_rgba(180, 180, 180, 255))
+                    };
+
+                    draw_text(check_char, panel_x + 25.0, y, 12.0, status_color);
+
+                    let obj_text = format!("{} ({}/{})", obj.description, obj.current, obj.target);
+                    draw_text(&obj_text, panel_x + 40.0, y, 13.0, status_color);
+                    y += line_height;
+                }
+
+                y += 10.0; // Space between quests
+
+                // Check if we're about to overflow the panel
+                if y > panel_y + panel_height - 50.0 {
+                    let remaining = state.ui_state.active_quests.len().saturating_sub(1);
+                    if remaining > 0 {
+                        draw_text(&format!("...and {} more quests", remaining), panel_x + 20.0, y, 12.0, GRAY);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Close hint at bottom
+        draw_text("Press Q to close", panel_x + 15.0, panel_y + panel_height - 20.0, 12.0, GRAY);
     }
 
     fn render_quick_slots(&self, state: &GameState) {

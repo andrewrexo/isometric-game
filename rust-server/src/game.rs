@@ -451,6 +451,18 @@ impl GameRoom {
         })
     }
 
+    /// Initialize quest state for a player (called on join)
+    pub async fn set_player_quest_state(&self, player_id: &str, state: PlayerQuestState) {
+        let mut quest_states = self.player_quest_states.write().await;
+        quest_states.insert(player_id.to_string(), state);
+    }
+
+    /// Get quest state for saving (called on disconnect/auto-save)
+    pub async fn get_player_quest_state(&self, player_id: &str) -> Option<PlayerQuestState> {
+        let quest_states = self.player_quest_states.read().await;
+        quest_states.get(player_id).cloned()
+    }
+
     pub async fn player_count(&self) -> usize {
         let players = self.players.read().await;
         players.values().filter(|p| p.active).count()
@@ -1107,6 +1119,22 @@ impl GameRoom {
                 "Player {} interacting with quest {} (state: {})",
                 player_id, quest_id, state
             );
+
+            // Trigger NpcInteraction event to complete any talk_to objectives
+            // This must happen BEFORE running the script so the script sees the updated state
+            let event = QuestEvent::NpcInteraction {
+                player_id: player_id.to_string(),
+                npc_id: entity_type.clone(),
+            };
+            let talk_results = self.quest_registry.process_event(&event, quest_state).await;
+            for result in talk_results {
+                if result.quest_ready {
+                    tracing::info!(
+                        "Player {} quest {} is now ready to complete after talking to NPC",
+                        player_id, result.quest_id
+                    );
+                }
+            }
 
             // Run the quest script interaction
             let result = self.quest_runner.run_on_interact(

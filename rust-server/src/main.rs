@@ -605,6 +605,22 @@ async fn matchmake_join_or_create(
         room.reserve_player(&player_id, &username).await;
     }
 
+    // Load quest state from database
+    match state.db.load_quest_state(db_player_id).await {
+        Ok(quest_state) => {
+            let active_count = quest_state.active_quests.len();
+            let completed_count = quest_state.completed_quests.len();
+            room.set_player_quest_state(&player_id, quest_state).await;
+            if active_count > 0 || completed_count > 0 {
+                info!("Loaded quest state for {}: {} active, {} completed", username, active_count, completed_count);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load quest state for {}: {}", username, e);
+            // Continue with empty quest state (default)
+        }
+    }
+
     let client_count = room.player_count().await;
 
     // Generate signed session token for WebSocket upgrade
@@ -840,6 +856,11 @@ async fn handle_socket(
         .unwrap_or(false);
 
     if should_save {
+        // Get db_player_id from session
+        let db_player_id = state.sessions.get(&session_id)
+            .map(|s| s.db_player_id)
+            .unwrap_or(0);
+
         // Save player state to database
         if let Some(save_data) = room.get_player_save_data(&player_id).await {
             if let Err(e) = state.db.save_player(
@@ -857,6 +878,18 @@ async fn handle_socket(
                 error!("Failed to save player {} on disconnect: {}", username, e);
             } else {
                 info!("Saved player {} to database on disconnect", username);
+            }
+        }
+
+        // Save quest state to database
+        if db_player_id > 0 {
+            if let Some(quest_state) = room.get_player_quest_state(&player_id).await {
+                if let Err(e) = state.db.save_quest_state(db_player_id, &quest_state).await {
+                    error!("Failed to save quest state for {} on disconnect: {}", username, e);
+                } else if !quest_state.active_quests.is_empty() || !quest_state.completed_quests.is_empty() {
+                    info!("Saved quest state for {}: {} active, {} completed",
+                        username, quest_state.active_quests.len(), quest_state.completed_quests.len());
+                }
             }
         }
     } else {
@@ -998,6 +1031,12 @@ async fn main() {
                         } else {
                             saved_count += 1;
                         }
+                    }
+
+                    // Also save quest state
+                    let db_player_id = session_data.db_player_id;
+                    if let Some(quest_state) = room.get_player_quest_state(player_id).await {
+                        let _ = save_state.db.save_quest_state(db_player_id, &quest_state).await;
                     }
                 }
             }

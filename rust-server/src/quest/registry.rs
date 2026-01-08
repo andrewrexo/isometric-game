@@ -397,6 +397,24 @@ impl QuestRegistry {
                     if objective.objective_type == ObjectiveType::TalkTo
                         && objective.target == npc_id
                     {
+                        // Check if this is a sequential objective (must complete others first)
+                        if objective.sequential {
+                            // Get all other objectives and check if they're complete
+                            if let Some(progress) = player_state.get_quest(&quest_id) {
+                                let others_complete = quest.objectives.iter()
+                                    .filter(|o| o.id != objective.id)
+                                    .all(|o| {
+                                        progress.objectives.get(&o.id)
+                                            .map(|p| p.completed)
+                                            .unwrap_or(false)
+                                    });
+                                if !others_complete {
+                                    // Can't complete this objective yet
+                                    continue;
+                                }
+                            }
+                        }
+
                         if let Some(result) = self.force_complete_objective(
                             player_state, &quest_id, &objective.id
                         ) {

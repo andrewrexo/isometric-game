@@ -88,15 +88,9 @@ impl InputHandler {
                     }
                 }
             } else {
-                // No choices - press Enter or Space to continue/close
+                // No choices - press Enter, Space, or Escape to close
+                // Just close locally like Escape does - no server message needed
                 if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::Space) {
-                    // Send continue signal to server so script can proceed
-                    commands.push(InputCommand::DialogueChoice {
-                        quest_id: dialogue.quest_id.clone(),
-                        choice_id: "__continue__".to_string(),
-                    });
-                    // Close dialogue immediately - don't wait for server response
-                    // Server may send a new dialogue if the script continues
                     state.ui_state.active_dialogue = None;
                     return commands;
                 }

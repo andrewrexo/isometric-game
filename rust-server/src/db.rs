@@ -4,6 +4,9 @@ use argon2::{
 };
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
+use crate::quest::state::{PlayerQuestState, QuestProgress, QuestStatus, ObjectiveProgress};
+use std::collections::HashMap;
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
 pub struct PlayerData {
@@ -244,5 +247,172 @@ impl Database {
             }
         }
         None
+    }
+
+    /// Load quest state for a player from database
+    pub async fn load_quest_state(&self, db_player_id: i64) -> Result<PlayerQuestState, sqlx::Error> {
+        let mut state = PlayerQuestState::new();
+
+        // Load quests from player_quests table
+        let quest_rows = sqlx::query(
+            "SELECT quest_id, state, objectives_json, started_at, completed_at FROM player_quests WHERE player_id = ?"
+        )
+        .bind(db_player_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        for row in quest_rows {
+            let quest_id: String = row.get("quest_id");
+            let state_str: String = row.get("state");
+            let objectives_json: String = row.get("objectives_json");
+            let started_at: Option<String> = row.get("started_at");
+            let completed_at: Option<String> = row.get("completed_at");
+
+            let status = QuestStatus::from_str(&state_str).unwrap_or(QuestStatus::Active);
+
+            // Parse timestamps
+            let started_at_dt = started_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc)));
+            let completed_at_dt = completed_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc)));
+
+            // Deserialize objectives
+            let objectives = QuestProgress::objectives_from_json(&objectives_json);
+
+            let progress = QuestProgress {
+                quest_id: quest_id.clone(),
+                status,
+                objectives,
+                started_at: started_at_dt,
+                completed_at: completed_at_dt,
+            };
+
+            match status {
+                QuestStatus::Completed => {
+                    state.completed_quests.push(quest_id);
+                }
+                QuestStatus::Active | QuestStatus::ReadyToComplete => {
+                    state.active_quests.insert(quest_id, progress);
+                }
+                _ => {
+                    // Failed/Abandoned quests are stored but not active
+                }
+            }
+        }
+
+        // Load available quests
+        let available_rows = sqlx::query(
+            "SELECT quest_id FROM player_quest_availability WHERE player_id = ?"
+        )
+        .bind(db_player_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        for row in available_rows {
+            let quest_id: String = row.get("quest_id");
+            // Only add if not already active or completed
+            if !state.active_quests.contains_key(&quest_id) && !state.completed_quests.contains(&quest_id) {
+                state.available_quests.push(quest_id);
+            }
+        }
+
+        // Load flags
+        let flag_rows = sqlx::query(
+            "SELECT flag_name, flag_value FROM player_flags WHERE player_id = ?"
+        )
+        .bind(db_player_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        for row in flag_rows {
+            let flag_name: String = row.get("flag_name");
+            let flag_value: Option<String> = row.get("flag_value");
+            if let Some(value) = flag_value {
+                state.flags.insert(flag_name, value);
+            }
+        }
+
+        tracing::debug!("Loaded quest state for player {}: {} active, {} completed, {} available",
+            db_player_id,
+            state.active_quests.len(),
+            state.completed_quests.len(),
+            state.available_quests.len()
+        );
+
+        Ok(state)
+    }
+
+    /// Save quest state for a player to database
+    pub async fn save_quest_state(&self, db_player_id: i64, state: &PlayerQuestState) -> Result<(), sqlx::Error> {
+        // Save active quests
+        for (quest_id, progress) in &state.active_quests {
+            let objectives_json = progress.objectives_to_json();
+            let started_at = progress.started_at.map(|dt| dt.to_rfc3339());
+            let completed_at = progress.completed_at.map(|dt| dt.to_rfc3339());
+
+            sqlx::query(
+                r#"INSERT INTO player_quests (player_id, quest_id, state, objectives_json, started_at, completed_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(player_id, quest_id) DO UPDATE SET
+                       state = excluded.state,
+                       objectives_json = excluded.objectives_json,
+                       started_at = excluded.started_at,
+                       completed_at = excluded.completed_at"#
+            )
+            .bind(db_player_id)
+            .bind(quest_id)
+            .bind(progress.status.as_str())
+            .bind(&objectives_json)
+            .bind(&started_at)
+            .bind(&completed_at)
+            .execute(&self.pool)
+            .await?;
+        }
+
+        // Save completed quests
+        for quest_id in &state.completed_quests {
+            // Only insert if not exists - completed quests are immutable
+            sqlx::query(
+                r#"INSERT OR IGNORE INTO player_quests (player_id, quest_id, state, completed_at)
+                   VALUES (?, ?, 'completed', CURRENT_TIMESTAMP)"#
+            )
+            .bind(db_player_id)
+            .bind(quest_id)
+            .execute(&self.pool)
+            .await?;
+        }
+
+        // Save available quests
+        for quest_id in &state.available_quests {
+            sqlx::query(
+                r#"INSERT OR IGNORE INTO player_quest_availability (player_id, quest_id)
+                   VALUES (?, ?)"#
+            )
+            .bind(db_player_id)
+            .bind(quest_id)
+            .execute(&self.pool)
+            .await?;
+        }
+
+        // Save flags
+        for (flag_name, flag_value) in &state.flags {
+            sqlx::query(
+                r#"INSERT INTO player_flags (player_id, flag_name, flag_value)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(player_id, flag_name) DO UPDATE SET
+                       flag_value = excluded.flag_value"#
+            )
+            .bind(db_player_id)
+            .bind(flag_name)
+            .bind(flag_value)
+            .execute(&self.pool)
+            .await?;
+        }
+
+        tracing::debug!("Saved quest state for player {}: {} active, {} completed",
+            db_player_id,
+            state.active_quests.len(),
+            state.completed_quests.len()
+        );
+
+        Ok(())
     }
 }
