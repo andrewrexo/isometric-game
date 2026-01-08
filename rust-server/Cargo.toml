@@ -33,3 +33,8 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 
 # Password hashing
 argon2 = "0.5"
+
+# Session token signing
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"

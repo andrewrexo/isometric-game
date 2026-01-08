@@ -9,7 +9,8 @@ use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract
 #[serde(rename_all = "camelCase")]
 struct MatchmakeResponse {
     room: RoomInfo,
-    session_id: String,
+    /// Signed session token for secure WebSocket upgrade
+    session_token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,7 +46,8 @@ pub struct NetworkClient {
     connection_state: ConnectionState,
     reconnect_timer: f32,
     room_id: Option<String>,
-    session_id: Option<String>,
+    /// Signed session token for secure WebSocket upgrade
+    session_token: Option<String>,
     // Auth fields
     auth_token: Option<String>,
     character_id: Option<i64>,
@@ -67,7 +69,7 @@ impl NetworkClient {
             connection_state: ConnectionState::Disconnected,
             reconnect_timer: 0.0,
             room_id: None,
-            session_id: None,
+            session_token: None,
             auth_token: None,
             character_id: None,
         };
@@ -85,7 +87,7 @@ impl NetworkClient {
             connection_state: ConnectionState::Disconnected,
             reconnect_timer: 0.0,
             room_id: None,
-            session_id: None,
+            session_token: None,
             auth_token: Some(auth_token.to_string()),
             character_id: Some(character_id),
         };
@@ -93,8 +95,8 @@ impl NetworkClient {
         client
     }
 
-    /// Create a client with a specific player name (for simple account=character model)
-    pub fn new_with_name(base_url: &str, player_name: &str) -> Self {
+    /// Create a client with auth token (simple account=character model)
+    pub fn new_with_token(base_url: &str, auth_token: &str, player_name: &str) -> Self {
         let mut client = Self {
             sender: None,
             receiver: None,
@@ -103,9 +105,9 @@ impl NetworkClient {
             connection_state: ConnectionState::Disconnected,
             reconnect_timer: 0.0,
             room_id: None,
-            session_id: None,
-            auth_token: None,
-            character_id: None,
+            session_token: None,
+            auth_token: Some(auth_token.to_string()),
+            character_id: None, // Not used in simple model
         };
         client.start_matchmaking();
         client
@@ -121,36 +123,33 @@ impl NetworkClient {
 
         let matchmake_url = format!("{}/matchmake/joinOrCreate/game_room", http_url);
 
-        // Build request with or without auth
+        // Build request - auth is required
         let request = ureq::post(&matchmake_url)
             .set("Content-Type", "application/json");
 
-        let result = if let (Some(token), Some(char_id)) = (&self.auth_token, &self.character_id) {
+        let result = if let Some(token) = &self.auth_token {
             // Authenticated matchmaking
             log::info!("Matchmaking (authenticated): POST {}", matchmake_url);
-            let options = AuthenticatedJoinOptions {
-                character_id: *char_id,
+            let options = JoinOptions {
+                name: self.player_name.clone(),
             };
             request
                 .set("Authorization", &format!("Bearer {}", token))
                 .send_json(&options)
         } else {
-            // Guest matchmaking
-            log::info!("Matchmaking (guest): POST {}", matchmake_url);
-            let options = JoinOptions {
-                name: self.player_name.clone(),
-            };
-            request.send_json(&options)
+            // No auth token - this will fail with 401
+            log::error!("Matchmaking failed: No auth token. Login required.");
+            self.connection_state = ConnectionState::Disconnected;
+            return;
         };
 
         match result {
             Ok(response) => {
                 match response.into_json::<MatchmakeResponse>() {
                     Ok(data) => {
-                        log::info!("Matchmaking success: room={}, session={}",
-                            data.room.room_id, data.session_id);
+                        log::info!("Matchmaking success: room={}", data.room.room_id);
                         self.room_id = Some(data.room.room_id);
-                        self.session_id = Some(data.session_id);
+                        self.session_token = Some(data.session_token);
                         self.connect_websocket();
                     }
                     Err(e) => {
@@ -171,15 +170,15 @@ impl NetworkClient {
         // In WASM, JavaScript does matchmaking before loading WASM
         // and stores the result in localStorage
         let room_id = quad_storage::STORAGE.lock().unwrap().get("roomId");
-        let session_id = quad_storage::STORAGE.lock().unwrap().get("sessionId");
+        let session_token = quad_storage::STORAGE.lock().unwrap().get("sessionToken");
 
-        if let (Some(rid), Some(sid)) = (room_id, session_id) {
-            log::info!("WASM: Connecting with roomId={}, sessionId={}", rid, sid);
+        if let (Some(rid), Some(token)) = (room_id, session_token) {
+            log::info!("WASM: Connecting with roomId={}", rid);
             self.room_id = Some(rid);
-            self.session_id = Some(sid);
+            self.session_token = Some(token);
             self.connect_websocket();
         } else {
-            log::error!("WASM: Missing roomId or sessionId in localStorage. JavaScript should matchmake first.");
+            log::error!("WASM: Missing roomId or sessionToken in localStorage. JavaScript should matchmake first.");
             self.connection_state = ConnectionState::Disconnected;
         }
     }
@@ -189,13 +188,16 @@ impl NetworkClient {
             Some(id) => id,
             None => return,
         };
-        let session_id = match &self.session_id {
-            Some(id) => id,
-            None => return,
+        let token = match &self.session_token {
+            Some(t) => t,
+            None => {
+                log::error!("No session token available");
+                return;
+            }
         };
 
-        let ws_url = format!("{}/{}?sessionId={}", self.base_url, room_id, session_id);
-        log::info!("Connecting WebSocket: {}", ws_url);
+        let ws_url = format!("{}/{}?sessionToken={}", self.base_url, room_id, token);
+        log::info!("Connecting WebSocket: {}...", &ws_url[..ws_url.len().min(80)]);
 
         self.connection_state = ConnectionState::Connecting;
 
@@ -247,10 +249,7 @@ impl NetworkClient {
                     log::info!("WebSocket connected!");
                     self.connection_state = ConnectionState::Connected;
                     state.connection_status = ConnectionStatus::Connected;
-
-                    if let Some(session_id) = &self.session_id {
-                        state.local_player_id = Some(session_id.clone());
-                    }
+                    // local_player_id is set by the "welcome" message from server
                 }
 
                 WsEvent::Message(WsMessage::Binary(bytes)) => {
@@ -281,7 +280,7 @@ impl NetworkClient {
             self.sender = None;
             self.receiver = None;
             self.room_id = None;
-            self.session_id = None;
+            self.session_token = None;
         }
     }
 
@@ -667,6 +666,7 @@ impl NetworkClient {
             }
 
             "inventoryUpdate" => {
+                // Server sends this only to the owning player (unicast)
                 if let Some(value) = data {
                     // Clear current inventory
                     for slot in state.inventory.slots.iter_mut() {
@@ -702,6 +702,7 @@ impl NetworkClient {
             }
 
             "itemUsed" => {
+                // Server sends this only to the owning player (unicast)
                 if let Some(value) = data {
                     let slot = extract_u8(value, "slot").unwrap_or(0);
                     let item_type = extract_u8(value, "item_type").unwrap_or(0);

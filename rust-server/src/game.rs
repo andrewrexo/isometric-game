@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use uuid::Uuid;
 
 use crate::chunk::ChunkCoord;
@@ -227,6 +227,8 @@ pub struct GameRoom {
     player_chunks: RwLock<HashMap<String, ChunkCoord>>,
     tick: RwLock<u64>,
     broadcast_tx: broadcast::Sender<ServerMessage>,
+    /// Per-player message senders for unicast (SECURITY: private inventory updates)
+    player_senders: RwLock<HashMap<String, mpsc::Sender<Vec<u8>>>>,
 }
 
 impl GameRoom {
@@ -259,6 +261,7 @@ impl GameRoom {
             player_chunks: RwLock::new(HashMap::new()),
             tick: RwLock::new(0),
             broadcast_tx: tx,
+            player_senders: RwLock::new(HashMap::new()),
         }
     }
 
@@ -269,6 +272,37 @@ impl GameRoom {
     pub async fn broadcast(&self, msg: ServerMessage) {
         // Ignore send errors (no receivers)
         let _ = self.broadcast_tx.send(msg);
+    }
+
+    /// Register a player's message sender for unicast
+    pub async fn register_player_sender(&self, player_id: &str, sender: mpsc::Sender<Vec<u8>>) {
+        let mut senders = self.player_senders.write().await;
+        senders.insert(player_id.to_string(), sender);
+        tracing::debug!("Registered sender for player {}", player_id);
+    }
+
+    /// Unregister a player's message sender
+    pub async fn unregister_player_sender(&self, player_id: &str) {
+        let mut senders = self.player_senders.write().await;
+        senders.remove(player_id);
+        tracing::debug!("Unregistered sender for player {}", player_id);
+    }
+
+    /// Send a message to a specific player (unicast)
+    /// SECURITY: Use this for private data like inventory updates
+    pub async fn send_to_player(&self, player_id: &str, msg: ServerMessage) {
+        use crate::protocol::encode_server_message;
+
+        let senders = self.player_senders.read().await;
+        if let Some(sender) = senders.get(player_id) {
+            if let Ok(bytes) = encode_server_message(&msg) {
+                if let Err(e) = sender.try_send(bytes) {
+                    tracing::warn!("Failed to send unicast to {}: {}", player_id, e);
+                }
+            }
+        } else {
+            tracing::debug!("No sender registered for player {}", player_id);
+        }
     }
 
     pub async fn reserve_player(&self, player_id: &str, name: &str) {
@@ -797,19 +831,20 @@ impl GameRoom {
                     }
                 };
 
-                // Broadcast pickup
+                // Broadcast pickup (public info - everyone sees item disappear)
                 let pickup_msg = ServerMessage::ItemPickedUp {
                     item_id: item_id.to_string(),
                     player_id: player_id.to_string(),
                 };
                 self.broadcast(pickup_msg).await;
 
-                // Send inventory update to the player who picked up
+                // SECURITY: Unicast inventory update (private - only this player receives)
                 let inv_msg = ServerMessage::InventoryUpdate {
+                    player_id: player_id.to_string(),
                     slots: inventory_update,
                     gold,
                 };
-                self.broadcast(inv_msg).await; // TODO: Send only to this player
+                self.send_to_player(player_id, inv_msg).await;
 
                 // If some items couldn't fit, drop them back on ground
                 if leftover > 0 {
@@ -858,20 +893,21 @@ impl GameRoom {
         if let Some(item_type) = used_item {
             tracing::debug!("Player {} used {} ({})", player_id, item_type.name(), effect);
 
-            // Send item used message
+            // SECURITY: Unicast item used and inventory update (private to this player)
             let used_msg = ServerMessage::ItemUsed {
+                player_id: player_id.to_string(),
                 slot: slot_index,
                 item_type: item_type as u8,
                 effect,
             };
-            self.broadcast(used_msg).await;
+            self.send_to_player(player_id, used_msg).await;
 
-            // Send inventory update
             let inv_msg = ServerMessage::InventoryUpdate {
+                player_id: player_id.to_string(),
                 slots: inventory_update,
                 gold,
             };
-            self.broadcast(inv_msg).await;
+            self.send_to_player(player_id, inv_msg).await;
         }
     }
 

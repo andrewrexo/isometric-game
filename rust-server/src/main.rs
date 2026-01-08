@@ -1,7 +1,7 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, Query, State,
+        ConnectInfo, Path, Query, State,
     },
     http::StatusCode,
     response::IntoResponse,
@@ -9,6 +9,8 @@ use axum::{
     Json, Router,
 };
 use dashmap::DashMap;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -44,7 +46,9 @@ use protocol::{ClientMessage, ServerMessage};
 struct GameSession {
     room_id: String,
     player_id: String,
-    username: String, // For DB persistence
+    username: String,      // For DB persistence
+    db_player_id: i64,     // Database player ID (from auth)
+    auth_token: String,    // Token used for this session (for validation)
 }
 
 #[derive(Clone)]
@@ -55,6 +59,10 @@ struct AppState {
     // Auth token -> (Username, Player DB ID)
     auth_sessions: AuthSessions,
     db: Arc<Database>,
+    auth_rate_limiter: RateLimiter,
+    matchmake_rate_limiter: RateLimiter,
+    // SECURITY: Signed session token generator
+    token_signer: SessionTokenSigner,
 }
 
 impl AppState {
@@ -69,6 +77,12 @@ impl AppState {
             sessions: Arc::new(DashMap::new()),
             auth_sessions: Arc::new(DashMap::new()),
             db: Arc::new(db),
+            // Auth: 10 attempts per 60 seconds per IP
+            auth_rate_limiter: RateLimiter::new(10, 60),
+            // Matchmaking: 20 attempts per 60 seconds per IP
+            matchmake_rate_limiter: RateLimiter::new(20, 60),
+            // SECURITY: Token signer for session tokens
+            token_signer: SessionTokenSigner::new(),
         }
     }
 
@@ -94,6 +108,154 @@ impl AppState {
 /// Auth sessions: token -> (username, player_id)
 type AuthSessions = Arc<DashMap<String, (String, i64)>>;
 
+/// Rate limiter entry: (request_count, window_start_time)
+type RateLimitEntry = (u32, std::time::Instant);
+
+// ============================================================================
+// Signed Session Tokens (Security Hardening)
+// ============================================================================
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Session token validity duration
+const SESSION_TOKEN_EXPIRY_SECS: u64 = 300; // 5 minutes
+
+/// Signed session token generator/validator
+#[derive(Clone)]
+struct SessionTokenSigner {
+    /// Secret key for HMAC signing (generated at startup)
+    secret: Vec<u8>,
+}
+
+impl SessionTokenSigner {
+    fn new() -> Self {
+        // Generate a random 32-byte secret at startup
+        use rand::RngCore;
+        let mut secret = vec![0u8; 32];
+        rand::thread_rng().fill_bytes(&mut secret);
+        Self { secret }
+    }
+
+    /// Create a signed session token
+    /// Format: base64(session_id:room_id:expiry_ts:signature)
+    fn create_token(&self, session_id: &str, room_id: &str) -> String {
+        use base64::Engine;
+
+        let expiry = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() + SESSION_TOKEN_EXPIRY_SECS;
+
+        let payload = format!("{}:{}:{}", session_id, room_id, expiry);
+
+        let mut mac = HmacSha256::new_from_slice(&self.secret)
+            .expect("HMAC can take key of any size");
+        mac.update(payload.as_bytes());
+        let signature = mac.finalize().into_bytes();
+
+        let token_data = format!("{}:{}", payload, base64::engine::general_purpose::STANDARD.encode(signature));
+        base64::engine::general_purpose::URL_SAFE.encode(token_data)
+    }
+
+    /// Validate a signed session token
+    /// Returns Some((session_id, room_id)) if valid, None if invalid/expired
+    fn validate_token(&self, token: &str) -> Option<(String, String)> {
+        use base64::Engine;
+
+        // Decode base64
+        let token_data = base64::engine::general_purpose::URL_SAFE.decode(token).ok()?;
+        let token_str = String::from_utf8(token_data).ok()?;
+
+        // Parse: session_id:room_id:expiry:signature
+        let parts: Vec<&str> = token_str.splitn(4, ':').collect();
+        if parts.len() != 4 {
+            return None;
+        }
+
+        let session_id = parts[0];
+        let room_id = parts[1];
+        let expiry: u64 = parts[2].parse().ok()?;
+        let signature_b64 = parts[3];
+
+        // Check expiry
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if now > expiry {
+            warn!("Session token expired: {} > {}", now, expiry);
+            return None;
+        }
+
+        // Verify signature
+        let payload = format!("{}:{}:{}", session_id, room_id, expiry);
+        let expected_sig = base64::engine::general_purpose::STANDARD.decode(signature_b64).ok()?;
+
+        let mut mac = HmacSha256::new_from_slice(&self.secret)
+            .expect("HMAC can take key of any size");
+        mac.update(payload.as_bytes());
+
+        if mac.verify_slice(&expected_sig).is_err() {
+            warn!("Session token signature invalid");
+            return None;
+        }
+
+        Some((session_id.to_string(), room_id.to_string()))
+    }
+}
+
+/// Simple IP-based rate limiter
+#[derive(Clone)]
+struct RateLimiter {
+    /// IP -> (request_count, window_start)
+    entries: Arc<DashMap<String, RateLimitEntry>>,
+    /// Max requests per window
+    max_requests: u32,
+    /// Window duration
+    window_duration: Duration,
+}
+
+impl RateLimiter {
+    fn new(max_requests: u32, window_secs: u64) -> Self {
+        Self {
+            entries: Arc::new(DashMap::new()),
+            max_requests,
+            window_duration: Duration::from_secs(window_secs),
+        }
+    }
+
+    /// Check if request is allowed. Returns true if allowed, false if rate limited.
+    fn check(&self, ip: &str) -> bool {
+        let now = std::time::Instant::now();
+
+        let mut entry = self.entries.entry(ip.to_string()).or_insert((0, now));
+        let (count, window_start) = entry.value_mut();
+
+        // Reset window if expired
+        if now.duration_since(*window_start) > self.window_duration {
+            *count = 0;
+            *window_start = now;
+        }
+
+        // Check limit
+        if *count >= self.max_requests {
+            return false;
+        }
+
+        *count += 1;
+        true
+    }
+
+    /// Record a failed login attempt (for stricter limiting on failures)
+    fn record_failure(&self, ip: &str) {
+        let now = std::time::Instant::now();
+        let mut entry = self.entries.entry(ip.to_string()).or_insert((0, now));
+        let (count, _) = entry.value_mut();
+        // Add extra penalty for failures
+        *count = (*count).saturating_add(2);
+    }
+}
+
 #[derive(Deserialize)]
 struct RegisterRequest {
     username: String,
@@ -116,8 +278,21 @@ struct AuthResponse {
 
 async fn register_account(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(req): Json<RegisterRequest>,
 ) -> impl IntoResponse {
+    let client_ip = addr.ip().to_string();
+
+    if !state.auth_rate_limiter.check(&client_ip) {
+        warn!("Rate limit exceeded for registration from {}", client_ip);
+        return Json(AuthResponse {
+            success: false,
+            token: None,
+            username: None,
+            error: Some("Too many requests. Please try again later.".to_string()),
+        });
+    }
+
     // Validate input
     if req.username.len() < 3 {
         return Json(AuthResponse {
@@ -142,7 +317,7 @@ async fn register_account(
             let token = Uuid::new_v4().to_string();
             state.auth_sessions.insert(token.clone(), (req.username.clone(), player_id));
 
-            info!("Account registered: {} (id: {})", req.username, player_id);
+            info!("Account registered: {} (id: {}) from {}", req.username, player_id, client_ip);
 
             Json(AuthResponse {
                 success: true,
@@ -164,8 +339,21 @@ async fn register_account(
 
 async fn login_account(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(req): Json<LoginRequest>,
 ) -> impl IntoResponse {
+    let client_ip = addr.ip().to_string();
+
+    if !state.auth_rate_limiter.check(&client_ip) {
+        warn!("Rate limit exceeded for login from {}", client_ip);
+        return Json(AuthResponse {
+            success: false,
+            token: None,
+            username: None,
+            error: Some("Too many login attempts. Please try again later.".to_string()),
+        });
+    }
+
     match state.db.verify_password(&req.username, &req.password).await {
         Some(player) => {
             // Create auth token
@@ -186,7 +374,7 @@ async fn login_account(
                 &player.inventory_json,
             ).await;
 
-            info!("Player logged in: {}", req.username);
+            info!("Player logged in: {} from {}", req.username, client_ip);
 
             Json(AuthResponse {
                 success: true,
@@ -196,6 +384,9 @@ async fn login_account(
             })
         }
         None => {
+            state.auth_rate_limiter.record_failure(&client_ip);
+            warn!("Failed login attempt for '{}' from {}", req.username, client_ip);
+
             Json(AuthResponse {
                 success: false,
                 token: None,
@@ -232,8 +423,9 @@ struct JoinOptions {
 #[derive(Serialize)]
 struct MatchmakeResponse {
     room: RoomInfo,
-    #[serde(rename = "sessionId")]
-    session_id: String,
+    /// Signed session token for WebSocket upgrade (expires in 5 minutes)
+    #[serde(rename = "sessionToken")]
+    session_token: String,
 }
 
 #[derive(Serialize)]
@@ -246,40 +438,96 @@ struct RoomInfo {
 
 async fn matchmake_join_or_create(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(room_name): Path<String>,
-    Json(options): Json<JoinOptions>,
+    headers: axum::http::HeaderMap,
+    Json(_options): Json<JoinOptions>,
 ) -> impl IntoResponse {
+    let client_ip = addr.ip().to_string();
+
+    if !state.matchmake_rate_limiter.check(&client_ip) {
+        warn!("Rate limit exceeded for matchmaking from {}", client_ip);
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(serde_json::json!({ "error": "Too many requests. Please try again later." }))
+        ).into_response();
+    }
+
+    let auth_token = match headers.get("Authorization") {
+        Some(auth_header) => {
+            match auth_header.to_str() {
+                Ok(auth_str) => {
+                    match auth_str.strip_prefix("Bearer ") {
+                        Some(token) => token.to_string(),
+                        None => {
+                            warn!("Matchmaking rejected: Invalid Authorization format");
+                            return (
+                                StatusCode::UNAUTHORIZED,
+                                Json(serde_json::json!({
+                                    "error": "Invalid authorization format. Use 'Bearer <token>'"
+                                }))
+                            ).into_response();
+                        }
+                    }
+                }
+                Err(_) => {
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        Json(serde_json::json!({ "error": "Invalid authorization header" }))
+                    ).into_response();
+                }
+            }
+        }
+        None => {
+            warn!("Matchmaking rejected: No Authorization header");
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": "Authorization required. Please login first." }))
+            ).into_response();
+        }
+    };
+
+    // Validate token and get authenticated user info
+    let (username, db_player_id) = match state.auth_sessions.get(&auth_token) {
+        Some(auth_data) => auth_data.clone(),
+        None => {
+            warn!("Matchmaking rejected: Invalid or expired token");
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": "Invalid or expired token. Please login again." }))
+            ).into_response();
+        }
+    };
+
     let room = state.get_or_create_room(&room_name);
     let room_id = room.id.clone();
 
-    // Create session for this player
+    // Create session for this player - use a separate session token from player_id
     let session_id = Uuid::new_v4().to_string();
-    let player_id = session_id.clone();
-    let player_name = options
-        .name
-        .clone()
-        .unwrap_or_else(|| format!("Guest{}", &session_id[..4]));
+    let player_id = format!("player_{}", db_player_id);
 
-    // Try to load existing player data from database
-    let player_data = state.db.get_player_by_username(&player_name).await.ok().flatten();
+    // Try to load existing player data from database using authenticated username
+    let player_data = state.db.get_player_by_username(&username).await.ok().flatten();
 
-    // Reserve the session with username for persistence
+    // Reserve the session with authenticated user info
     state.sessions.insert(
         session_id.clone(),
         GameSession {
             room_id: room_id.clone(),
             player_id: player_id.clone(),
-            username: player_name.clone(),
+            username: username.clone(),
+            db_player_id,
+            auth_token: auth_token.clone(),
         },
     );
 
     // Pre-create player with saved data or defaults
     if let Some(data) = player_data {
         // Load saved player
-        info!("Loading saved player: {} at ({}, {})", player_name, data.x, data.y);
+        info!("Loading saved player: {} (db_id: {}) at ({}, {})", username, db_player_id, data.x, data.y);
         room.reserve_player_with_data(
             &player_id,
-            &player_name,
+            &username,
             data.x as i32,
             data.y as i32,
             data.hp,
@@ -292,14 +540,17 @@ async fn matchmake_join_or_create(
         ).await;
     } else {
         // New player with defaults
-        room.reserve_player(&player_id, &player_name).await;
+        room.reserve_player(&player_id, &username).await;
     }
 
     let client_count = room.player_count().await;
 
+    // Generate signed session token for WebSocket upgrade
+    let session_token = state.token_signer.create_token(&session_id, &room_id);
+
     info!(
-        "Matchmaking: session={}, room={}, player={}",
-        session_id, room_id, player_name
+        "Matchmaking: room={}, player={} (db_id: {})",
+        room_id, username, db_player_id
     );
 
     Json(MatchmakeResponse {
@@ -308,8 +559,8 @@ async fn matchmake_join_or_create(
             name: room_name,
             clients: client_count,
         },
-        session_id,
-    })
+        session_token,
+    }).into_response()
 }
 
 async fn health_check() -> impl IntoResponse {
@@ -325,8 +576,9 @@ async fn health_check() -> impl IntoResponse {
 
 #[derive(Deserialize)]
 struct WsQuery {
-    #[serde(rename = "sessionId")]
-    session_id: String,
+    /// Signed session token
+    #[serde(rename = "sessionToken")]
+    session_token: String,
 }
 
 async fn ws_handler(
@@ -335,23 +587,42 @@ async fn ws_handler(
     Query(query): Query<WsQuery>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let session_id = query.session_id;
+    // Validate signed session token
+    let session_id = match state.token_signer.validate_token(&query.session_token) {
+        Some((sid, rid)) => {
+            if rid != room_id {
+                warn!("WebSocket rejected: Token room_id mismatch ({} != {})", rid, room_id);
+                return (StatusCode::FORBIDDEN, "Invalid session token: room mismatch").into_response();
+            }
+            sid
+        }
+        None => {
+            warn!("WebSocket rejected: Invalid or expired session token");
+            return (StatusCode::UNAUTHORIZED, "Invalid or expired session token").into_response();
+        }
+    };
 
-    // Validate session
+    // Validate session exists in our store
     let session_data = state.sessions.get(&session_id).map(|s| s.clone());
 
     match session_data {
         Some(session) if session.room_id == room_id => {
+            // Verify the auth token is still valid
+            if !state.auth_sessions.contains_key(&session.auth_token) {
+                warn!("WebSocket rejected: Auth token expired for session {}", session_id);
+                return (StatusCode::UNAUTHORIZED, "Auth token expired. Please login again.").into_response();
+            }
+
             // Valid session, upgrade to WebSocket
             let player_id = session.player_id.clone();
             let username = session.username.clone();
+            let db_player_id = session.db_player_id;
             ws.on_upgrade(move |socket| {
-                handle_socket(socket, state, room_id, player_id, session_id, username)
+                handle_socket(socket, state, room_id, player_id, session_id, username, db_player_id)
             })
         }
         _ => {
             warn!("Invalid session: {} for room {}", session_id, room_id);
-            // Return error response
             (StatusCode::FORBIDDEN, "Invalid session").into_response()
         }
     }
@@ -364,6 +635,7 @@ async fn handle_socket(
     player_id: String,
     session_id: String,
     username: String,
+    _db_player_id: i64,  // Used for future persistence binding
 ) {
     let (mut sender, mut receiver) = socket.split();
 
@@ -436,6 +708,9 @@ async fn handle_socket(
     // Create channel for sending messages to this client
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(32);
 
+    // SECURITY: Register this player's sender for unicast messages
+    room.register_player_sender(&player_id, tx).await;
+
     // Spawn task to forward messages to WebSocket
     let mut send_task = tokio::spawn(async move {
         loop {
@@ -486,25 +761,36 @@ async fn handle_socket(
     // Cleanup - save player data before removing
     info!("Player {} disconnected from room {}", player_id, room_id);
 
-    // Save player state to database
-    if let Some(save_data) = room.get_player_save_data(&player_id).await {
-        if let Err(e) = state.db.save_player(
-            &username,
-            save_data.x,
-            save_data.y,
-            save_data.hp,
-            save_data.max_hp,
-            save_data.level,
-            save_data.exp,
-            save_data.exp_to_next_level,
-            save_data.gold,
-            &save_data.inventory_json,
-        ).await {
-            error!("Failed to save player {} on disconnect: {}", username, e);
-        } else {
-            info!("Saved player {} to database on disconnect", username);
+    let should_save = state.sessions.get(&session_id)
+        .map(|s| state.auth_sessions.contains_key(&s.auth_token))
+        .unwrap_or(false);
+
+    if should_save {
+        // Save player state to database
+        if let Some(save_data) = room.get_player_save_data(&player_id).await {
+            if let Err(e) = state.db.save_player(
+                &username,
+                save_data.x,
+                save_data.y,
+                save_data.hp,
+                save_data.max_hp,
+                save_data.level,
+                save_data.exp,
+                save_data.exp_to_next_level,
+                save_data.gold,
+                &save_data.inventory_json,
+            ).await {
+                error!("Failed to save player {} on disconnect: {}", username, e);
+            } else {
+                info!("Saved player {} to database on disconnect", username);
+            }
         }
+    } else {
+        warn!("Skipping save for {} on disconnect: invalid auth", username);
     }
+
+    // SECURITY: Unregister player sender before cleanup
+    room.unregister_player_sender(&player_id).await;
 
     state.sessions.remove(&session_id);
     room.remove_player(&player_id).await;
@@ -599,6 +885,12 @@ async fn main() {
                 let room_id = &session_data.room_id;
                 let player_id = &session_data.player_id;
                 let username = &session_data.username;
+                let auth_token = &session_data.auth_token;
+
+                if !save_state.auth_sessions.contains_key(auth_token) {
+                    warn!("Auto-save skipped for {}: auth token no longer valid", username);
+                    continue;
+                }
 
                 // Get the room and player save data
                 if let Some(room) = save_state.rooms.get(room_id) {
@@ -641,12 +933,19 @@ async fn main() {
         .route("/matchmake/joinOrCreate/:room", post(matchmake_join_or_create))
         // WebSocket
         .route("/:room_id", get(ws_handler))
-        .layer(CorsLayer::permissive())
+        // In development, you may want CorsLayer::permissive()
+        // For production, specify allowed origins explicitly
+        .layer(
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::Any) // TODO: Replace with specific origins in production
+                .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+                .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION])
+        )
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 2567));
     info!("Game server listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
 }

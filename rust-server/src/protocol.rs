@@ -131,10 +131,12 @@ pub enum ServerMessage {
         item_id: String,
     },
     InventoryUpdate {
+        player_id: String,
         slots: Vec<crate::item::InventorySlotUpdate>,
         gold: i32,
     },
     ItemUsed {
+        player_id: String,
         slot: u8,
         item_type: u8,
         effect: String, // e.g., "heal:30"
@@ -507,8 +509,9 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             ));
             Value::Map(map)
         }
-        ServerMessage::InventoryUpdate { slots, gold } => {
+        ServerMessage::InventoryUpdate { player_id, slots, gold } => {
             let mut map = Vec::new();
+            map.push((Value::String("player_id".into()), Value::String(player_id.clone().into())));
 
             let slot_values: Vec<Value> = slots.iter().map(|s| {
                 let mut smap = Vec::new();
@@ -522,8 +525,9 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("gold".into()), Value::Integer((*gold as i64).into())));
             Value::Map(map)
         }
-        ServerMessage::ItemUsed { slot, item_type, effect } => {
+        ServerMessage::ItemUsed { player_id, slot, item_type, effect } => {
             let mut map = Vec::new();
+            map.push((Value::String("player_id".into()), Value::String(player_id.clone().into())));
             map.push((Value::String("slot".into()), Value::Integer((*slot as i64).into())));
             map.push((Value::String("item_type".into()), Value::Integer((*item_type as i64).into())));
             map.push((Value::String("effect".into()), Value::String(effect.clone().into())));

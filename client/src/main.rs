@@ -89,8 +89,8 @@ async fn main() {
                             let mut game_state = GameState::new();
                             game_state.selected_character_name = Some(session.username.clone());
 
-                            // Use guest matchmaking but with authenticated session stored
-                            let network = NetworkClient::new_with_name(WS_URL, &session.username);
+                            // Authenticated matchmaking with token
+                            let network = NetworkClient::new_with_token(WS_URL, &session.token, &session.username);
                             let input_handler = InputHandler::new();
 
                             app_state = AppState::Playing {

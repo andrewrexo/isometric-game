@@ -241,19 +241,18 @@ impl From<&GroundItem> for GroundItemUpdate {
 // ============================================================================
 
 use crate::npc::NpcType;
+use rand::Rng;
 
 /// Generate random drops for an NPC
 pub fn generate_drops(npc_type: NpcType, x: f32, y: f32, killer_id: &str, current_time: u64) -> Vec<GroundItem> {
     let mut drops = Vec::new();
     let mut item_counter = 0u32;
-
-    // Simple pseudo-random based on current time
-    let rand_seed = (current_time % 1000) as u32;
+    let mut rng = rand::thread_rng();
 
     match npc_type {
         NpcType::Slime => {
             // Always drop some gold (5-15)
-            let gold_amount = 5 + (rand_seed % 11) as i32;
+            let gold_amount = rng.gen_range(5..=15);
             let id = format!("item_{}_{}", current_time, item_counter);
             item_counter += 1;
             drops.push(GroundItem::new(
@@ -267,7 +266,7 @@ pub fn generate_drops(npc_type: NpcType, x: f32, y: f32, killer_id: &str, curren
             ));
 
             // 30% chance to drop Slime Core
-            if rand_seed % 10 < 3 {
+            if rng.gen_range(0..100) < 30 {
                 let id = format!("item_{}_{}", current_time, item_counter);
                 item_counter += 1;
                 drops.push(GroundItem::new(
@@ -282,7 +281,7 @@ pub fn generate_drops(npc_type: NpcType, x: f32, y: f32, killer_id: &str, curren
             }
 
             // 20% chance to drop Health Potion
-            if rand_seed % 10 < 2 {
+            if rng.gen_range(0..100) < 20 {
                 let id = format!("item_{}_{}", current_time, item_counter);
                 drops.push(GroundItem::new(
                     &id,
