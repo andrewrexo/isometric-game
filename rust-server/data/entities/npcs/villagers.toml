@@ -1,0 +1,70 @@
+# Village NPCs - Quest Givers and Friendly NPCs
+
+# ============================================================================
+# Village Elder - Tutorial Quest Giver
+# ============================================================================
+[elder_villager]
+display_name = "Village Elder"
+sprite = "elder_villager"
+animation_type = "humanoid"
+description = "The wise elder of the village. He knows much about the dangers lurking in the nearby forest."
+
+[elder_villager.stats]
+max_hp = 200
+damage = 0
+attack_range = 0
+aggro_range = 0
+chase_range = 0
+move_cooldown_ms = 0
+attack_cooldown_ms = 0
+respawn_time_ms = 0
+
+[elder_villager.rewards]
+exp_base = 0
+gold_min = 0
+gold_max = 0
+
+[elder_villager.behaviors]
+hostile = false
+quest_giver = true
+
+[elder_villager.quest_giver]
+available_quests = ["first_hunt", "forest_dangers"]
+
+[elder_villager.dialogue]
+greeting = "Welcome, traveler. The village could use someone with your abilities."
+quest_available = "I have a task that needs completing, if you're willing."
+quest_complete = "You've done well. The village thanks you."
+
+# ============================================================================
+# Blacksmith - Future merchant/craftsman
+# ============================================================================
+[blacksmith]
+display_name = "Blacksmith"
+sprite = "blacksmith"
+animation_type = "humanoid"
+description = "The village blacksmith. He can repair and improve equipment."
+
+[blacksmith.stats]
+max_hp = 150
+damage = 0
+attack_range = 0
+aggro_range = 0
+chase_range = 0
+move_cooldown_ms = 0
+attack_cooldown_ms = 0
+respawn_time_ms = 0
+
+[blacksmith.rewards]
+exp_base = 0
+gold_min = 0
+gold_max = 0
+
+[blacksmith.behaviors]
+hostile = false
+merchant = true
+craftsman = true
+
+[blacksmith.dialogue]
+greeting = "Need something forged? I'm your man."
+shop_open = "Take a look at my wares."

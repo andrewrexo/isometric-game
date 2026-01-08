@@ -44,9 +44,192 @@
          "width":32,
          "x":0,
          "y":0
+        },
+        {
+         "draworder":"topdown",
+         "id":2,
+         "name":"entities",
+         "objects":[
+                {
+                 "height":32,
+                 "id":1,
+                 "name":"Village Elder",
+                 "properties":[
+                        {
+                         "name":"entity_id",
+                         "type":"string",
+                         "value":"elder_villager"
+                        },
+                        {
+                         "name":"level",
+                         "type":"int",
+                         "value":1
+                        },
+                        {
+                         "name":"unique_id",
+                         "type":"string",
+                         "value":"elder_villager_main"
+                        }],
+                 "rotation":0,
+                 "type":"entity_spawn",
+                 "visible":true,
+                 "width":64,
+                 "x":640,
+                 "y":320
+                },
+                {
+                 "height":32,
+                 "id":2,
+                 "name":"Forest Slime",
+                 "properties":[
+                        {
+                         "name":"entity_id",
+                         "type":"string",
+                         "value":"slime"
+                        },
+                        {
+                         "name":"level",
+                         "type":"int",
+                         "value":1
+                        },
+                        {
+                         "name":"respawn",
+                         "type":"bool",
+                         "value":true
+                        }],
+                 "rotation":0,
+                 "type":"entity_spawn",
+                 "visible":true,
+                 "width":64,
+                 "x":1280,
+                 "y":480
+                },
+                {
+                 "height":32,
+                 "id":3,
+                 "name":"Forest Slime",
+                 "properties":[
+                        {
+                         "name":"entity_id",
+                         "type":"string",
+                         "value":"slime"
+                        },
+                        {
+                         "name":"level",
+                         "type":"int",
+                         "value":1
+                        },
+                        {
+                         "name":"respawn",
+                         "type":"bool",
+                         "value":true
+                        }],
+                 "rotation":0,
+                 "type":"entity_spawn",
+                 "visible":true,
+                 "width":64,
+                 "x":1600,
+                 "y":640
+                },
+                {
+                 "height":32,
+                 "id":4,
+                 "name":"Forest Slime",
+                 "properties":[
+                        {
+                         "name":"entity_id",
+                         "type":"string",
+                         "value":"slime"
+                        },
+                        {
+                         "name":"level",
+                         "type":"int",
+                         "value":2
+                        },
+                        {
+                         "name":"respawn",
+                         "type":"bool",
+                         "value":true
+                        }],
+                 "rotation":0,
+                 "type":"entity_spawn",
+                 "visible":true,
+                 "width":64,
+                 "x":1408,
+                 "y":800
+                },
+                {
+                 "height":32,
+                 "id":5,
+                 "name":"Forest Slime",
+                 "properties":[
+                        {
+                         "name":"entity_id",
+                         "type":"string",
+                         "value":"slime"
+                        },
+                        {
+                         "name":"level",
+                         "type":"int",
+                         "value":1
+                        },
+                        {
+                         "name":"respawn",
+                         "type":"bool",
+                         "value":true
+                        }],
+                 "rotation":0,
+                 "type":"entity_spawn",
+                 "visible":true,
+                 "width":64,
+                 "x":1792,
+                 "y":512
+                },
+                {
+                 "height":32,
+                 "id":6,
+                 "name":"Slime King",
+                 "properties":[
+                        {
+                         "name":"entity_id",
+                         "type":"string",
+                         "value":"slime_king"
+                        },
+                        {
+                         "name":"level",
+                         "type":"int",
+                         "value":3
+                        },
+                        {
+                         "name":"respawn",
+                         "type":"bool",
+                         "value":true
+                        },
+                        {
+                         "name":"respawn_time_override",
+                         "type":"int",
+                         "value":300000
+                        },
+                        {
+                         "name":"unique_id",
+                         "type":"string",
+                         "value":"slime_king_boss"
+                        }],
+                 "rotation":0,
+                 "type":"entity_spawn",
+                 "visible":true,
+                 "width":64,
+                 "x":1920,
+                 "y":960
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
         }],
- "nextlayerid":2,
- "nextobjectid":1,
+ "nextlayerid":3,
+ "nextobjectid":7,
  "orientation":"isometric",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",
@@ -54,7 +237,7 @@
  "tilesets":[
         {
          "firstgid":1,
-         "source":"..\/..\/..\/..\/..\/Desktop\/game_maps\/tiles_eo.tsx"
+         "source":"../../../../../Desktop/game_maps/tiles_eo.tsx"
         }],
  "tilewidth":64,
  "type":"map",

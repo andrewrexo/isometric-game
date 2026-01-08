@@ -1,0 +1,25 @@
+# Consumable items - potions, food, etc.
+
+[health_potion]
+display_name = "Health Potion"
+sprite = "item_health_potion"
+description = "Restores 30 HP when consumed."
+category = "consumable"
+max_stack = 10
+base_price = 25
+
+[health_potion.use_effect]
+type = "heal"
+amount = 30
+
+[mana_potion]
+display_name = "Mana Potion"
+sprite = "item_mana_potion"
+description = "Restores 20 MP when consumed."
+category = "consumable"
+max_stack = 10
+base_price = 30
+
+[mana_potion.use_effect]
+type = "restore_mana"
+amount = 20

@@ -36,6 +36,22 @@ pub enum ClientMessage {
 
     #[serde(rename = "requestChunk")]
     RequestChunk { chunk_x: i32, chunk_y: i32 },
+
+    /// Interact with an NPC (quest giver, merchant, etc.)
+    #[serde(rename = "interact")]
+    Interact { npc_id: String },
+
+    /// Player selected a dialogue choice
+    #[serde(rename = "dialogueChoice")]
+    DialogueChoiceMsg { quest_id: String, choice_id: String },
+
+    /// Player accepts a quest
+    #[serde(rename = "acceptQuest")]
+    AcceptQuest { quest_id: String },
+
+    /// Player abandons a quest
+    #[serde(rename = "abandonQuest")]
+    AbandonQuest { quest_id: String },
 }
 
 // ============================================================================
@@ -141,6 +157,26 @@ pub enum ServerMessage {
         item_type: u8,
         effect: String, // e.g., "heal:30"
     },
+    // Quest-related messages
+    QuestObjectiveProgress {
+        quest_id: String,
+        objective_id: String,
+        current: i32,
+        target: i32,
+    },
+    QuestCompleted {
+        quest_id: String,
+        quest_name: String,
+        rewards_exp: i32,
+        rewards_gold: i32,
+    },
+    ShowDialogue {
+        quest_id: String,
+        npc_id: String,
+        speaker: String,
+        text: String,
+        choices: Vec<DialogueChoice>,
+    },
     Error {
         code: u32,
         message: String,
@@ -155,6 +191,16 @@ pub enum ServerMessage {
         chunk_x: i32,
         chunk_y: i32,
     },
+    /// Sent on connect: all entity definitions for client-side registry
+    EntityDefinitions {
+        entities: Vec<ClientEntityDef>,
+    },
+    /// Sent on connect: all item definitions for client-side registry
+    ItemDefinitions {
+        items: Vec<ClientItemDef>,
+    },
+    /// Tell client to close the dialogue UI
+    DialogueClosed,
 }
 
 /// Layer data for chunk transmission
@@ -162,6 +208,34 @@ pub enum ServerMessage {
 pub struct ChunkLayerData {
     pub layer_type: u8, // 0=Ground, 1=Objects, 2=Overhead
     pub tiles: Vec<u32>,
+}
+
+/// Entity definition for client-side registry
+#[derive(Debug, Clone, Serialize)]
+pub struct ClientEntityDef {
+    pub id: String,
+    pub display_name: String,
+    pub sprite: String,
+    pub animation_type: String, // "blob", "humanoid", "quadruped", "flying"
+    pub max_hp: i32,
+}
+
+/// Item definition for client-side registry
+#[derive(Debug, Clone, Serialize)]
+pub struct ClientItemDef {
+    pub id: String,
+    pub display_name: String,
+    pub sprite: String,
+    pub category: String, // "consumable", "material", "equipment", "quest"
+    pub max_stack: i32,
+    pub description: String,
+}
+
+/// A dialogue choice for branching dialogue
+#[derive(Debug, Clone, Serialize)]
+pub struct DialogueChoice {
+    pub id: String,
+    pub text: String,
 }
 
 impl ServerMessage {
@@ -186,9 +260,15 @@ impl ServerMessage {
             ServerMessage::ItemDespawned { .. } => "itemDespawned",
             ServerMessage::InventoryUpdate { .. } => "inventoryUpdate",
             ServerMessage::ItemUsed { .. } => "itemUsed",
+            ServerMessage::QuestObjectiveProgress { .. } => "questObjectiveProgress",
+            ServerMessage::QuestCompleted { .. } => "questCompleted",
+            ServerMessage::ShowDialogue { .. } => "showDialogue",
             ServerMessage::Error { .. } => "error",
             ServerMessage::ChunkData { .. } => "chunkData",
             ServerMessage::ChunkNotFound { .. } => "chunkNotFound",
+            ServerMessage::EntityDefinitions { .. } => "entityDefinitions",
+            ServerMessage::ItemDefinitions { .. } => "itemDefinitions",
+            ServerMessage::DialogueClosed => "dialogueClosed",
         }
     }
 }
@@ -271,6 +351,8 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                         Value::String(n.id.clone().into()),
                     ));
                     nmap.push((Value::String("npc_type".into()), Value::Integer((n.npc_type as i64).into())));
+                    nmap.push((Value::String("entity_type".into()), Value::String(n.entity_type.clone().into())));
+                    nmap.push((Value::String("display_name".into()), Value::String(n.display_name.clone().into())));
                     nmap.push((Value::String("x".into()), Value::Integer((n.x as i64).into())));
                     nmap.push((Value::String("y".into()), Value::Integer((n.y as i64).into())));
                     nmap.push((Value::String("direction".into()), Value::Integer((n.direction as i64).into())));
@@ -278,6 +360,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     nmap.push((Value::String("max_hp".into()), Value::Integer((n.max_hp as i64).into())));
                     nmap.push((Value::String("level".into()), Value::Integer((n.level as i64).into())));
                     nmap.push((Value::String("state".into()), Value::Integer((n.state as i64).into())));
+                    nmap.push((Value::String("hostile".into()), Value::Boolean(n.hostile)));
                     Value::Map(nmap)
                 })
                 .collect();
@@ -536,6 +619,39 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("effect".into()), Value::String(effect.clone().into())));
             Value::Map(map)
         }
+        ServerMessage::QuestObjectiveProgress { quest_id, objective_id, current, target } => {
+            let mut map = Vec::new();
+            map.push((Value::String("quest_id".into()), Value::String(quest_id.clone().into())));
+            map.push((Value::String("objective_id".into()), Value::String(objective_id.clone().into())));
+            map.push((Value::String("current".into()), Value::Integer((*current as i64).into())));
+            map.push((Value::String("target".into()), Value::Integer((*target as i64).into())));
+            Value::Map(map)
+        }
+        ServerMessage::QuestCompleted { quest_id, quest_name, rewards_exp, rewards_gold } => {
+            let mut map = Vec::new();
+            map.push((Value::String("quest_id".into()), Value::String(quest_id.clone().into())));
+            map.push((Value::String("quest_name".into()), Value::String(quest_name.clone().into())));
+            map.push((Value::String("rewards_exp".into()), Value::Integer((*rewards_exp as i64).into())));
+            map.push((Value::String("rewards_gold".into()), Value::Integer((*rewards_gold as i64).into())));
+            Value::Map(map)
+        }
+        ServerMessage::ShowDialogue { quest_id, npc_id, speaker, text, choices } => {
+            let mut map = Vec::new();
+            map.push((Value::String("quest_id".into()), Value::String(quest_id.clone().into())));
+            map.push((Value::String("npc_id".into()), Value::String(npc_id.clone().into())));
+            map.push((Value::String("speaker".into()), Value::String(speaker.clone().into())));
+            map.push((Value::String("text".into()), Value::String(text.clone().into())));
+
+            let choice_values: Vec<Value> = choices.iter().map(|c| {
+                let mut cmap = Vec::new();
+                cmap.push((Value::String("id".into()), Value::String(c.id.clone().into())));
+                cmap.push((Value::String("text".into()), Value::String(c.text.clone().into())));
+                Value::Map(cmap)
+            }).collect();
+            map.push((Value::String("choices".into()), Value::Array(choice_values)));
+
+            Value::Map(map)
+        }
         ServerMessage::Error { code, message } => {
             let mut map = Vec::new();
             map.push((
@@ -607,6 +723,45 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                 Value::Integer((*chunk_y as i64).into()),
             ));
             Value::Map(map)
+        }
+        ServerMessage::EntityDefinitions { entities } => {
+            let mut map = Vec::new();
+            let entity_values: Vec<Value> = entities
+                .iter()
+                .map(|e| {
+                    let mut emap = Vec::new();
+                    emap.push((Value::String("id".into()), Value::String(e.id.clone().into())));
+                    emap.push((Value::String("displayName".into()), Value::String(e.display_name.clone().into())));
+                    emap.push((Value::String("sprite".into()), Value::String(e.sprite.clone().into())));
+                    emap.push((Value::String("animationType".into()), Value::String(e.animation_type.clone().into())));
+                    emap.push((Value::String("maxHp".into()), Value::Integer((e.max_hp as i64).into())));
+                    Value::Map(emap)
+                })
+                .collect();
+            map.push((Value::String("entities".into()), Value::Array(entity_values)));
+            Value::Map(map)
+        }
+        ServerMessage::ItemDefinitions { items } => {
+            let mut map = Vec::new();
+            let item_values: Vec<Value> = items
+                .iter()
+                .map(|i| {
+                    let mut imap = Vec::new();
+                    imap.push((Value::String("id".into()), Value::String(i.id.clone().into())));
+                    imap.push((Value::String("displayName".into()), Value::String(i.display_name.clone().into())));
+                    imap.push((Value::String("sprite".into()), Value::String(i.sprite.clone().into())));
+                    imap.push((Value::String("category".into()), Value::String(i.category.clone().into())));
+                    imap.push((Value::String("maxStack".into()), Value::Integer((i.max_stack as i64).into())));
+                    imap.push((Value::String("description".into()), Value::String(i.description.clone().into())));
+                    Value::Map(imap)
+                })
+                .collect();
+            map.push((Value::String("items".into()), Value::Array(item_values)));
+            Value::Map(map)
+        }
+        ServerMessage::DialogueClosed => {
+            // Empty map - just the message type signals closure
+            Value::Map(Vec::new())
         }
     };
 
@@ -700,6 +855,23 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
             let chunk_x = extract_i32(msg_data, "chunkX").unwrap_or(0);
             let chunk_y = extract_i32(msg_data, "chunkY").unwrap_or(0);
             Ok(ClientMessage::RequestChunk { chunk_x, chunk_y })
+        }
+        "interact" => {
+            let npc_id = extract_string(msg_data, "npc_id").unwrap_or_default();
+            Ok(ClientMessage::Interact { npc_id })
+        }
+        "dialogueChoice" => {
+            let quest_id = extract_string(msg_data, "quest_id").unwrap_or_default();
+            let choice_id = extract_string(msg_data, "choice_id").unwrap_or_default();
+            Ok(ClientMessage::DialogueChoiceMsg { quest_id, choice_id })
+        }
+        "acceptQuest" => {
+            let quest_id = extract_string(msg_data, "quest_id").unwrap_or_default();
+            Ok(ClientMessage::AcceptQuest { quest_id })
+        }
+        "abandonQuest" => {
+            let quest_id = extract_string(msg_data, "quest_id").unwrap_or_default();
+            Ok(ClientMessage::AbandonQuest { quest_id })
         }
         _ => Err(format!("Unknown message type: {}", msg_type)),
     }

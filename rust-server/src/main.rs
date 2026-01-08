@@ -25,15 +25,21 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 mod chunk;
+mod data;
 mod db;
+mod entity;
 mod game;
 mod item;
 mod npc;
 mod protocol;
+mod quest;
 mod tilemap;
 mod world;
 
+use data::ItemRegistry;
 use db::Database;
+use entity::EntityRegistry;
+use quest::QuestRegistry;
 use game::{GameRoom, Player, PlayerUpdate};
 use protocol::{ClientMessage, ServerMessage};
 
@@ -63,6 +69,10 @@ struct AppState {
     matchmake_rate_limiter: RateLimiter,
     // SECURITY: Signed session token generator
     token_signer: SessionTokenSigner,
+    // Entity and item registries (loaded from TOML at startup)
+    entity_registry: Arc<EntityRegistry>,
+    item_registry: Arc<ItemRegistry>,
+    quest_registry: Arc<QuestRegistry>,
 }
 
 impl AppState {
@@ -71,6 +81,51 @@ impl AppState {
         let db = Database::new("sqlite:game.db?mode=rwc")
             .await
             .expect("Failed to initialize database");
+
+        // Load entity registry from TOML files
+        let mut entity_registry = EntityRegistry::new();
+        let data_dir = std::path::Path::new("data");
+        if let Err(e) = entity_registry.load_from_directory(data_dir) {
+            error!("Failed to load entity registry: {}", e);
+        }
+
+        // Load item registry from TOML files
+        let mut item_registry = ItemRegistry::new();
+        if let Err(e) = item_registry.load_from_directory(data_dir) {
+            error!("Failed to load item registry: {}", e);
+        }
+
+        // Load quest registry from TOML files
+        let quest_registry = Arc::new(QuestRegistry::new(data_dir));
+        if let Err(e) = quest_registry.load_all().await {
+            error!("Failed to load quest registry: {}", e);
+        }
+
+        // Start hot-reload watcher for quest files (dev mode)
+        #[cfg(debug_assertions)]
+        {
+            match quest_registry.start_file_watcher() {
+                Ok(mut rx) => {
+                    // Spawn task to log reload events
+                    tokio::spawn(async move {
+                        while let Some(event) = rx.recv().await {
+                            match event {
+                                quest::HotReloadEvent::Reloaded(path) => {
+                                    info!("Quest hot-reload: {}", path);
+                                }
+                                quest::HotReloadEvent::Error(e) => {
+                                    error!("Quest hot-reload error: {}", e);
+                                }
+                            }
+                        }
+                    });
+                    info!("Quest hot-reload enabled");
+                }
+                Err(e) => {
+                    warn!("Failed to start quest hot-reload: {}", e);
+                }
+            }
+        }
 
         Self {
             rooms: Arc::new(DashMap::new()),
@@ -83,10 +138,13 @@ impl AppState {
             matchmake_rate_limiter: RateLimiter::new(20, 60),
             // SECURITY: Token signer for session tokens
             token_signer: SessionTokenSigner::new(),
+            entity_registry: Arc::new(entity_registry),
+            item_registry: Arc::new(item_registry),
+            quest_registry,
         }
     }
 
-    fn get_or_create_room(&self, room_name: &str) -> Arc<GameRoom> {
+    async fn get_or_create_room(&self, room_name: &str) -> Arc<GameRoom> {
         // Check if a room with this name already exists
         for room in self.rooms.iter() {
             if room.name == room_name {
@@ -95,7 +153,11 @@ impl AppState {
         }
 
         // Create new room and store by its UUID
-        let room = Arc::new(GameRoom::new(room_name));
+        let room = Arc::new(GameRoom::new(
+            room_name,
+            self.entity_registry.clone(),
+            self.quest_registry.clone(),
+        ).await);
         self.rooms.insert(room.id.clone(), room.clone());
         room
     }
@@ -499,7 +561,7 @@ async fn matchmake_join_or_create(
         }
     };
 
-    let room = state.get_or_create_room(&room_name);
+    let room = state.get_or_create_room(&room_name).await;
     let room_id = room.id.clone();
 
     // Create session for this player - use a separate session token from player_id
@@ -660,6 +722,18 @@ async fn handle_socket(
         player_id: player_id.clone(),
     };
     if let Ok(bytes) = protocol::encode_server_message(&welcome) {
+        let _ = sender.send(Message::Binary(bytes)).await;
+    }
+
+    // Send entity definitions
+    let entity_defs = room.get_entity_definitions();
+    if let Ok(bytes) = protocol::encode_server_message(&entity_defs) {
+        let _ = sender.send(Message::Binary(bytes)).await;
+    }
+
+    // Send item definitions
+    let item_defs = state.item_registry.to_client_definitions();
+    if let Ok(bytes) = protocol::encode_server_message(&item_defs) {
         let _ = sender.send(Message::Binary(bytes)).await;
     }
 
@@ -834,6 +908,19 @@ async fn handle_client_message(
             if let Some(chunk_msg) = room.handle_chunk_request(chunk_x, chunk_y).await {
                 room.broadcast(chunk_msg).await;
             }
+        }
+        ClientMessage::Interact { npc_id } => {
+            room.handle_npc_interact(player_id, &npc_id).await;
+        }
+        ClientMessage::DialogueChoiceMsg { quest_id, choice_id } => {
+            room.handle_dialogue_choice(player_id, &quest_id, &choice_id).await;
+        }
+        ClientMessage::AcceptQuest { quest_id: _ } => {
+            // Quest acceptance is handled through dialogue choices
+            // This is a fallback if client sends direct accept
+        }
+        ClientMessage::AbandonQuest { quest_id: _ } => {
+            // TODO: Implement quest abandonment
         }
         _ => {
             // Other messages not yet implemented

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
-use crate::chunk::{world_to_local, Chunk, ChunkCoord, ChunkLayer, ChunkLayerType, CHUNK_SIZE};
+use crate::chunk::{world_to_local, Chunk, ChunkCoord, ChunkLayer, ChunkLayerType, EntitySpawn, CHUNK_SIZE};
 
 /// World manager that handles loading and caching chunks
 pub struct World {
@@ -150,8 +150,10 @@ impl World {
                     if let Some(objects) = layer_value["objects"].as_array() {
                         for obj in objects {
                             let obj_type = obj["type"].as_str().unwrap_or("");
-                            let x = obj["x"].as_f64().unwrap_or(0.0) as u32 / 64; // Assuming 64px tiles
-                            let y = obj["y"].as_f64().unwrap_or(0.0) as u32 / 32;
+                            let pixel_x = obj["x"].as_f64().unwrap_or(0.0);
+                            let pixel_y = obj["y"].as_f64().unwrap_or(0.0);
+                            let x = (pixel_x / 64.0) as u32; // Assuming 64px tiles
+                            let y = (pixel_y / 32.0) as u32;
                             let obj_width = obj["width"].as_f64().unwrap_or(64.0) as u32 / 64;
                             let obj_height = obj["height"].as_f64().unwrap_or(32.0) as u32 / 32;
 
@@ -162,8 +164,17 @@ impl World {
                                         chunk.set_collision(x + dx, y + dy, true);
                                     }
                                 }
-                            } else if obj_type == "spawn" || name.to_lowercase().contains("spawn") {
-                                chunk.spawn_points.push((x, y));
+                            } else if obj_type == "entity_spawn" || obj_type == "npc_spawn" {
+                                // Parse entity spawn from Tiled object properties
+                                if let Some(spawn) = self.parse_entity_spawn(obj, coord) {
+                                    info!("Found entity spawn: {} at ({}, {})",
+                                        spawn.entity_id, spawn.world_x, spawn.world_y);
+                                    chunk.entity_spawns.push(spawn);
+                                }
+                            } else if obj_type == "player_spawn" || obj_type == "spawn"
+                                || name.to_lowercase().contains("spawn")
+                            {
+                                chunk.player_spawns.push((x, y));
                             }
                         }
                     }
@@ -172,6 +183,65 @@ impl World {
         }
 
         Ok(chunk)
+    }
+
+    /// Parse an entity spawn object from Tiled JSON
+    fn parse_entity_spawn(&self, obj: &serde_json::Value, chunk_coord: ChunkCoord) -> Option<EntitySpawn> {
+        // Get pixel position and convert to grid
+        let pixel_x = obj["x"].as_f64()?;
+        let pixel_y = obj["y"].as_f64()?;
+        let local_x = (pixel_x / 64.0) as u32;
+        let local_y = (pixel_y / 32.0) as u32;
+
+        // Convert to world coordinates
+        let world_x = chunk_coord.x * CHUNK_SIZE as i32 + local_x as i32;
+        let world_y = chunk_coord.y * CHUNK_SIZE as i32 + local_y as i32;
+
+        // Parse properties array
+        let properties = obj["properties"].as_array();
+
+        // Extract entity_id (required)
+        let entity_id = self.get_property_string(properties, "entity_id")?;
+
+        // Extract optional properties
+        let level = self.get_property_int(properties, "level").unwrap_or(1);
+        let respawn = self.get_property_bool(properties, "respawn").unwrap_or(true);
+        let respawn_time_override = self.get_property_int(properties, "respawn_time_override")
+            .map(|v| v as u64);
+        let facing = self.get_property_string(properties, "facing");
+        let unique_id = self.get_property_string(properties, "unique_id");
+
+        Some(EntitySpawn {
+            entity_id,
+            world_x,
+            world_y,
+            level,
+            respawn,
+            respawn_time_override,
+            facing,
+            unique_id,
+        })
+    }
+
+    /// Get a string property from Tiled properties array
+    fn get_property_string(&self, props: Option<&Vec<serde_json::Value>>, name: &str) -> Option<String> {
+        props?.iter()
+            .find(|p| p["name"].as_str() == Some(name))
+            .and_then(|p| p["value"].as_str().map(|s| s.to_string()))
+    }
+
+    /// Get an int property from Tiled properties array
+    fn get_property_int(&self, props: Option<&Vec<serde_json::Value>>, name: &str) -> Option<i32> {
+        props?.iter()
+            .find(|p| p["name"].as_str() == Some(name))
+            .and_then(|p| p["value"].as_i64().map(|i| i as i32))
+    }
+
+    /// Get a bool property from Tiled properties array
+    fn get_property_bool(&self, props: Option<&Vec<serde_json::Value>>, name: &str) -> Option<bool> {
+        props?.iter()
+            .find(|p| p["name"].as_str() == Some(name))
+            .and_then(|p| p["value"].as_bool())
     }
 
     /// Check if a world position is walkable

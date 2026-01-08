@@ -58,6 +58,10 @@ impl NpcState {
 pub struct Npc {
     pub id: String,
     pub npc_type: NpcType,
+    /// Entity prototype ID (e.g., "slime", "elder_villager")
+    pub entity_type: String,
+    /// Display name from server
+    pub display_name: String,
     pub x: f32,
     pub y: f32,
     pub target_x: f32,
@@ -68,6 +72,8 @@ pub struct Npc {
     pub level: i32,
     pub state: NpcState,
     pub animation_frame: f32,
+    /// Whether this NPC is hostile
+    pub hostile: bool,
 }
 
 impl Npc {
@@ -75,6 +81,8 @@ impl Npc {
         Self {
             id,
             npc_type,
+            entity_type: "slime".to_string(),
+            display_name: npc_type.name().to_string(),
             x,
             y,
             target_x: x,
@@ -85,11 +93,16 @@ impl Npc {
             level: 1,
             state: NpcState::Idle,
             animation_frame: 0.0,
+            hostile: true,
         }
     }
 
     pub fn name(&self) -> String {
-        format!("{} Lv.{}", self.npc_type.name(), self.level)
+        format!("{} Lv.{}", self.display_name, self.level)
+    }
+
+    pub fn is_hostile(&self) -> bool {
+        self.hostile
     }
 
     pub fn is_alive(&self) -> bool {

@@ -169,3 +169,12 @@ pub fn extract_u8(value: &rmpv::Value, key: &str) -> Option<u8> {
                     .or_else(|| v.as_i64().map(|i| i as u8)))
         })
 }
+
+pub fn extract_bool(value: &rmpv::Value, key: &str) -> Option<bool> {
+    value.as_map()
+        .and_then(|map| {
+            map.iter()
+                .find(|(k, _)| k.as_str() == Some(key))
+                .and_then(|(_, v)| v.as_bool())
+        })
+}

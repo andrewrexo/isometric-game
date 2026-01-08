@@ -1,0 +1,83 @@
+# Slime monster - the classic starting enemy
+
+[slime]
+display_name = "Slime"
+sprite = "slime"
+animation_type = "blob"
+description = "A gelatinous creature that oozes through the forest."
+
+[slime.stats]
+max_hp = 50
+damage = 5
+attack_range = 1
+aggro_range = 5
+chase_range = 8
+move_cooldown_ms = 500
+attack_cooldown_ms = 1500
+respawn_time_ms = 10000
+
+[slime.rewards]
+exp_base = 25
+gold_min = 5
+gold_max = 15
+
+[[slime.loot]]
+item_id = "slime_core"
+drop_chance = 0.30
+quantity_min = 1
+quantity_max = 1
+
+[[slime.loot]]
+item_id = "health_potion"
+drop_chance = 0.20
+quantity_min = 1
+quantity_max = 1
+
+[slime.behaviors]
+hostile = true
+
+# =============================================================================
+# Slime Variants
+# =============================================================================
+
+[slime_king]
+extends = "slime"
+display_name = "Slime King"
+sprite = "slime_king"
+description = "A massive slime that rules its brethren."
+
+[slime_king.stats]
+max_hp = 500
+damage = 25
+attack_range = 2
+aggro_range = 8
+move_cooldown_ms = 400
+respawn_time_ms = 300000  # 5 minutes
+
+[slime_king.rewards]
+exp_base = 200
+gold_min = 50
+gold_max = 150
+
+[[slime_king.loot]]
+item_id = "slime_core"
+drop_chance = 1.0
+quantity_min = 3
+quantity_max = 5
+
+[poison_slime]
+extends = "slime"
+display_name = "Poison Slime"
+sprite = "slime_poison"
+description = "A toxic slime that leaves a trail of poison."
+
+[poison_slime.stats]
+max_hp = 40
+damage = 3
+
+[poison_slime.rewards]
+exp_base = 30
+
+[[poison_slime.loot]]
+item_id = "slime_core"
+drop_chance = 0.40

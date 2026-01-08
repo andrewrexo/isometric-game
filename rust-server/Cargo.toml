@@ -26,7 +26,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dashmap = "6"
 rand = "0.8"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
@@ -38,3 +38,12 @@ argon2 = "0.5"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
+
+# Configuration files
+toml = "0.8"
+
+# Scripting (Lua for quest system)
+mlua = { version = "0.10", features = ["lua54", "vendored", "async", "send"] }
+
+# File watching (for hot-reload)
+notify = "6"

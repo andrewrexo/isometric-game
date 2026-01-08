@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::render::animation::{PlayerAnimation, AnimationState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
@@ -115,7 +116,7 @@ pub struct Player {
     pub death_time: f64, // When the player died (game time)
 
     // Animation
-    pub animation_frame: f32,
+    pub animation: PlayerAnimation,
 }
 
 impl Player {
@@ -142,7 +143,7 @@ impl Player {
             exp_to_next_level: 100,
             is_dead: false,
             death_time: 0.0,
-            animation_frame: 0.0,
+            animation: PlayerAnimation::new(),
         }
     }
 
@@ -211,10 +212,14 @@ impl Player {
         let dy = self.target_y - self.y;
         let dist = (dx * dx + dy * dy).sqrt();
 
+        // Track if we're actually moving this frame (not just predicting)
+        let actually_moving;
+
         if dist < 0.01 {
             // Reached target - snap exactly
             self.x = self.target_x;
             self.y = self.target_y;
+            actually_moving = false;
 
             // Check if we're at the server position
             let at_server = (self.x - self.server_x).abs() < 0.01
@@ -228,7 +233,6 @@ impl Player {
             } else {
                 // Either no velocity, or waiting for server to catch up
                 self.is_moving = false;
-                self.animation_frame = 0.0;
             }
         } else {
             // Move toward target at constant speed
@@ -243,13 +247,84 @@ impl Player {
             }
 
             self.is_moving = true;
+            actually_moving = true;
 
-            // Animation while moving (8 fps, 4 frames)
-            self.animation_frame += delta * 8.0;
-            if self.animation_frame >= 4.0 {
-                self.animation_frame = 0.0;
-            }
+            // Update direction from actual movement vector, not stored velocity
+            self.direction = Direction::from_velocity(dx, dy);
         }
+
+        // Update animation state based on movement and actions
+        self.update_animation(delta, actually_moving);
+    }
+
+    /// Update animation state and frame
+    /// actually_moving: true only when visual position is actively changing
+    fn update_animation(&mut self, delta: f32, actually_moving: bool) {
+        // Only sync direction to animation when actually moving
+        if actually_moving {
+            self.animation.direction = self.direction;
+        }
+
+        // Handle action animations (attack, cast, etc) - they take priority
+        if self.animation.state == AnimationState::Attacking
+            || self.animation.state == AnimationState::Casting
+            || self.animation.state == AnimationState::ShootingBow
+        {
+            self.animation.update(delta);
+            // Return to idle/walking when action animation completes
+            if self.animation.is_finished() {
+                if actually_moving {
+                    self.animation.set_state(AnimationState::Walking);
+                } else {
+                    self.animation.set_state(AnimationState::Idle);
+                }
+            }
+            return;
+        }
+
+        // Handle movement animations - only animate when actually moving
+        if actually_moving {
+            self.animation.set_state(AnimationState::Walking);
+            self.animation.update(delta);
+        } else {
+            // Only go to idle if not in a sitting state
+            if self.animation.state != AnimationState::SittingGround
+                && self.animation.state != AnimationState::SittingChair
+            {
+                self.animation.set_state(AnimationState::Idle);
+            }
+            // Don't update animation frame when idle (or update slowly)
+        }
+    }
+
+    /// Trigger attack animation
+    pub fn play_attack(&mut self) {
+        self.animation.set_state(AnimationState::Attacking);
+    }
+
+    /// Trigger spell casting animation
+    pub fn play_cast(&mut self) {
+        self.animation.set_state(AnimationState::Casting);
+    }
+
+    /// Trigger bow shooting animation
+    pub fn play_shoot_bow(&mut self) {
+        self.animation.set_state(AnimationState::ShootingBow);
+    }
+
+    /// Sit on ground
+    pub fn sit_ground(&mut self) {
+        self.animation.set_state(AnimationState::SittingGround);
+    }
+
+    /// Sit on chair
+    pub fn sit_chair(&mut self) {
+        self.animation.set_state(AnimationState::SittingChair);
+    }
+
+    /// Stand up from sitting
+    pub fn stand_up(&mut self) {
+        self.animation.set_state(AnimationState::Idle);
     }
 
     /// Smooth interpolation toward target position (for non-local players)

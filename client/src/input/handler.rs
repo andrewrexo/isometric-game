@@ -12,6 +12,10 @@ pub enum InputCommand {
     Chat { text: String },
     Pickup { item_id: String },
     UseItem { slot_index: u8 },
+    // Quest commands
+    Interact { npc_id: String },
+    DialogueChoice { quest_id: String, choice_id: String },
+    CloseDialogue,
 }
 
 /// Cardinal directions for isometric movement (no diagonals)
@@ -47,7 +51,7 @@ impl InputHandler {
             last_send_time: 0.0,
             send_interval: 0.05, // 50ms = 20Hz (matches server tick rate)
             last_attack_time: 0.0,
-            attack_cooldown: 1.0, // 1 second (matches server ATTACK_COOLDOWN_MS)
+            attack_cooldown: 0.8, // 800 ms (matches server ATTACK_COOLDOWN_MS)
         }
     }
 
@@ -58,6 +62,48 @@ impl InputHandler {
         // Toggle debug mode
         if is_key_pressed(KeyCode::F3) {
             // Debug toggle handled in main loop
+        }
+
+        // Handle dialogue mode - intercept input when dialogue is open
+        if let Some(dialogue) = &state.ui_state.active_dialogue {
+            // Escape closes dialogue
+            if is_key_pressed(KeyCode::Escape) {
+                commands.push(InputCommand::CloseDialogue);
+                state.ui_state.active_dialogue = None;
+                return commands;
+            }
+
+            // Number keys (1-4) select dialogue choices
+            if !dialogue.choices.is_empty() {
+                let choice_keys = [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4];
+                for (i, key) in choice_keys.iter().enumerate() {
+                    if i < dialogue.choices.len() && is_key_pressed(*key) {
+                        let choice = &dialogue.choices[i];
+                        commands.push(InputCommand::DialogueChoice {
+                            quest_id: dialogue.quest_id.clone(),
+                            choice_id: choice.id.clone(),
+                        });
+                        // Don't clear dialogue here - wait for server response
+                        return commands;
+                    }
+                }
+            } else {
+                // No choices - press Enter or Space to continue/close
+                if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::Space) {
+                    // Send continue signal to server so script can proceed
+                    commands.push(InputCommand::DialogueChoice {
+                        quest_id: dialogue.quest_id.clone(),
+                        choice_id: "__continue__".to_string(),
+                    });
+                    // Close dialogue immediately - don't wait for server response
+                    // Server may send a new dialogue if the script continues
+                    state.ui_state.active_dialogue = None;
+                    return commands;
+                }
+            }
+
+            // Don't process other input while dialogue is open
+            return commands;
         }
 
         // Handle chat input mode
@@ -274,6 +320,44 @@ impl InputHandler {
                     }
                 }
             }
+        }
+
+        // Interact with nearest NPC (E key)
+        if is_key_pressed(KeyCode::E) {
+            if let Some(local_id) = &state.local_player_id {
+                if let Some(player) = state.players.get(local_id) {
+                    // Find nearest NPC within interaction range (2.5 tiles)
+                    const INTERACT_RANGE: f32 = 2.5;
+                    let mut nearest_npc: Option<(String, f32)> = None;
+
+                    for (id, npc) in &state.npcs {
+                        // Only interact with alive NPCs
+                        if !npc.is_alive() {
+                            continue;
+                        }
+
+                        let dx = npc.x - player.x;
+                        let dy = npc.y - player.y;
+                        let dist = (dx * dx + dy * dy).sqrt();
+
+                        if dist < INTERACT_RANGE {
+                            if nearest_npc.is_none() || dist < nearest_npc.as_ref().unwrap().1 {
+                                nearest_npc = Some((id.clone(), dist));
+                            }
+                        }
+                    }
+
+                    if let Some((npc_id, _)) = nearest_npc {
+                        log::info!("Interacting with NPC: {}", npc_id);
+                        commands.push(InputCommand::Interact { npc_id });
+                    }
+                }
+            }
+        }
+
+        // Toggle quest log (Q key)
+        if is_key_pressed(KeyCode::Q) {
+            state.ui_state.quest_log_open = !state.ui_state.quest_log_open;
         }
 
         commands

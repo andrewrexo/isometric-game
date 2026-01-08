@@ -213,12 +213,30 @@ fn run_game_frame(
         use network::messages::ClientMessage;
         let msg = match cmd {
             InputCommand::Move { dx, dy } => ClientMessage::Move { dx: *dx, dy: *dy },
-            InputCommand::Attack => ClientMessage::Attack,
+            InputCommand::Attack => {
+                // Trigger attack animation on local player
+                if let Some(local_id) = &game_state.local_player_id {
+                    if let Some(player) = game_state.players.get_mut(local_id) {
+                        player.play_attack();
+                    }
+                }
+                ClientMessage::Attack
+            },
             InputCommand::Target { entity_id } => ClientMessage::Target { entity_id: entity_id.clone() },
             InputCommand::ClearTarget => ClientMessage::Target { entity_id: String::new() },
             InputCommand::Chat { text } => ClientMessage::Chat { text: text.clone() },
             InputCommand::Pickup { item_id } => ClientMessage::Pickup { item_id: item_id.clone() },
             InputCommand::UseItem { slot_index } => ClientMessage::UseItem { slot_index: *slot_index as u32 },
+            // Quest-related commands
+            InputCommand::Interact { npc_id } => ClientMessage::Interact { npc_id: npc_id.clone() },
+            InputCommand::DialogueChoice { quest_id, choice_id } => ClientMessage::DialogueChoice {
+                quest_id: quest_id.clone(),
+                choice_id: choice_id.clone(),
+            },
+            InputCommand::CloseDialogue => {
+                // Just close locally, no server message needed
+                continue;
+            },
         };
         network.send(&msg);
     }
@@ -236,5 +254,14 @@ fn run_game_frame(
         draw_text(&format!("FPS: {}", get_fps()), 10.0, 20.0, 20.0, WHITE);
         draw_text(&format!("Players: {}", game_state.players.len()), 10.0, 40.0, 20.0, WHITE);
         draw_text(&format!("Connected: {}", network.is_connected()), 10.0, 60.0, 20.0, WHITE);
+
+        // Show position and chunk info
+        if let Some(player) = game_state.get_local_player() {
+            let chunk_x = (player.x / 32.0).floor() as i32;
+            let chunk_y = (player.y / 32.0).floor() as i32;
+            draw_text(&format!("Pos: ({:.1}, {:.1})", player.x, player.y), 10.0, 80.0, 20.0, YELLOW);
+            draw_text(&format!("Chunk: ({}, {})", chunk_x, chunk_y), 10.0, 100.0, 20.0, YELLOW);
+            draw_text(&format!("NPCs: {}", game_state.npcs.len()), 10.0, 120.0, 20.0, WHITE);
+        }
     }
 }

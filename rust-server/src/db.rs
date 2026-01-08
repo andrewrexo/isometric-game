@@ -71,6 +71,54 @@ impl Database {
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN inventory_json TEXT DEFAULT '[]'")
             .execute(pool).await;
 
+        // Quest system tables
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS player_quests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER NOT NULL,
+                quest_id TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'active',
+                objectives_json TEXT DEFAULT '{}',
+                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at DATETIME,
+                FOREIGN KEY(player_id) REFERENCES players(id),
+                UNIQUE(player_id, quest_id)
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS player_flags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER NOT NULL,
+                flag_name TEXT NOT NULL,
+                flag_value TEXT,
+                FOREIGN KEY(player_id) REFERENCES players(id),
+                UNIQUE(player_id, flag_name)
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS player_quest_availability (
+                player_id INTEGER NOT NULL,
+                quest_id TEXT NOT NULL,
+                unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(player_id, quest_id),
+                FOREIGN KEY(player_id) REFERENCES players(id)
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
+
         tracing::info!("Database migrations complete");
         Ok(())
     }

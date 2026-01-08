@@ -5,9 +5,11 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use uuid::Uuid;
 
 use crate::chunk::ChunkCoord;
+use crate::entity::{EntityPrototype, EntityRegistry};
 use crate::item::{self, GroundItem, Inventory, ItemType};
 use crate::npc::{Npc, NpcType, NpcUpdate};
 use crate::protocol::ServerMessage;
+use crate::quest::{QuestRegistry, QuestRunner, PlayerQuestState, QuestEvent};
 use crate::world::World;
 
 // ============================================================================
@@ -25,7 +27,7 @@ const STARTING_HP: i32 = 100;
 
 // Combat constants
 const ATTACK_RANGE: f32 = 1.5; // Maximum distance to attack (in tiles)
-const ATTACK_COOLDOWN_MS: u64 = 1000; // 1 second between attacks
+const ATTACK_COOLDOWN_MS: u64 = 800; // 1 second between attacks
 const BASE_DAMAGE: i32 = 10; // Base damage per attack
 
 // ============================================================================
@@ -226,6 +228,14 @@ pub struct GameRoom {
     npcs: RwLock<HashMap<String, Npc>>,
     ground_items: RwLock<HashMap<String, GroundItem>>,
     world: Arc<World>,
+    /// Entity prototype registry for spawning and loot
+    entity_registry: Arc<EntityRegistry>,
+    /// Quest registry for quest definitions
+    quest_registry: Arc<QuestRegistry>,
+    /// Quest script runner for Lua execution
+    quest_runner: Arc<QuestRunner>,
+    /// Per-player quest state
+    player_quest_states: RwLock<HashMap<String, PlayerQuestState>>,
     /// Track which chunk each player is in for streaming updates
     player_chunks: RwLock<HashMap<String, ChunkCoord>>,
     tick: RwLock<u64>,
@@ -235,24 +245,52 @@ pub struct GameRoom {
 }
 
 impl GameRoom {
-    pub fn new(name: &str) -> Self {
+    pub async fn new(
+        name: &str,
+        entity_registry: Arc<EntityRegistry>,
+        quest_registry: Arc<QuestRegistry>,
+    ) -> Self {
         let (tx, _) = broadcast::channel(256);
         let world = Arc::new(World::new("maps/world_0"));
 
-        // Spawn initial NPCs (grid positions) - in chunk (0,0)
+        // Create quest runner with the registry
+        let quest_runner = Arc::new(QuestRunner::new(quest_registry.clone()));
+
+        // Load initial chunk and spawn NPCs from entity_spawns
         let mut npcs = HashMap::new();
-        let npc_spawns: Vec<(i32, i32)> = vec![
-            (19, 9),
-            (19, 8),
-            (8, 12),
-            (20, 15),
-            (15, 20),
-        ];
-        for (i, (x, y)) in npc_spawns.iter().enumerate() {
-            let id = format!("npc_{}", i);
-            let npc = Npc::new(&id, NpcType::Slime, *x, *y, 1);
-            npcs.insert(id, npc);
+        let mut npc_counter = 0u32;
+
+        // Load chunk (0, 0) which contains initial spawns
+        if let Some(chunk) = world.get_or_load_chunk(crate::chunk::ChunkCoord::new(0, 0)).await {
+            for spawn in &chunk.entity_spawns {
+                let npc_id = spawn.unique_id.clone()
+                    .unwrap_or_else(|| format!("npc_{}", npc_counter));
+                npc_counter += 1;
+
+                let npc = if let Some(prototype) = entity_registry.get(&spawn.entity_id) {
+                    // Spawn from prototype
+                    tracing::info!(
+                        "Spawning {} at ({}, {}) level {}",
+                        spawn.entity_id, spawn.world_x, spawn.world_y, spawn.level
+                    );
+                    Npc::from_prototype(
+                        &npc_id,
+                        &spawn.entity_id,
+                        prototype,
+                        spawn.world_x,
+                        spawn.world_y,
+                        spawn.level,
+                    )
+                } else {
+                    // Fallback to legacy NpcType if prototype not found
+                    tracing::warn!("Prototype '{}' not found, using fallback", spawn.entity_id);
+                    Npc::new(&npc_id, NpcType::Slime, spawn.world_x, spawn.world_y, spawn.level)
+                };
+                npcs.insert(npc_id, npc);
+            }
         }
+
+        tracing::info!("Spawned {} NPCs from chunk entity_spawns", npcs.len());
 
         Self {
             id: Uuid::new_v4().to_string(),
@@ -261,6 +299,10 @@ impl GameRoom {
             npcs: RwLock::new(npcs),
             ground_items: RwLock::new(HashMap::new()),
             world,
+            entity_registry,
+            quest_registry,
+            quest_runner,
+            player_quest_states: RwLock::new(HashMap::new()),
             player_chunks: RwLock::new(HashMap::new()),
             tick: RwLock::new(0),
             broadcast_tx: tx,
@@ -632,14 +674,27 @@ impl GameRoom {
         if target_died {
             tracing::info!("{} killed {}", attacker_name, target_name);
             if is_npc {
-                // Get EXP reward from NPC
-                let exp_reward = {
+                // Get NPC info for exp and loot
+                let (prototype_id, npc_level, npc_type) = {
                     let npcs = self.npcs.read().await;
-                    npcs.get(&target_id).map(|n| n.exp_reward()).unwrap_or(0)
+                    npcs.get(&target_id)
+                        .map(|n| (n.prototype_id.clone(), n.level, n.npc_type))
+                        .unwrap_or((None, 1, NpcType::Slime))
+                };
+
+                // Calculate EXP reward - use prototype if available
+                let exp_reward = if let Some(ref proto_id) = prototype_id {
+                    if let Some(prototype) = self.entity_registry.get(proto_id) {
+                        crate::entity::calculate_exp_reward(prototype, npc_level)
+                    } else {
+                        npc_type.stats().exp_reward * npc_level
+                    }
+                } else {
+                    npc_type.stats().exp_reward * npc_level
                 };
 
                 // Award EXP to killer
-                let leveled_up = if exp_reward > 0 {
+                let _leveled_up = if exp_reward > 0 {
                     let mut players = self.players.write().await;
                     if let Some(killer) = players.get_mut(player_id) {
                         let leveled = killer.award_exp(exp_reward);
@@ -682,18 +737,28 @@ impl GameRoom {
                 };
                 self.broadcast(death_msg).await;
 
-                // Spawn item drops
+                // Process quest kill event
+                let entity_type = prototype_id.clone().unwrap_or_else(|| npc_type.stats().name.to_string());
+                self.process_quest_kill(player_id, &entity_type).await;
+
+                // Spawn item drops - use prototype loot table if available
                 let current_time = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_millis() as u64;
 
-                let npc_type = {
-                    let npcs = self.npcs.read().await;
-                    npcs.get(&target_id).map(|n| n.npc_type).unwrap_or(NpcType::Slime)
+                let drops = if let Some(ref proto_id) = prototype_id {
+                    if let Some(prototype) = self.entity_registry.get(proto_id) {
+                        crate::entity::generate_loot_from_prototype(
+                            prototype, target_x, target_y, player_id, current_time, npc_level
+                        )
+                    } else {
+                        item::generate_drops(npc_type, target_x, target_y, player_id, current_time)
+                    }
+                } else {
+                    item::generate_drops(npc_type, target_x, target_y, player_id, current_time)
                 };
 
-                let drops = item::generate_drops(npc_type, target_x, target_y, player_id, current_time);
                 for item in drops {
                     // Broadcast item drop
                     let drop_msg = ServerMessage::ItemDropped {
@@ -716,6 +781,101 @@ impl GameRoom {
                     killer_id: player_id.to_string(),
                 };
                 self.broadcast(death_msg).await;
+            }
+        }
+    }
+
+    /// Process quest kill event
+    async fn process_quest_kill(&self, player_id: &str, entity_type: &str) {
+        // Get player's quest state
+        let mut quest_states = self.player_quest_states.write().await;
+        let quest_state = quest_states.entry(player_id.to_string())
+            .or_insert_with(PlayerQuestState::new);
+
+        // Create kill event
+        let event = QuestEvent::MonsterKilled {
+            player_id: player_id.to_string(),
+            entity_type: entity_type.to_string(),
+            level: 1, // TODO: Get actual monster level from context
+        };
+
+        // Process the event through the registry
+        let results = self.quest_registry.process_event(&event, quest_state).await;
+
+        // Handle results - send notifications to player
+        for result in results {
+            if let (Some(objective_id), Some(current), Some(target)) =
+                (&result.objective_id, result.new_progress, result.target)
+            {
+                tracing::info!(
+                    "Player {} progress on objective {} for quest {}: {}/{}",
+                    player_id, objective_id, result.quest_id, current, target
+                );
+
+                // Send objective progress update to player
+                if let Some(sender) = self.player_senders.read().await.get(player_id) {
+                    let msg = ServerMessage::QuestObjectiveProgress {
+                        quest_id: result.quest_id.clone(),
+                        objective_id: objective_id.clone(),
+                        current,
+                        target,
+                    };
+                    if let Ok(data) = crate::protocol::encode_server_message(&msg) {
+                        let _ = sender.send(data).await;
+                    }
+                }
+
+                if result.objective_completed {
+                    tracing::info!(
+                        "Player {} completed objective {} for quest {}",
+                        player_id, objective_id, result.quest_id
+                    );
+                }
+            }
+
+            if result.quest_ready {
+                tracing::info!(
+                    "Player {} quest {} is ready to complete!",
+                    player_id, result.quest_id
+                );
+            }
+        }
+    }
+
+    /// Process quest item collection event
+    async fn process_quest_item_collect(&self, player_id: &str, item_id: &str, count: i32) {
+        let mut quest_states = self.player_quest_states.write().await;
+        let quest_state = quest_states.entry(player_id.to_string())
+            .or_insert_with(PlayerQuestState::new);
+
+        let event = QuestEvent::ItemCollected {
+            player_id: player_id.to_string(),
+            item_id: item_id.to_string(),
+            count,
+        };
+
+        let results = self.quest_registry.process_event(&event, quest_state).await;
+
+        for result in results {
+            if let (Some(objective_id), Some(current), Some(target)) =
+                (&result.objective_id, result.new_progress, result.target)
+            {
+                tracing::info!(
+                    "Player {} collected quest item objective {} for quest {}: {}/{}",
+                    player_id, objective_id, result.quest_id, current, target
+                );
+
+                if let Some(sender) = self.player_senders.read().await.get(player_id) {
+                    let msg = ServerMessage::QuestObjectiveProgress {
+                        quest_id: result.quest_id.clone(),
+                        objective_id: objective_id.clone(),
+                        current,
+                        target,
+                    };
+                    if let Ok(data) = crate::protocol::encode_server_message(&msg) {
+                        let _ = sender.send(data).await;
+                    }
+                }
             }
         }
     }
@@ -834,6 +994,12 @@ impl GameRoom {
                     }
                 };
 
+                // Process quest item collection (amount actually picked up)
+                let picked_up_count = quantity - leftover;
+                if picked_up_count > 0 {
+                    self.process_quest_item_collect(player_id, item_type.id(), picked_up_count).await;
+                }
+
                 // Broadcast pickup (public info - everyone sees item disappear)
                 let pickup_msg = ServerMessage::ItemPickedUp {
                     item_id: item_id.to_string(),
@@ -854,6 +1020,252 @@ impl GameRoom {
                     tracing::debug!("Inventory full, dropping {} back", leftover);
                     // Could spawn a new ground item here
                 }
+            }
+        }
+    }
+
+    /// Handle NPC interaction (quest givers, merchants, etc.)
+    pub async fn handle_npc_interact(&self, player_id: &str, npc_id: &str) {
+        // Get player position
+        let (player_x, player_y) = {
+            let players = self.players.read().await;
+            match players.get(player_id) {
+                Some(p) if p.active && !p.is_dead => (p.x, p.y),
+                _ => return,
+            }
+        };
+
+        // Get NPC info and check distance
+        let npc_info = {
+            let npcs = self.npcs.read().await;
+            npcs.get(npc_id).map(|npc| {
+                let dx = (npc.x - player_x) as f32;
+                let dy = (npc.y - player_y) as f32;
+                let distance = (dx * dx + dy * dy).sqrt();
+                let entity_type = npc.prototype_id.clone().unwrap_or_else(|| "slime".to_string());
+                (entity_type, distance, npc.is_alive())
+            })
+        };
+
+        let (entity_type, distance, is_alive): (String, f32, bool) = match npc_info {
+            Some(info) => info,
+            None => {
+                tracing::warn!("Player {} tried to interact with unknown NPC {}", player_id, npc_id);
+                return;
+            }
+        };
+
+        // Must be within interaction range (2 tiles) and NPC must be alive
+        if distance > 2.5 || !is_alive {
+            tracing::debug!(
+                "Player {} can't interact with NPC {} (distance: {}, alive: {})",
+                player_id, npc_id, distance, is_alive
+            );
+            return;
+        }
+
+        // Check if this NPC has quests associated with it
+        let quests = self.quest_registry.get_quests_for_npc(&entity_type).await;
+
+        if quests.is_empty() {
+            tracing::debug!("NPC {} ({}) has no quests", npc_id, entity_type);
+            // Could show generic dialogue here
+            return;
+        }
+
+        // Get or create player quest state
+        let mut quest_states = self.player_quest_states.write().await;
+        let quest_state = quest_states.entry(player_id.to_string())
+            .or_insert_with(PlayerQuestState::new);
+
+        // Find the appropriate quest to interact with
+        // Priority: 1) Active quest ready to complete, 2) Active quest in progress, 3) Available new quest
+        let mut target_quest: Option<(String, &str)> = None;
+
+        for quest in &quests {
+            let quest_id = &quest.id;
+
+            if let Some(progress) = quest_state.get_quest(quest_id) {
+                // Player has this quest active
+                if progress.status == crate::quest::QuestStatus::ReadyToComplete {
+                    target_quest = Some((quest_id.clone(), "ready_to_complete"));
+                    break;
+                } else if progress.status == crate::quest::QuestStatus::Active {
+                    target_quest = Some((quest_id.clone(), "in_progress"));
+                    // Don't break, keep looking for ready_to_complete
+                }
+            } else if !quest_state.is_quest_completed(quest_id) {
+                // Player doesn't have this quest and hasn't completed it
+                if target_quest.is_none() {
+                    target_quest = Some((quest_id.clone(), "not_started"));
+                }
+            }
+        }
+
+        if let Some((quest_id, state)) = target_quest {
+            tracing::info!(
+                "Player {} interacting with quest {} (state: {})",
+                player_id, quest_id, state
+            );
+
+            // Run the quest script interaction
+            let result = self.quest_runner.run_on_interact(
+                player_id,
+                &quest_id,
+                quest_state,
+                None, // No choice yet
+            ).await;
+
+            match result {
+                Ok(script_result) => {
+                    // Send dialogue to player
+                    if let Some(dialogue) = script_result.dialogue {
+                        let choices: Vec<crate::protocol::DialogueChoice> = dialogue.choices
+                            .into_iter()
+                            .map(|c| crate::protocol::DialogueChoice {
+                                id: c.id,
+                                text: c.text,
+                            })
+                            .collect();
+
+                        let msg = ServerMessage::ShowDialogue {
+                            quest_id: quest_id.clone(),
+                            npc_id: npc_id.to_string(),
+                            speaker: dialogue.speaker,
+                            text: dialogue.text,
+                            choices,
+                        };
+                        self.send_to_player(player_id, msg).await;
+                    }
+
+                    // Handle quest acceptance
+                    if script_result.quest_accepted {
+                        if let Some(quest) = self.quest_registry.get(&quest_id).await {
+                            let objective_targets: Vec<(String, i32)> = quest.objectives
+                                .iter()
+                                .map(|o| (o.id.clone(), o.count))
+                                .collect();
+                            quest_state.start_quest(&quest_id, &objective_targets);
+                            tracing::info!("Player {} accepted quest {}", player_id, quest_id);
+                        }
+                    }
+
+                    // Handle quest completion
+                    if script_result.quest_completed {
+                        quest_state.complete_quest(&quest_id);
+                        if let Some(quest) = self.quest_registry.get(&quest_id).await {
+                            let msg = ServerMessage::QuestCompleted {
+                                quest_id: quest_id.clone(),
+                                quest_name: quest.name.clone(),
+                                rewards_exp: quest.rewards.exp,
+                                rewards_gold: quest.rewards.gold,
+                            };
+                            self.send_to_player(player_id, msg).await;
+
+                            // Grant rewards
+                            let mut players = self.players.write().await;
+                            if let Some(player) = players.get_mut(player_id) {
+                                player.inventory.gold += quest.rewards.gold;
+                                // TODO: Grant EXP and items
+                            }
+                        }
+                        tracing::info!("Player {} completed quest {}", player_id, quest_id);
+                    }
+
+                    // Send notifications
+                    for notification in script_result.notifications {
+                        tracing::info!("Quest notification for {}: {}", player_id, notification);
+                        // TODO: Send notification message to client
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Quest script error: {}", e);
+                }
+            }
+        }
+    }
+
+    /// Handle dialogue choice from player
+    pub async fn handle_dialogue_choice(&self, player_id: &str, quest_id: &str, choice_id: &str) {
+        let mut quest_states = self.player_quest_states.write().await;
+        let quest_state = quest_states.entry(player_id.to_string())
+            .or_insert_with(PlayerQuestState::new);
+
+        // Run the quest script with the player's choice
+        let result = self.quest_runner.run_on_interact(
+            player_id,
+            quest_id,
+            quest_state,
+            Some(choice_id),
+        ).await;
+
+        // Get the NPC id from the quest giver
+        let npc_id = if let Some(quest) = self.quest_registry.get(quest_id).await {
+            quest.giver_npc.clone()
+        } else {
+            String::new()
+        };
+
+        match result {
+            Ok(script_result) => {
+                // Send next dialogue if any, otherwise close the dialogue
+                if let Some(dialogue) = script_result.dialogue {
+                    let choices: Vec<crate::protocol::DialogueChoice> = dialogue.choices
+                        .into_iter()
+                        .map(|c| crate::protocol::DialogueChoice {
+                            id: c.id,
+                            text: c.text,
+                        })
+                        .collect();
+
+                    let msg = ServerMessage::ShowDialogue {
+                        quest_id: quest_id.to_string(),
+                        npc_id: npc_id.clone(),
+                        speaker: dialogue.speaker,
+                        text: dialogue.text,
+                        choices,
+                    };
+                    self.send_to_player(player_id, msg).await;
+                } else {
+                    // No follow-up dialogue - tell client to close
+                    let msg = ServerMessage::DialogueClosed;
+                    self.send_to_player(player_id, msg).await;
+                }
+
+                // Handle quest acceptance
+                if script_result.quest_accepted {
+                    if let Some(quest) = self.quest_registry.get(quest_id).await {
+                        let objective_targets: Vec<(String, i32)> = quest.objectives
+                            .iter()
+                            .map(|o| (o.id.clone(), o.count))
+                            .collect();
+                        quest_state.start_quest(quest_id, &objective_targets);
+                        tracing::info!("Player {} accepted quest {}", player_id, quest_id);
+                    }
+                }
+
+                // Handle quest completion
+                if script_result.quest_completed {
+                    quest_state.complete_quest(quest_id);
+                    if let Some(quest) = self.quest_registry.get(quest_id).await {
+                        let msg = ServerMessage::QuestCompleted {
+                            quest_id: quest_id.to_string(),
+                            quest_name: quest.name.clone(),
+                            rewards_exp: quest.rewards.exp,
+                            rewards_gold: quest.rewards.gold,
+                        };
+                        self.send_to_player(player_id, msg).await;
+
+                        let mut players = self.players.write().await;
+                        if let Some(player) = players.get_mut(player_id) {
+                            player.inventory.gold += quest.rewards.gold;
+                        }
+                    }
+                    tracing::info!("Player {} completed quest {}", player_id, quest_id);
+                }
+            }
+            Err(e) => {
+                tracing::error!("Quest script error: {}", e);
             }
         }
     }
@@ -1156,5 +1568,23 @@ impl GameRoom {
             return true;
         }
         false
+    }
+
+    /// Generate entity definitions message for client sync
+    pub fn get_entity_definitions(&self) -> ServerMessage {
+        use crate::protocol::ClientEntityDef;
+
+        let entities: Vec<ClientEntityDef> = self.entity_registry
+            .all()
+            .map(|proto| ClientEntityDef {
+                id: proto.id.clone(),
+                display_name: proto.display_name.clone(),
+                sprite: proto.sprite.clone(),
+                animation_type: format!("{:?}", proto.animation_type).to_lowercase(),
+                max_hp: proto.stats.max_hp,
+            })
+            .collect();
+
+        ServerMessage::EntityDefinitions { entities }
     }
 }

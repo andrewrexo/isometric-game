@@ -35,6 +35,19 @@ pub enum ClientMessage {
 
     #[serde(rename = "requestChunk")]
     RequestChunk { chunk_x: i32, chunk_y: i32 },
+
+    // Quest-related messages
+    #[serde(rename = "interact")]
+    Interact { npc_id: String },
+
+    #[serde(rename = "dialogueChoice")]
+    DialogueChoice { quest_id: String, choice_id: String },
+
+    #[serde(rename = "acceptQuest")]
+    AcceptQuest { quest_id: String },
+
+    #[serde(rename = "abandonQuest")]
+    AbandonQuest { quest_id: String },
 }
 
 impl ClientMessage {
@@ -86,6 +99,23 @@ impl ClientMessage {
                 data.insert("chunkX".into(), Value::Integer((*chunk_x as i64).into()));
                 data.insert("chunkY".into(), Value::Integer((*chunk_y as i64).into()));
                 "requestChunk"
+            }
+            ClientMessage::Interact { npc_id } => {
+                data.insert("npc_id".into(), Value::String(npc_id.clone().into()));
+                "interact"
+            }
+            ClientMessage::DialogueChoice { quest_id, choice_id } => {
+                data.insert("quest_id".into(), Value::String(quest_id.clone().into()));
+                data.insert("choice_id".into(), Value::String(choice_id.clone().into()));
+                "dialogueChoice"
+            }
+            ClientMessage::AcceptQuest { quest_id } => {
+                data.insert("quest_id".into(), Value::String(quest_id.clone().into()));
+                "acceptQuest"
+            }
+            ClientMessage::AbandonQuest { quest_id } => {
+                data.insert("quest_id".into(), Value::String(quest_id.clone().into()));
+                "abandonQuest"
             }
         };
 

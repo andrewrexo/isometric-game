@@ -24,6 +24,16 @@ impl ItemType {
         }
     }
 
+    /// Get the item ID string for quest matching (e.g., "slime_core")
+    pub fn id(&self) -> &'static str {
+        match self {
+            ItemType::HealthPotion => "health_potion",
+            ItemType::ManaPotion => "mana_potion",
+            ItemType::Gold => "gold",
+            ItemType::SlimeCore => "slime_core",
+        }
+    }
+
     pub fn name(&self) -> &'static str {
         match self {
             ItemType::HealthPotion => "Health Potion",

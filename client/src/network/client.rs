@@ -1,9 +1,9 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, DamageEvent, LevelUpEvent, GroundItem, ItemType, InventorySlot};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, DamageEvent, LevelUpEvent, GroundItem, ItemType, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent};
 use crate::game::npc::{Npc, NpcType, NpcState};
 use super::messages::ClientMessage;
-use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8};
+use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -419,6 +419,8 @@ impl NetworkClient {
                         for npc_value in npcs {
                             let id = extract_string(npc_value, "id").unwrap_or_default();
                             let npc_type = extract_u8(npc_value, "npc_type").unwrap_or(0);
+                            let entity_type = extract_string(npc_value, "entity_type").unwrap_or_else(|| "slime".to_string());
+                            let display_name = extract_string(npc_value, "display_name").unwrap_or_else(|| "???".to_string());
                             // Server sends i32 grid positions
                             let x = extract_i32(npc_value, "x").unwrap_or(0) as f32;
                             let y = extract_i32(npc_value, "y").unwrap_or(0) as f32;
@@ -427,6 +429,7 @@ impl NetworkClient {
                             let max_hp = extract_i32(npc_value, "max_hp").unwrap_or(50);
                             let level = extract_i32(npc_value, "level").unwrap_or(1);
                             let npc_state = extract_u8(npc_value, "state").unwrap_or(0);
+                            let hostile = extract_bool(npc_value, "hostile").unwrap_or(true);
 
                             if let Some(npc) = state.npcs.get_mut(&id) {
                                 // Update existing NPC - interpolate toward new grid position
@@ -435,14 +438,20 @@ impl NetworkClient {
                                 npc.hp = hp;
                                 npc.max_hp = max_hp;
                                 npc.state = NpcState::from_u8(npc_state);
+                                // Update display name in case it changed
+                                npc.display_name = display_name;
+                                npc.hostile = hostile;
                             } else {
                                 // New NPC - add to state
                                 let mut npc = Npc::new(id.clone(), NpcType::from_u8(npc_type), x, y);
+                                npc.entity_type = entity_type;
+                                npc.display_name = display_name;
                                 npc.direction = Direction::from_u8(direction);
                                 npc.hp = hp;
                                 npc.max_hp = max_hp;
                                 npc.level = level;
                                 npc.state = NpcState::from_u8(npc_state);
+                                npc.hostile = hostile;
                                 state.npcs.insert(id, npc);
                             }
                         }
@@ -754,6 +763,130 @@ impl NetworkClient {
                     let chunk_y = extract_i32(value, "chunkY").unwrap_or(0);
                     log::warn!("Chunk not found: ({}, {})", chunk_x, chunk_y);
                 }
+            }
+
+            // ========== Quest System Messages ==========
+
+            "showDialogue" => {
+                if let Some(value) = data {
+                    let quest_id = extract_string(value, "quest_id").unwrap_or_default();
+                    let npc_id = extract_string(value, "npc_id").unwrap_or_default();
+                    let speaker = extract_string(value, "speaker").unwrap_or_default();
+                    let text = extract_string(value, "text").unwrap_or_default();
+
+                    // Parse choices array
+                    let mut choices = Vec::new();
+                    if let Some(choices_arr) = extract_array(value, "choices") {
+                        for choice_value in choices_arr {
+                            let id = extract_string(choice_value, "id").unwrap_or_default();
+                            let choice_text = extract_string(choice_value, "text").unwrap_or_default();
+                            choices.push(DialogueChoice { id, text: choice_text });
+                        }
+                    }
+
+                    log::info!("Showing dialogue from {}: {} ({} choices)", speaker, text, choices.len());
+
+                    state.ui_state.active_dialogue = Some(ActiveDialogue {
+                        quest_id,
+                        npc_id,
+                        speaker,
+                        text,
+                        choices,
+                        show_time: macroquad::time::get_time(),
+                    });
+                }
+            }
+
+            "questAccepted" => {
+                if let Some(value) = data {
+                    let quest_id = extract_string(value, "quest_id").unwrap_or_default();
+                    let quest_name = extract_string(value, "quest_name").unwrap_or_default();
+
+                    // Parse objectives
+                    let mut objectives = Vec::new();
+                    if let Some(obj_arr) = extract_array(value, "objectives") {
+                        for obj_value in obj_arr {
+                            let id = extract_string(obj_value, "id").unwrap_or_default();
+                            let description = extract_string(obj_value, "description").unwrap_or_default();
+                            let current = extract_i32(obj_value, "current").unwrap_or(0);
+                            let target = extract_i32(obj_value, "target").unwrap_or(1);
+                            objectives.push(QuestObjective {
+                                id,
+                                description,
+                                current,
+                                target,
+                                completed: current >= target,
+                            });
+                        }
+                    }
+
+                    log::info!("Quest accepted: {} - {}", quest_id, quest_name);
+
+                    // Add to active quests (or update if exists)
+                    if let Some(existing) = state.ui_state.active_quests.iter_mut().find(|q| q.id == quest_id) {
+                        existing.objectives = objectives;
+                    } else {
+                        state.ui_state.active_quests.push(ActiveQuest {
+                            id: quest_id,
+                            name: quest_name,
+                            objectives,
+                        });
+                    }
+
+                    // Close any open dialogue
+                    state.ui_state.active_dialogue = None;
+                }
+            }
+
+            "questObjectiveProgress" => {
+                if let Some(value) = data {
+                    let quest_id = extract_string(value, "quest_id").unwrap_or_default();
+                    let objective_id = extract_string(value, "objective_id").unwrap_or_default();
+                    let current = extract_i32(value, "current").unwrap_or(0);
+                    let target = extract_i32(value, "target").unwrap_or(1);
+
+                    log::debug!("Quest objective progress: {}:{} = {}/{}", quest_id, objective_id, current, target);
+
+                    // Update the objective in the active quest
+                    if let Some(quest) = state.ui_state.active_quests.iter_mut().find(|q| q.id == quest_id) {
+                        if let Some(obj) = quest.objectives.iter_mut().find(|o| o.id == objective_id) {
+                            obj.current = current;
+                            obj.target = target;
+                            obj.completed = current >= target;
+                        }
+                    }
+                }
+            }
+
+            "questCompleted" => {
+                if let Some(value) = data {
+                    let quest_id = extract_string(value, "quest_id").unwrap_or_default();
+                    let quest_name = extract_string(value, "quest_name").unwrap_or_default();
+                    let exp_reward = extract_i32(value, "exp_reward").unwrap_or(0);
+                    let gold_reward = extract_i32(value, "gold_reward").unwrap_or(0);
+
+                    log::info!("Quest completed: {} - {} (EXP: {}, Gold: {})", quest_id, quest_name, exp_reward, gold_reward);
+
+                    // Remove from active quests
+                    state.ui_state.active_quests.retain(|q| q.id != quest_id);
+
+                    // Add completion notification
+                    state.ui_state.quest_completed_events.push(QuestCompletedEvent {
+                        quest_id,
+                        quest_name,
+                        exp_reward,
+                        gold_reward,
+                        time: macroquad::time::get_time(),
+                    });
+
+                    // Close any open dialogue
+                    state.ui_state.active_dialogue = None;
+                }
+            }
+
+            "dialogueClosed" => {
+                // Server tells us to close dialogue
+                state.ui_state.active_dialogue = None;
             }
 
             _ => {

@@ -2,6 +2,27 @@ use serde::{Deserialize, Serialize};
 
 pub const CHUNK_SIZE: u32 = 32;
 
+/// Entity spawn point data parsed from Tiled map
+#[derive(Debug, Clone)]
+pub struct EntitySpawn {
+    /// Prototype ID from entity registry (e.g., "slime", "slime_king")
+    pub entity_id: String,
+    /// World X coordinate
+    pub world_x: i32,
+    /// World Y coordinate
+    pub world_y: i32,
+    /// Entity level
+    pub level: i32,
+    /// Whether entity respawns after death
+    pub respawn: bool,
+    /// Optional respawn time override (ms)
+    pub respawn_time_override: Option<u64>,
+    /// Initial facing direction
+    pub facing: Option<String>,
+    /// Optional unique instance ID (for quest targets)
+    pub unique_id: Option<String>,
+}
+
 /// Chunk coordinates in the world grid
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChunkCoord {
@@ -112,7 +133,10 @@ pub struct Chunk {
     pub coord: ChunkCoord,
     pub collision: Vec<bool>, // CHUNK_SIZE * CHUNK_SIZE collision flags
     pub layers: Vec<ChunkLayer>,
-    pub spawn_points: Vec<(u32, u32)>, // Local coordinates for NPC/player spawns
+    /// Entity spawn points parsed from Tiled map objects
+    pub entity_spawns: Vec<EntitySpawn>,
+    /// Simple spawn points for players (local coordinates)
+    pub player_spawns: Vec<(u32, u32)>,
 }
 
 impl Chunk {
@@ -125,7 +149,8 @@ impl Chunk {
                 ChunkLayer::new(ChunkLayerType::Objects),
                 ChunkLayer::new(ChunkLayerType::Overhead),
             ],
-            spawn_points: Vec::new(),
+            entity_spawns: Vec::new(),
+            player_spawns: Vec::new(),
         }
     }
 
@@ -165,8 +190,65 @@ impl Chunk {
             }
         }
 
-        // Add spawn point at center of chunk
-        chunk.spawn_points.push((CHUNK_SIZE / 2, CHUNK_SIZE / 2));
+        // Add player spawn point at center of chunk
+        chunk.player_spawns.push((CHUNK_SIZE / 2, CHUNK_SIZE / 2));
+
+        // Add some test entity spawns for chunk (0, 0)
+        if coord.x == 0 && coord.y == 0 {
+            let base_x = coord.x * CHUNK_SIZE as i32;
+            let base_y = coord.y * CHUNK_SIZE as i32;
+
+            chunk.entity_spawns.push(EntitySpawn {
+                entity_id: "slime".to_string(),
+                world_x: base_x + 19,
+                world_y: base_y + 9,
+                level: 1,
+                respawn: true,
+                respawn_time_override: None,
+                facing: None,
+                unique_id: None,
+            });
+            chunk.entity_spawns.push(EntitySpawn {
+                entity_id: "slime".to_string(),
+                world_x: base_x + 19,
+                world_y: base_y + 8,
+                level: 1,
+                respawn: true,
+                respawn_time_override: None,
+                facing: None,
+                unique_id: None,
+            });
+            chunk.entity_spawns.push(EntitySpawn {
+                entity_id: "slime".to_string(),
+                world_x: base_x + 8,
+                world_y: base_y + 12,
+                level: 1,
+                respawn: true,
+                respawn_time_override: None,
+                facing: None,
+                unique_id: None,
+            });
+            chunk.entity_spawns.push(EntitySpawn {
+                entity_id: "poison_slime".to_string(),
+                world_x: base_x + 20,
+                world_y: base_y + 15,
+                level: 2,
+                respawn: true,
+                respawn_time_override: None,
+                facing: None,
+                unique_id: None,
+            });
+            chunk.entity_spawns.push(EntitySpawn {
+                entity_id: "slime_king".to_string(),
+                world_x: base_x + 15,
+                world_y: base_y + 20,
+                level: 3,
+                respawn: true,
+                respawn_time_override: Some(300000), // 5 minutes
+                facing: None,
+                unique_id: Some("boss_slime_king_1".to_string()),
+            });
+        }
 
         chunk
     }
@@ -193,8 +275,8 @@ impl Chunk {
 
     /// Get a safe spawn point in this chunk
     pub fn get_safe_spawn(&self) -> Option<(u32, u32)> {
-        // First try defined spawn points
-        for &(x, y) in &self.spawn_points {
+        // First try defined player spawn points
+        for &(x, y) in &self.player_spawns {
             if self.is_walkable_local(x, y) {
                 return Some((x, y));
             }

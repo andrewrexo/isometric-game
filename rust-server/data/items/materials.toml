@@ -1,0 +1,34 @@
+# Material items - crafting ingredients, monster drops
+
+[slime_core]
+display_name = "Slime Core"
+sprite = "item_slime_core"
+description = "A gelatinous core harvested from slimes. Used in alchemy."
+category = "material"
+max_stack = 99
+base_price = 5
+
+[gold]
+display_name = "Gold"
+sprite = "item_gold"
+description = "The universal currency."
+category = "material"
+max_stack = 9999
+base_price = 1
+sellable = false
+
+[iron_ore]
+display_name = "Iron Ore"
+sprite = "item_iron_ore"
+description = "Raw iron ore for smithing."
+category = "material"
+max_stack = 99
+base_price = 10
+
+[goblin_ear]
+display_name = "Goblin Ear"
+sprite = "item_goblin_ear"
+description = "A trophy from a slain goblin. Some collectors pay well for these."
+category = "material"
+max_stack = 99
+base_price = 3

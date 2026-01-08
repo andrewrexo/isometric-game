@@ -60,10 +60,29 @@ pub enum NpcState {
 // NPC Entity
 // ============================================================================
 
+/// Stats from prototype used for AI behavior
+#[derive(Debug, Clone)]
+pub struct PrototypeStats {
+    pub display_name: String,
+    pub damage: i32,
+    pub attack_range: i32,
+    pub aggro_range: i32,
+    pub chase_range: i32,
+    pub move_cooldown_ms: u64,
+    pub attack_cooldown_ms: u64,
+    pub respawn_time_ms: u64,
+    pub exp_base: i32,
+    pub hostile: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Npc {
     pub id: String,
     pub npc_type: NpcType,
+    /// Reference to entity prototype ID (e.g., "slime", "slime_king")
+    pub prototype_id: Option<String>,
+    /// Stats from prototype (overrides npc_type stats when present)
+    pub proto_stats: Option<PrototypeStats>,
     // Grid position (server authoritative)
     pub x: i32,
     pub y: i32,
@@ -86,6 +105,8 @@ impl Npc {
         Self {
             id: id.to_string(),
             npc_type,
+            prototype_id: None,
+            proto_stats: None,
             x,
             y,
             spawn_x: x,
@@ -102,15 +123,95 @@ impl Npc {
         }
     }
 
+    /// Create an NPC from an entity prototype
+    pub fn from_prototype(
+        id: &str,
+        prototype_id: &str,
+        prototype: &crate::entity::EntityPrototype,
+        x: i32,
+        y: i32,
+        level: i32,
+    ) -> Self {
+        let proto_stats = PrototypeStats {
+            display_name: prototype.display_name.clone(),
+            damage: prototype.stats.damage,
+            attack_range: prototype.stats.attack_range,
+            aggro_range: prototype.stats.aggro_range,
+            chase_range: prototype.stats.chase_range,
+            move_cooldown_ms: prototype.stats.move_cooldown_ms,
+            attack_cooldown_ms: prototype.stats.attack_cooldown_ms,
+            respawn_time_ms: prototype.stats.respawn_time_ms,
+            exp_base: prototype.rewards.exp_base,
+            hostile: prototype.behaviors.hostile,
+        };
+
+        Self {
+            id: id.to_string(),
+            npc_type: NpcType::Slime, // Fallback type for compatibility
+            prototype_id: Some(prototype_id.to_string()),
+            proto_stats: Some(proto_stats),
+            x,
+            y,
+            spawn_x: x,
+            spawn_y: y,
+            direction: Direction::Down,
+            hp: prototype.stats.max_hp,
+            max_hp: prototype.stats.max_hp,
+            level,
+            state: NpcState::Idle,
+            target_id: None,
+            last_attack_time: 0,
+            last_move_time: 0,
+            death_time: 0,
+        }
+    }
+
+    // Helper methods to get stats (prefer prototype stats over npc_type stats)
+    fn get_damage(&self) -> i32 {
+        self.proto_stats.as_ref().map(|s| s.damage).unwrap_or_else(|| self.npc_type.stats().damage)
+    }
+
+    fn get_attack_range(&self) -> i32 {
+        self.proto_stats.as_ref().map(|s| s.attack_range).unwrap_or_else(|| self.npc_type.stats().attack_range)
+    }
+
+    fn get_aggro_range(&self) -> i32 {
+        self.proto_stats.as_ref().map(|s| s.aggro_range).unwrap_or_else(|| self.npc_type.stats().aggro_range)
+    }
+
+    fn get_chase_range(&self) -> i32 {
+        self.proto_stats.as_ref().map(|s| s.chase_range).unwrap_or_else(|| self.npc_type.stats().chase_range)
+    }
+
+    fn get_move_cooldown_ms(&self) -> u64 {
+        self.proto_stats.as_ref().map(|s| s.move_cooldown_ms).unwrap_or_else(|| self.npc_type.stats().move_cooldown_ms)
+    }
+
+    fn get_attack_cooldown_ms(&self) -> u64 {
+        self.proto_stats.as_ref().map(|s| s.attack_cooldown_ms).unwrap_or_else(|| self.npc_type.stats().attack_cooldown_ms)
+    }
+
+    fn get_respawn_time_ms(&self) -> u64 {
+        self.proto_stats.as_ref().map(|s| s.respawn_time_ms).unwrap_or_else(|| self.npc_type.stats().respawn_time_ms)
+    }
+
+    pub fn is_hostile(&self) -> bool {
+        self.proto_stats.as_ref().map(|s| s.hostile).unwrap_or(true)
+    }
+
     pub fn name(&self) -> String {
-        let stats = self.npc_type.stats();
-        format!("{} Lv.{}", stats.name, self.level)
+        if let Some(ref stats) = self.proto_stats {
+            format!("{} Lv.{}", stats.display_name, self.level)
+        } else {
+            let stats = self.npc_type.stats();
+            format!("{} Lv.{}", stats.name, self.level)
+        }
     }
 
     pub fn exp_reward(&self) -> i32 {
-        let stats = self.npc_type.stats();
+        let base = self.proto_stats.as_ref().map(|s| s.exp_base).unwrap_or_else(|| self.npc_type.stats().exp_reward);
         // Scale EXP by NPC level
-        stats.exp_reward * self.level
+        base * self.level
     }
 
     pub fn is_alive(&self) -> bool {
@@ -135,16 +236,14 @@ impl Npc {
         if self.state != NpcState::Dead {
             return false;
         }
-        let stats = self.npc_type.stats();
-        current_time - self.death_time >= stats.respawn_time_ms
+        current_time - self.death_time >= self.get_respawn_time_ms()
     }
 
     /// Respawn the NPC at its spawn point
     pub fn respawn(&mut self) {
-        let stats = self.npc_type.stats();
         self.x = self.spawn_x;
         self.y = self.spawn_y;
-        self.hp = stats.max_hp;
+        self.hp = self.max_hp;
         self.state = NpcState::Idle;
         self.target_id = None;
         self.last_attack_time = 0;
@@ -159,10 +258,8 @@ impl Npc {
     /// Try to move one tile toward target position (grid-based)
     /// Returns true if moved
     fn try_move_toward(&mut self, target_x: i32, target_y: i32, current_time: u64) -> bool {
-        let stats = self.npc_type.stats();
-
         // Check movement cooldown
-        if current_time - self.last_move_time < stats.move_cooldown_ms {
+        if current_time - self.last_move_time < self.get_move_cooldown_ms() {
             return false;
         }
 
@@ -205,19 +302,28 @@ impl Npc {
             return None;
         }
 
-        let stats = self.npc_type.stats();
+        // Non-hostile NPCs never attack or aggro
+        if !self.is_hostile() {
+            return None;
+        }
+
         let mut attack_result = None;
 
         match self.state {
             NpcState::Idle => {
                 // Look for players in aggro range
+                let aggro_range = self.get_aggro_range();
+                if aggro_range <= 0 {
+                    return None; // No aggro range = peaceful NPC
+                }
+
                 let mut nearest: Option<(String, i32)> = None;
                 for (player_id, px, py, hp) in players {
                     if *hp <= 0 {
                         continue; // Skip dead players
                     }
                     let dist = Self::grid_distance(self.x, self.y, *px, *py);
-                    if dist <= stats.aggro_range {
+                    if dist <= aggro_range {
                         if nearest.is_none() || dist < nearest.as_ref().unwrap().1 {
                             nearest = Some((player_id.clone(), dist));
                         }
@@ -242,11 +348,11 @@ impl Npc {
                     let dist = Self::grid_distance(self.x, self.y, tx, ty);
                     let spawn_dist = Self::grid_distance(self.x, self.y, self.spawn_x, self.spawn_y);
 
-                    if spawn_dist > stats.chase_range {
+                    if spawn_dist > self.get_chase_range() {
                         // Too far from spawn, return home
                         self.state = NpcState::Returning;
                         self.target_id = None;
-                    } else if dist <= stats.attack_range {
+                    } else if dist <= self.get_attack_range() {
                         // In attack range
                         self.state = NpcState::Attacking;
                     } else {
@@ -271,7 +377,7 @@ impl Npc {
                 if let Some((target_id, tx, ty)) = target_info {
                     let dist = Self::grid_distance(self.x, self.y, tx, ty);
 
-                    if dist > stats.attack_range {
+                    if dist > self.get_attack_range() {
                         // Target moved out of range, chase again
                         self.state = NpcState::Chasing;
                     } else {
@@ -283,9 +389,9 @@ impl Npc {
                         }
 
                         // Attack if cooldown is ready
-                        if current_time - self.last_attack_time >= stats.attack_cooldown_ms {
+                        if current_time - self.last_attack_time >= self.get_attack_cooldown_ms() {
                             self.last_attack_time = current_time;
-                            attack_result = Some((target_id, stats.damage));
+                            attack_result = Some((target_id, self.get_damage()));
                         }
                     }
                 } else {
@@ -300,7 +406,7 @@ impl Npc {
 
                 if dist == 0 {
                     // Reached spawn, go idle and heal
-                    self.hp = stats.max_hp;
+                    self.hp = self.max_hp;
                     self.state = NpcState::Idle;
                 } else {
                     // Move toward spawn (one tile at a time)
@@ -323,6 +429,10 @@ impl Npc {
 pub struct NpcUpdate {
     pub id: String,
     pub npc_type: u8,
+    /// Entity prototype ID (e.g., "slime", "slime_king") for client-side lookup
+    pub entity_type: String,
+    /// Display name to show above NPC
+    pub display_name: String,
     pub x: i32,  // Grid position
     pub y: i32,  // Grid position
     pub direction: u8,
@@ -330,13 +440,21 @@ pub struct NpcUpdate {
     pub max_hp: i32,
     pub level: i32,
     pub state: u8,
+    /// Whether this NPC is hostile
+    pub hostile: bool,
 }
 
 impl From<&Npc> for NpcUpdate {
     fn from(npc: &Npc) -> Self {
+        let display_name = npc.proto_stats.as_ref()
+            .map(|s| s.display_name.clone())
+            .unwrap_or_else(|| npc.npc_type.stats().name.to_string());
+
         Self {
             id: npc.id.clone(),
             npc_type: npc.npc_type as u8,
+            entity_type: npc.prototype_id.clone().unwrap_or_else(|| "slime".to_string()),
+            display_name,
             x: npc.x,
             y: npc.y,
             direction: npc.direction as u8,
@@ -344,6 +462,7 @@ impl From<&Npc> for NpcUpdate {
             max_hp: npc.max_hp,
             level: npc.level,
             state: npc.state as u8,
+            hostile: npc.is_hostile(),
         }
     }
 }

@@ -1,8 +1,9 @@
 use macroquad::prelude::*;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
+use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT};
 
 /// Tileset configuration
 const TILESET_TILE_WIDTH: f32 = 64.0;
@@ -14,6 +15,8 @@ pub struct Renderer {
     local_player_color: Color,
     /// Loaded tileset texture
     tileset: Option<Texture2D>,
+    /// Player sprite sheet texture
+    player_sprite: Option<Texture2D>,
 }
 
 impl Renderer {
@@ -31,10 +34,24 @@ impl Renderer {
             }
         };
 
+        // Try to load the player sprite sheet
+        let player_sprite = match load_texture("assets/sprites/player_base_0.png").await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                log::info!("Loaded player sprite: {}x{}", tex.width(), tex.height());
+                Some(tex)
+            }
+            Err(e) => {
+                log::warn!("Failed to load player sprite: {}. Using fallback shapes.", e);
+                None
+            }
+        };
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
             tileset,
+            player_sprite,
         }
     }
 
@@ -444,40 +461,74 @@ impl Renderer {
             draw_circle_lines(screen_x, screen_y, ring_radius + 3.0, 1.0, Color::from_rgba(255, 255, 0, (pulse * 150.0) as u8));
         }
 
-        // Player body (circle for MVP)
-        let base_color = if is_local {
-            self.local_player_color
+        // Draw shadow under player
+        draw_ellipse(screen_x, screen_y, 14.0, 7.0, 0.0, Color::from_rgba(0, 0, 0, 60));
+
+        // Try to render sprite, fall back to colored circle
+        if let Some(sprite) = &self.player_sprite {
+            let coords = player.animation.get_sprite_coords();
+            let (src_x, src_y, src_w, src_h) = coords.to_source_rect();
+
+            // Tint for local player distinction (slight green tint)
+            let tint = if is_local {
+                Color::from_rgba(220, 255, 220, alpha)
+            } else {
+                Color::from_rgba(255, 255, 255, alpha)
+            };
+
+            // Position sprite so feet are at screen_y
+            let draw_x = screen_x - SPRITE_WIDTH / 2.0;
+            let draw_y = screen_y - SPRITE_HEIGHT + 8.0; // Offset to align feet with tile
+
+            draw_texture_ex(
+                sprite,
+                draw_x,
+                draw_y,
+                tint,
+                DrawTextureParams {
+                    source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                    dest_size: Some(Vec2::new(SPRITE_WIDTH, SPRITE_HEIGHT)),
+                    flip_x: coords.flip_h,
+                    ..Default::default()
+                },
+            );
         } else {
-            self.player_color
-        };
-        let color = Color::from_rgba(
-            (base_color.r * 255.0) as u8,
-            (base_color.g * 255.0) as u8,
-            (base_color.b * 255.0) as u8,
-            alpha,
-        );
+            // Fallback: colored circle
+            let base_color = if is_local {
+                self.local_player_color
+            } else {
+                self.player_color
+            };
+            let color = Color::from_rgba(
+                (base_color.r * 255.0) as u8,
+                (base_color.g * 255.0) as u8,
+                (base_color.b * 255.0) as u8,
+                alpha,
+            );
 
-        let radius = 12.0;
-        draw_circle(screen_x, screen_y - radius, radius, color);
+            let radius = 12.0;
+            draw_circle(screen_x, screen_y - radius, radius, color);
 
-        // Direction indicator
-        let (dx, dy) = player.direction.to_unit_vector();
-        let indicator_len = 15.0;
-        draw_line(
-            screen_x,
-            screen_y - radius,
-            screen_x + dx * indicator_len,
-            screen_y - radius + dy * indicator_len * 0.5, // Flatten for isometric
-            2.0,
-            WHITE,
-        );
+            // Direction indicator
+            let (dx, dy) = player.direction.to_unit_vector();
+            let indicator_len = 15.0;
+            draw_line(
+                screen_x,
+                screen_y - radius,
+                screen_x + dx * indicator_len,
+                screen_y - radius + dy * indicator_len * 0.5, // Flatten for isometric
+                2.0,
+                WHITE,
+            );
+        }
 
         // Player name
+        let name_y_offset = if self.player_sprite.is_some() { SPRITE_HEIGHT - 8.0 } else { 24.0 };
         let name_width = measure_text(&player.name, None, 14, 1.0).width;
         draw_text(
             &player.name,
             screen_x - name_width / 2.0,
-            screen_y - radius * 2.0 - 5.0,
+            screen_y - name_y_offset - 5.0,
             14.0,
             WHITE,
         );
@@ -487,7 +538,7 @@ impl Renderer {
             let bar_width = 30.0;
             let bar_height = 4.0;
             let bar_x = screen_x - bar_width / 2.0;
-            let bar_y = screen_y - radius * 2.0 - 20.0;
+            let bar_y = screen_y - name_y_offset - 20.0;
 
             // Background
             draw_rectangle(bar_x, bar_y, bar_width, bar_height, DARKGRAY);
@@ -524,9 +575,22 @@ impl Renderer {
             draw_circle_lines(screen_x, screen_y, ring_radius + 3.0, 1.0, Color::from_rgba(255, 255, 0, (pulse * 150.0) as u8));
         }
 
-        // NPC body - green slime blob
-        let base_color = Color::from_rgba(80, 180, 80, 255);
-        let highlight_color = Color::from_rgba(120, 220, 120, 255);
+        // NPC body color based on hostility
+        let (base_color, highlight_color, name_color) = if npc.is_hostile() {
+            // Hostile = green slime blob, red name
+            (
+                Color::from_rgba(80, 180, 80, 255),
+                Color::from_rgba(120, 220, 120, 255),
+                Color::from_rgba(255, 150, 150, 255),
+            )
+        } else {
+            // Friendly = blue/purple humanoid indicator, cyan name
+            (
+                Color::from_rgba(100, 120, 200, 255),
+                Color::from_rgba(140, 160, 240, 255),
+                Color::from_rgba(150, 220, 255, 255),
+            )
+        };
 
         // Wobble animation based on movement
         let wobble = (macroquad::time::get_time() * 4.0 + npc.animation_frame as f64).sin() as f32;
@@ -536,11 +600,18 @@ impl Renderer {
         // Draw shadow
         draw_ellipse(screen_x, screen_y, 12.0, 6.0, 0.0, Color::from_rgba(0, 0, 0, 60));
 
-        // Draw slime body (oval blob)
+        // Draw NPC body (oval blob) - TODO: use sprites based on entity_type
         draw_ellipse(screen_x, screen_y - height_offset, radius, radius * 0.7, 0.0, base_color);
 
         // Highlight
         draw_ellipse(screen_x - 3.0, screen_y - height_offset - 2.0, radius * 0.3, radius * 0.2, 0.0, highlight_color);
+
+        // Interaction indicator for friendly NPCs (yellow exclamation mark above head)
+        if !npc.is_hostile() {
+            let pulse = (macroquad::time::get_time() * 2.0).sin() as f32 * 0.2 + 0.8;
+            let indicator_y = screen_y - height_offset - radius - 25.0;
+            draw_text("!", screen_x - 3.0, indicator_y, 18.0, Color::from_rgba(255, 220, 50, (pulse * 255.0) as u8));
+        }
 
         // NPC name with level
         let name = npc.name();
@@ -550,28 +621,30 @@ impl Renderer {
             screen_x - name_width / 2.0,
             screen_y - height_offset - radius - 5.0,
             12.0,
-            Color::from_rgba(255, 200, 200, 255),
+            name_color,
         );
 
-        // Health bar (always show for NPCs)
-        let bar_width = 28.0;
-        let bar_height = 3.0;
-        let bar_x = screen_x - bar_width / 2.0;
-        let bar_y = screen_y - height_offset - radius - 18.0;
+        // Health bar (only show for hostile NPCs or when damaged)
+        if npc.is_hostile() || npc.hp < npc.max_hp {
+            let bar_width = 28.0;
+            let bar_height = 3.0;
+            let bar_x = screen_x - bar_width / 2.0;
+            let bar_y = screen_y - height_offset - radius - 18.0;
 
-        // Background
-        draw_rectangle(bar_x, bar_y, bar_width, bar_height, DARKGRAY);
+            // Background
+            draw_rectangle(bar_x, bar_y, bar_width, bar_height, DARKGRAY);
 
-        // Health
-        let hp_ratio = npc.hp as f32 / npc.max_hp as f32;
-        let hp_color = if hp_ratio > 0.5 {
-            GREEN
-        } else if hp_ratio > 0.25 {
-            YELLOW
-        } else {
-            RED
-        };
-        draw_rectangle(bar_x, bar_y, bar_width * hp_ratio, bar_height, hp_color);
+            // Health
+            let hp_ratio = npc.hp as f32 / npc.max_hp as f32;
+            let hp_color = if hp_ratio > 0.5 {
+                GREEN
+            } else if hp_ratio > 0.25 {
+                YELLOW
+            } else {
+                RED
+            };
+            draw_rectangle(bar_x, bar_y, bar_width * hp_ratio, bar_height, hp_color);
+        }
     }
 
     fn render_ground_item(&self, item: &GroundItem, camera: &Camera) {
@@ -718,6 +791,17 @@ impl Renderer {
         // Quick slots (always visible at bottom)
         self.render_quick_slots(state);
 
+        // Quest objective tracker (top-left)
+        self.render_quest_tracker(state);
+
+        // Quest completion notifications
+        self.render_quest_completed(state);
+
+        // Dialogue box (when active)
+        if let Some(dialogue) = &state.ui_state.active_dialogue {
+            self.render_dialogue(dialogue);
+        }
+
         // Chat input box (when open)
         if state.ui_state.chat_open {
             let input_x = 10.0;
@@ -751,7 +835,7 @@ impl Renderer {
             draw_text("Press Enter to send, Escape to cancel", input_x, input_y + input_height + 12.0, 12.0, GRAY);
         } else {
             // Controls hint (only show when chat is closed)
-            draw_text("WASD: Move | CTRL: Attack | I: Inventory | 1-5: Use item | F: Pickup | F3: Debug", 10.0, screen_height() - 10.0, 12.0, GRAY);
+            draw_text("WASD: Move | Space: Attack | I: Inventory | E: Interact | Q: Quests | F: Pickup | F3: Debug", 10.0, screen_height() - 10.0, 12.0, GRAY);
         }
     }
 
@@ -834,6 +918,191 @@ impl Renderer {
 
             // Slot number
             draw_text(&(i + 1).to_string(), x + slot_size - 10.0, y + 12.0, 12.0, WHITE);
+        }
+    }
+
+    /// Render the dialogue box for NPC conversations
+    fn render_dialogue(&self, dialogue: &ActiveDialogue) {
+        // Semi-transparent overlay to focus attention
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 100));
+
+        let box_width = 600.0;
+        let box_height = 200.0 + (dialogue.choices.len() as f32 * 30.0);
+        let box_x = (screen_width() - box_width) / 2.0;
+        let box_y = screen_height() - box_height - 80.0;
+
+        // Main dialogue box
+        draw_rectangle(box_x, box_y, box_width, box_height, Color::from_rgba(20, 20, 30, 240));
+        draw_rectangle_lines(box_x, box_y, box_width, box_height, 2.0, Color::from_rgba(100, 100, 120, 255));
+
+        // Speaker name with highlight
+        let speaker_box_width = measure_text(&dialogue.speaker, None, 18, 1.0).width + 20.0;
+        draw_rectangle(box_x + 15.0, box_y - 12.0, speaker_box_width, 24.0, Color::from_rgba(60, 60, 80, 255));
+        draw_rectangle_lines(box_x + 15.0, box_y - 12.0, speaker_box_width, 24.0, 1.0, Color::from_rgba(100, 100, 120, 255));
+        draw_text(&dialogue.speaker, box_x + 25.0, box_y + 5.0, 18.0, Color::from_rgba(255, 220, 100, 255));
+
+        // Dialogue text with word wrap
+        let text_x = box_x + 20.0;
+        let text_y = box_y + 40.0;
+        let max_line_width = box_width - 40.0;
+
+        // Simple word wrap
+        let words: Vec<&str> = dialogue.text.split_whitespace().collect();
+        let mut current_line = String::new();
+        let mut line_y = text_y;
+
+        for word in words {
+            let test_line = if current_line.is_empty() {
+                word.to_string()
+            } else {
+                format!("{} {}", current_line, word)
+            };
+
+            let line_width = measure_text(&test_line, None, 16, 1.0).width;
+            if line_width > max_line_width && !current_line.is_empty() {
+                draw_text(&current_line, text_x, line_y, 16.0, WHITE);
+                line_y += 22.0;
+                current_line = word.to_string();
+            } else {
+                current_line = test_line;
+            }
+        }
+        if !current_line.is_empty() {
+            draw_text(&current_line, text_x, line_y, 16.0, WHITE);
+        }
+
+        // Choices
+        if dialogue.choices.is_empty() {
+            // No choices - show continue hint
+            let hint = "Press [Enter] or [Space] to continue...";
+            let hint_width = measure_text(hint, None, 14, 1.0).width;
+            draw_text(hint, box_x + box_width - hint_width - 20.0, box_y + box_height - 20.0, 14.0, GRAY);
+        } else {
+            // Render choices
+            let choice_start_y = box_y + box_height - 30.0 - (dialogue.choices.len() as f32 * 30.0);
+
+            for (i, choice) in dialogue.choices.iter().enumerate() {
+                let choice_y = choice_start_y + (i as f32 * 30.0);
+                let choice_text = format!("[{}] {}", i + 1, choice.text);
+
+                // Choice background on hover (we don't have mouse hover, so just highlight first)
+                let bg_color = Color::from_rgba(50, 50, 70, 200);
+                draw_rectangle(text_x - 5.0, choice_y - 16.0, max_line_width, 26.0, bg_color);
+
+                // Choice text
+                draw_text(&choice_text, text_x, choice_y, 16.0, Color::from_rgba(200, 200, 255, 255));
+            }
+
+            // Hint
+            draw_text("Press [1-4] to select | [Esc] to close", box_x + 20.0, box_y + box_height - 15.0, 12.0, GRAY);
+        }
+    }
+
+    /// Render the quest objective tracker (top-left corner)
+    fn render_quest_tracker(&self, state: &GameState) {
+        if state.ui_state.active_quests.is_empty() {
+            return;
+        }
+
+        let tracker_x = 10.0;
+        let tracker_y = 80.0;
+        let line_height = 18.0;
+
+        let mut y = tracker_y;
+
+        // Header
+        draw_text("QUESTS", tracker_x, y, 14.0, Color::from_rgba(255, 220, 100, 255));
+        y += line_height + 5.0;
+
+        // Only show first 2 active quests to avoid cluttering the screen
+        for quest in state.ui_state.active_quests.iter().take(2) {
+            // Quest name
+            draw_text(&quest.name, tracker_x, y, 13.0, WHITE);
+            y += line_height;
+
+            // Objectives
+            for obj in &quest.objectives {
+                let status_color = if obj.completed {
+                    Color::from_rgba(100, 255, 100, 255) // Green for complete
+                } else {
+                    Color::from_rgba(200, 200, 200, 255) // Gray for incomplete
+                };
+
+                let check = if obj.completed { "[x]" } else { "[ ]" };
+                let obj_text = format!("{} {} ({}/{})", check, obj.description, obj.current, obj.target);
+                draw_text(&obj_text, tracker_x + 10.0, y, 12.0, status_color);
+                y += line_height - 2.0;
+            }
+
+            y += 8.0; // Space between quests
+        }
+
+        // Show more quests hint if there are more
+        if state.ui_state.active_quests.len() > 2 {
+            let more = format!("...and {} more (Q to view)", state.ui_state.active_quests.len() - 2);
+            draw_text(&more, tracker_x, y, 11.0, GRAY);
+        }
+    }
+
+    /// Render quest completion notifications (center screen, floating)
+    fn render_quest_completed(&self, state: &GameState) {
+        let current_time = macroquad::time::get_time();
+
+        for event in &state.ui_state.quest_completed_events {
+            let age = (current_time - event.time) as f32;
+            if age > 4.0 {
+                continue;
+            }
+
+            // Fade out over the last second
+            let alpha = if age > 3.0 {
+                ((4.0 - age) * 255.0) as u8
+            } else {
+                255
+            };
+
+            // Float up slightly
+            let float_offset = (age * 10.0).min(30.0);
+
+            // Position at top-center
+            let y = 120.0 - float_offset;
+
+            // "QUEST COMPLETE!" banner
+            let title = "QUEST COMPLETE!";
+            let title_width = measure_text(title, None, 28, 1.0).width;
+            let x = (screen_width() - title_width) / 2.0;
+
+            // Outline
+            let outline_color = Color::from_rgba(0, 0, 0, alpha);
+            for ox in [-2.0, 2.0] {
+                for oy in [-2.0, 2.0] {
+                    draw_text(title, x + ox, y + oy, 28.0, outline_color);
+                }
+            }
+
+            // Main text (gold)
+            draw_text(title, x, y, 28.0, Color::from_rgba(255, 215, 0, alpha));
+
+            // Quest name
+            let name_width = measure_text(&event.quest_name, None, 18, 1.0).width;
+            draw_text(
+                &event.quest_name,
+                (screen_width() - name_width) / 2.0,
+                y + 25.0,
+                18.0,
+                Color::from_rgba(255, 255, 255, alpha),
+            );
+
+            // Rewards
+            let rewards = format!("+{} EXP  +{} Gold", event.exp_reward, event.gold_reward);
+            let rewards_width = measure_text(&rewards, None, 14, 1.0).width;
+            draw_text(
+                &rewards,
+                (screen_width() - rewards_width) / 2.0,
+                y + 45.0,
+                14.0,
+                Color::from_rgba(100, 255, 100, alpha),
+            );
         }
     }
 }

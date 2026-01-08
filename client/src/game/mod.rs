@@ -5,7 +5,7 @@ pub mod npc;
 pub mod item;
 pub mod chunk;
 
-pub use state::{GameState, Camera, ConnectionStatus, ChatMessage, UiState, DamageEvent, LevelUpEvent};
+pub use state::{GameState, Camera, ConnectionStatus, ChatMessage, UiState, DamageEvent, LevelUpEvent, DialogueChoice, ActiveDialogue, QuestObjective, ActiveQuest, QuestCompletedEvent};
 pub use entities::{Player, Direction};
 pub use tilemap::{Tilemap, TilemapLayer, LayerType};
 pub use npc::{Npc, NpcType, NpcState};

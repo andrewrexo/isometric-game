@@ -45,11 +45,62 @@ pub struct LevelUpEvent {
     pub time: f64,
 }
 
+/// A choice in a dialogue box
+#[derive(Clone, Debug)]
+pub struct DialogueChoice {
+    pub id: String,
+    pub text: String,
+}
+
+/// Active dialogue being shown to the player
+#[derive(Clone, Debug)]
+pub struct ActiveDialogue {
+    pub quest_id: String,
+    pub npc_id: String,
+    pub speaker: String,
+    pub text: String,
+    pub choices: Vec<DialogueChoice>,
+    pub show_time: f64,
+}
+
+/// A quest objective with progress tracking
+#[derive(Clone, Debug)]
+pub struct QuestObjective {
+    pub id: String,
+    pub description: String,
+    pub current: i32,
+    pub target: i32,
+    pub completed: bool,
+}
+
+/// An active quest with its objectives
+#[derive(Clone, Debug)]
+pub struct ActiveQuest {
+    pub id: String,
+    pub name: String,
+    pub objectives: Vec<QuestObjective>,
+}
+
+/// Quest completion notification
+#[derive(Clone, Debug)]
+pub struct QuestCompletedEvent {
+    pub quest_id: String,
+    pub quest_name: String,
+    pub exp_reward: i32,
+    pub gold_reward: i32,
+    pub time: f64,
+}
+
 pub struct UiState {
     pub chat_open: bool,
     pub chat_input: String,
     pub chat_messages: Vec<ChatMessage>,
     pub inventory_open: bool,
+    // Quest UI state
+    pub active_dialogue: Option<ActiveDialogue>,
+    pub active_quests: Vec<ActiveQuest>,
+    pub quest_completed_events: Vec<QuestCompletedEvent>,
+    pub quest_log_open: bool,
 }
 
 impl Default for UiState {
@@ -59,6 +110,10 @@ impl Default for UiState {
             chat_input: String::new(),
             chat_messages: Vec::new(),
             inventory_open: false,
+            active_dialogue: None,
+            active_quests: Vec::new(),
+            quest_completed_events: Vec::new(),
+            quest_log_open: false,
         }
     }
 }
@@ -178,6 +233,9 @@ impl GameState {
 
         // Clean up old level up events (older than 2.0 seconds)
         self.level_up_events.retain(|event| current_time - event.time < 2.0);
+
+        // Clean up old quest completion events (older than 4 seconds)
+        self.ui_state.quest_completed_events.retain(|event| current_time - event.time < 4.0);
     }
 
     pub fn get_local_player(&self) -> Option<&Player> {

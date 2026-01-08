@@ -22,7 +22,9 @@
       "Bash(rustup target list:*)",
       "Bash(rustup target add:*)",
       "Bash(cargo install:*)",
-      "Bash(RUST_LOG=warn timeout 8 ./target/release/isometric-client:*)"
+      "Bash(RUST_LOG=warn timeout 8 ./target/release/isometric-client:*)",
+      "Bash(sips:*)",
+      "Bash(identify:*)"
     ]
   }
 }
