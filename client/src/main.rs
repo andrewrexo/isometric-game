@@ -30,7 +30,7 @@ const DEV_MODE: bool = true;
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Isometric MMORPG".to_string(),
+        window_title: "New Aeven".to_string(),
         window_width: 1280,
         window_height: 720,
         fullscreen: false,

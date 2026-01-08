@@ -377,9 +377,13 @@ impl NetworkClient {
                             let gold = extract_i32(player_value, "gold");
 
                             if let Some(player) = state.players.get_mut(&id) {
+                                // Read velocity for client-side prediction
+                                let vel_x = extract_i32(player_value, "velX").unwrap_or(0) as f32;
+                                let vel_y = extract_i32(player_value, "velY").unwrap_or(0) as f32;
+
                                 if let (Some(x), Some(y)) = (x, y) {
-                                    // Set server target - client will smoothly interpolate
-                                    player.set_server_position(x as f32, y as f32);
+                                    // Set server target with velocity for prediction
+                                    player.set_server_position_with_velocity(x as f32, y as f32, vel_x, vel_y);
                                 }
                                 if let Some(dir) = direction {
                                     player.direction = Direction::from_u8(dir as u8);

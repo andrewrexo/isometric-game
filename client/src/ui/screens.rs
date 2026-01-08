@@ -184,14 +184,14 @@ impl Screen for LoginScreen {
         }
 
         // Title
-        let title = "ISOMETRIC MMORPG";
+        let title = "NEW AEVEN";
         let title_size = 48.0;
         let title_width = measure_text(title, None, title_size as u16, 1.0).width;
         draw_text(title, (sw - title_width) / 2.0, sh * 0.2, title_size, WHITE);
 
         // Subtitle
         let subtitle = match self.mode {
-            LoginMode::Login => "Login to your account",
+            LoginMode::Login => "Login to start playing",
             LoginMode::Register => "Create new account",
         };
         let sub_size = 24.0;

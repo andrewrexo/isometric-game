@@ -16,8 +16,8 @@ use crate::world::World;
 
 const TICK_RATE: f32 = 20.0;
 
-// Grid-based movement: time between tile moves (250ms = 4 tiles/sec)
-const MOVE_COOLDOWN_MS: u64 = 250;
+// Grid-based movement: ticks between tile moves (5 ticks * 50ms = 250ms = 15 frames at 60fps)
+const MOVE_COOLDOWN_TICKS: u64 = 5;
 
 const MAP_WIDTH: u32 = 32;
 const MAP_HEIGHT: u32 = 32;
@@ -101,7 +101,7 @@ pub struct Player {
     // Queued movement direction (-1, 0, or 1)
     pub move_dx: i32,
     pub move_dy: i32,
-    pub last_move_time: u64, // For movement cooldown
+    pub last_move_tick: u64, // Tick-based movement cooldown
     pub direction: Direction,
     pub hp: i32,
     pub max_hp: i32,
@@ -135,7 +135,7 @@ impl Player {
             spawn_y,
             move_dx: 0,
             move_dy: 0,
-            last_move_time: 0,
+            last_move_tick: 0,
             direction: Direction::Down,
             hp: STARTING_HP,
             max_hp: STARTING_HP,
@@ -204,6 +204,9 @@ pub struct PlayerUpdate {
     pub x: i32,
     pub y: i32,
     pub direction: u8,
+    // Velocity for client-side prediction (-1, 0, or 1)
+    pub vel_x: i32,
+    pub vel_y: i32,
     pub hp: i32,
     pub max_hp: i32,
     pub level: i32,
@@ -918,11 +921,12 @@ impl GameRoom {
             .unwrap()
             .as_millis() as u64;
 
-        // Update tick counter
-        {
+        // Update tick counter and get current tick for movement timing
+        let current_tick = {
             let mut tick = self.tick.write().await;
             *tick += 1;
-        }
+            *tick
+        };
 
         // Handle player respawns
         let mut respawned_players = Vec::new();
@@ -947,12 +951,13 @@ impl GameRoom {
         }
 
         // Collect pending moves (id, target_x, target_y)
+        // Use tick-based cooldown for deterministic timing (5 ticks = 250ms)
         let pending_moves: Vec<(String, i32, i32)> = {
             let players = self.players.read().await;
             players.values()
                 .filter(|p| p.active && !p.is_dead)
-                .filter(|p| (p.move_dx != 0 || p.move_dy != 0))
-                .filter(|p| current_time - p.last_move_time >= MOVE_COOLDOWN_MS)
+                .filter(|p| p.move_dx != 0 || p.move_dy != 0)
+                .filter(|p| current_tick - p.last_move_tick >= MOVE_COOLDOWN_TICKS)
                 .map(|p| (p.id.clone(), p.x + p.move_dx, p.y + p.move_dy))
                 .collect()
         };
@@ -975,7 +980,7 @@ impl GameRoom {
                 if let Some(player) = players.get_mut(&id) {
                     player.x = target_x;
                     player.y = target_y;
-                    player.last_move_time = current_time;
+                    player.last_move_tick = current_tick;
                 }
             }
 
@@ -990,6 +995,9 @@ impl GameRoom {
                     x: player.x,
                     y: player.y,
                     direction: player.direction as u8,
+                    // Include velocity for client-side prediction
+                    vel_x: player.move_dx,
+                    vel_y: player.move_dy,
                     hp: player.hp,
                     max_hp: player.max_hp,
                     level: player.level,

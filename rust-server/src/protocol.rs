@@ -248,6 +248,9 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                         Value::String("direction".into()),
                         Value::Integer((p.direction as i64).into()),
                     ));
+                    // Include velocity for client-side prediction
+                    pmap.push((Value::String("velX".into()), Value::Integer((p.vel_x as i64).into())));
+                    pmap.push((Value::String("velY".into()), Value::Integer((p.vel_y as i64).into())));
                     pmap.push((Value::String("hp".into()), Value::Integer((p.hp as i64).into())));
                     pmap.push((Value::String("maxHp".into()), Value::Integer((p.max_hp as i64).into())));
                     pmap.push((Value::String("level".into()), Value::Integer((p.level as i64).into())));

@@ -70,11 +70,11 @@ impl Direction {
     }
 }
 
-// Movement speed in tiles per second (must match server: 250ms per tile = 4 tiles/sec)
+// Movement speed in tiles per second (must match server: 250ms per tile = 15 frames at 60fps)
 pub const TILES_PER_SECOND: f32 = 4.0;
 
 // Visual interpolation speed - match server speed for smooth tile-to-tile movement
-// This ensures visual movement takes exactly 250ms per tile
+// 1000ms / 250ms = 4.0 tiles/sec, exactly 15 frames per tile at 60fps
 const VISUAL_SPEED: f32 = 4.0;
 
 #[derive(Debug, Clone)]
@@ -168,37 +168,70 @@ impl Player {
     /// Set server-authoritative position (called when server sends state sync)
     /// Server sends grid positions (i32), we store as f32 for interpolation
     pub fn set_server_position(&mut self, new_x: f32, new_y: f32) {
-        // Store server position as interpolation target
+        self.set_server_position_with_velocity(new_x, new_y, 0.0, 0.0);
+    }
+
+    /// Set server position with velocity for client-side prediction
+    /// Simple approach: always trust server, predict only when caught up
+    pub fn set_server_position_with_velocity(&mut self, new_x: f32, new_y: f32, vel_x: f32, vel_y: f32) {
+        // Update authoritative server position and velocity
         self.server_x = new_x;
         self.server_y = new_y;
-        self.target_x = new_x;
-        self.target_y = new_y;
+        self.vel_x = vel_x;
+        self.vel_y = vel_y;
 
-        // Calculate direction from movement delta
-        let dx = new_x - self.x;
-        let dy = new_y - self.y;
+        // Calculate distance from visual to server
+        let dx = self.x - new_x;
+        let dy = self.y - new_y;
+        let dist = (dx * dx + dy * dy).sqrt();
 
-        if dx.abs() > 0.1 || dy.abs() > 0.1 {
-            self.direction = Direction::from_velocity(dx, dy);
-            self.is_moving = true;
+        if dist > 2.0 {
+            // Too far - hard snap
+            self.x = new_x;
+            self.y = new_y;
+            self.target_x = new_x;
+            self.target_y = new_y;
+        } else {
+            // Always update target to server position
+            // Interpolation will smoothly move us there
+            self.target_x = new_x;
+            self.target_y = new_y;
+        }
+
+        // Update direction from velocity
+        if vel_x != 0.0 || vel_y != 0.0 {
+            self.direction = Direction::from_velocity(vel_x, vel_y);
         }
     }
 
-    /// Smooth visual interpolation toward server grid position
-    /// Call every frame to update visual position
+    /// Smooth visual interpolation toward target position
+    /// Simple prediction: when at server position with velocity, predict next tile
     pub fn interpolate_visual(&mut self, delta: f32) {
         let dx = self.target_x - self.x;
         let dy = self.target_y - self.y;
         let dist = (dx * dx + dy * dy).sqrt();
 
         if dist < 0.01 {
-            // At target - snap exactly and stop moving
+            // Reached target - snap exactly
             self.x = self.target_x;
             self.y = self.target_y;
-            self.is_moving = false;
-            self.animation_frame = 0.0;
+
+            // Check if we're at the server position
+            let at_server = (self.x - self.server_x).abs() < 0.01
+                         && (self.y - self.server_y).abs() < 0.01;
+
+            if at_server && (self.vel_x != 0.0 || self.vel_y != 0.0) {
+                // At server position with velocity - predict next tile
+                self.target_x = self.server_x + self.vel_x;
+                self.target_y = self.server_y + self.vel_y;
+                self.is_moving = true;
+            } else {
+                // Either no velocity, or waiting for server to catch up
+                self.is_moving = false;
+                self.animation_frame = 0.0;
+            }
         } else {
-            // Smoothly move toward target
+            // Move toward target at constant speed
             let move_dist = VISUAL_SPEED * delta;
 
             if dist <= move_dist {
@@ -211,7 +244,7 @@ impl Player {
 
             self.is_moving = true;
 
-            // Animation while moving
+            // Animation while moving (8 fps, 4 frames)
             self.animation_frame += delta * 8.0;
             if self.animation_frame >= 4.0 {
                 self.animation_frame = 0.0;
