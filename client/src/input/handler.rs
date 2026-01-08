@@ -33,6 +33,9 @@ pub struct InputHandler {
     // Send commands at server tick rate
     last_send_time: f64,
     send_interval: f64,
+    // Attack cooldown tracking (matches server cooldown)
+    last_attack_time: f64,
+    attack_cooldown: f64,
 }
 
 impl InputHandler {
@@ -43,6 +46,8 @@ impl InputHandler {
             current_dir: CardinalDir::None,
             last_send_time: 0.0,
             send_interval: 0.05, // 50ms = 20Hz (matches server tick rate)
+            last_attack_time: 0.0,
+            attack_cooldown: 1.0, // 1 second (matches server ATTACK_COOLDOWN_MS)
         }
     }
 
@@ -150,10 +155,13 @@ impl InputHandler {
             self.last_send_time = current_time;
         }
 
-        // Attack (Space key)
-        if is_key_pressed(KeyCode::Space) {
-            log::info!("Space pressed - sending Attack command");
-            commands.push(InputCommand::Attack);
+        // Attack (Space key) - holding space continues attacking with cooldown
+        if is_key_down(KeyCode::Space) {
+            if current_time - self.last_attack_time >= self.attack_cooldown {
+                log::info!("Space held - sending Attack command");
+                commands.push(InputCommand::Attack);
+                self.last_attack_time = current_time;
+            }
         }
 
         // Target selection (left click)
