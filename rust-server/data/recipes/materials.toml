@@ -1,0 +1,35 @@
+# Material crafting recipes - refined materials, components
+
+[refined_slime]
+display_name = "Refined Slime Essence"
+description = "Purify slime cores into a concentrated essence. Useful for advanced crafting."
+category = "materials"
+level_required = 2
+
+[[refined_slime.ingredients]]
+item_id = "slime_core"
+count = 5
+
+[[refined_slime.results]]
+item_id = "slime_core"
+count = 3
+
+# Note: In the future, this would produce a different "refined_slime_core" item
+# For now, it demonstrates the mechanic of material conversion
+
+
+[goblin_trophy]
+display_name = "Goblin Trophy Bundle"
+description = "Bundle goblin ears together for easier storage and trade."
+category = "materials"
+level_required = 1
+
+[[goblin_trophy.ingredients]]
+item_id = "goblin_ear"
+count = 10
+
+[[goblin_trophy.results]]
+item_id = "goblin_ear"
+count = 5
+
+# Note: In reality, would produce a "goblin_trophy" item worth more gold

@@ -52,6 +52,10 @@ pub enum ClientMessage {
     /// Player abandons a quest
     #[serde(rename = "abandonQuest")]
     AbandonQuest { quest_id: String },
+
+    /// Player requests to craft an item
+    #[serde(rename = "craft")]
+    Craft { recipe_id: String },
 }
 
 // ============================================================================
@@ -206,6 +210,17 @@ pub enum ServerMessage {
     },
     /// Tell client to close the dialogue UI
     DialogueClosed,
+    /// Sent on connect: all recipe definitions for client-side registry
+    RecipeDefinitions {
+        recipes: Vec<ClientRecipeDef>,
+    },
+    /// Result of a crafting attempt
+    CraftResult {
+        success: bool,
+        recipe_id: String,
+        error: Option<String>,
+        items_gained: Vec<RecipeResult>,
+    },
 }
 
 /// Layer data for chunk transmission
@@ -253,6 +268,32 @@ pub struct QuestObjectiveData {
     pub completed: bool,
 }
 
+/// Recipe ingredient for client sync
+#[derive(Debug, Clone, Serialize)]
+pub struct RecipeIngredient {
+    pub item_id: String,
+    pub count: i32,
+}
+
+/// Recipe result for client sync
+#[derive(Debug, Clone, Serialize)]
+pub struct RecipeResult {
+    pub item_id: String,
+    pub count: i32,
+}
+
+/// Recipe definition for client-side registry
+#[derive(Debug, Clone, Serialize)]
+pub struct ClientRecipeDef {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub category: String,
+    pub level_required: i32,
+    pub ingredients: Vec<RecipeIngredient>,
+    pub results: Vec<RecipeResult>,
+}
+
 impl ServerMessage {
     pub fn msg_type(&self) -> &'static str {
         match self {
@@ -285,6 +326,8 @@ impl ServerMessage {
             ServerMessage::EntityDefinitions { .. } => "entityDefinitions",
             ServerMessage::ItemDefinitions { .. } => "itemDefinitions",
             ServerMessage::DialogueClosed => "dialogueClosed",
+            ServerMessage::RecipeDefinitions { .. } => "recipeDefinitions",
+            ServerMessage::CraftResult { .. } => "craftResult",
         }
     }
 }
@@ -797,6 +840,62 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             // Empty map - just the message type signals closure
             Value::Map(Vec::new())
         }
+        ServerMessage::RecipeDefinitions { recipes } => {
+            let mut map = Vec::new();
+            let recipe_values: Vec<Value> = recipes
+                .iter()
+                .map(|r| {
+                    let mut rmap = Vec::new();
+                    rmap.push((Value::String("id".into()), Value::String(r.id.clone().into())));
+                    rmap.push((Value::String("displayName".into()), Value::String(r.display_name.clone().into())));
+                    rmap.push((Value::String("description".into()), Value::String(r.description.clone().into())));
+                    rmap.push((Value::String("category".into()), Value::String(r.category.clone().into())));
+                    rmap.push((Value::String("levelRequired".into()), Value::Integer((r.level_required as i64).into())));
+
+                    let ingredient_values: Vec<Value> = r.ingredients.iter().map(|i| {
+                        let mut imap = Vec::new();
+                        imap.push((Value::String("itemId".into()), Value::String(i.item_id.clone().into())));
+                        imap.push((Value::String("count".into()), Value::Integer((i.count as i64).into())));
+                        Value::Map(imap)
+                    }).collect();
+                    rmap.push((Value::String("ingredients".into()), Value::Array(ingredient_values)));
+
+                    let result_values: Vec<Value> = r.results.iter().map(|res| {
+                        let mut resmap = Vec::new();
+                        resmap.push((Value::String("itemId".into()), Value::String(res.item_id.clone().into())));
+                        resmap.push((Value::String("count".into()), Value::Integer((res.count as i64).into())));
+                        Value::Map(resmap)
+                    }).collect();
+                    rmap.push((Value::String("results".into()), Value::Array(result_values)));
+
+                    Value::Map(rmap)
+                })
+                .collect();
+            map.push((Value::String("recipes".into()), Value::Array(recipe_values)));
+            Value::Map(map)
+        }
+        ServerMessage::CraftResult { success, recipe_id, error, items_gained } => {
+            let mut map = Vec::new();
+            map.push((Value::String("success".into()), Value::Boolean(*success)));
+            map.push((Value::String("recipeId".into()), Value::String(recipe_id.clone().into())));
+            map.push((
+                Value::String("error".into()),
+                match error {
+                    Some(e) => Value::String(e.clone().into()),
+                    None => Value::Nil,
+                },
+            ));
+
+            let item_values: Vec<Value> = items_gained.iter().map(|item| {
+                let mut imap = Vec::new();
+                imap.push((Value::String("itemId".into()), Value::String(item.item_id.clone().into())));
+                imap.push((Value::String("count".into()), Value::Integer((item.count as i64).into())));
+                Value::Map(imap)
+            }).collect();
+            map.push((Value::String("itemsGained".into()), Value::Array(item_values)));
+
+            Value::Map(map)
+        }
     };
 
     // Encode as [13, "msg_type", data] - matching Colyseus ROOM_DATA format
@@ -906,6 +1005,10 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
         "abandonQuest" => {
             let quest_id = extract_string(msg_data, "quest_id").unwrap_or_default();
             Ok(ClientMessage::AbandonQuest { quest_id })
+        }
+        "craft" => {
+            let recipe_id = extract_string(msg_data, "recipe_id").unwrap_or_default();
+            Ok(ClientMessage::Craft { recipe_id })
         }
         _ => Err(format!("Unknown message type: {}", msg_type)),
     }

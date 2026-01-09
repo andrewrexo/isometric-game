@@ -25,6 +25,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 mod chunk;
+mod crafting;
 mod data;
 mod db;
 mod entity;
@@ -36,6 +37,7 @@ mod quest;
 mod tilemap;
 mod world;
 
+use crafting::CraftingRegistry;
 use data::ItemRegistry;
 use db::Database;
 use entity::EntityRegistry;
@@ -73,6 +75,7 @@ struct AppState {
     entity_registry: Arc<EntityRegistry>,
     item_registry: Arc<ItemRegistry>,
     quest_registry: Arc<QuestRegistry>,
+    crafting_registry: Arc<CraftingRegistry>,
 }
 
 impl AppState {
@@ -99,6 +102,12 @@ impl AppState {
         let quest_registry = Arc::new(QuestRegistry::new(data_dir));
         if let Err(e) = quest_registry.load_all().await {
             error!("Failed to load quest registry: {}", e);
+        }
+
+        // Load crafting registry from TOML files
+        let mut crafting_registry = CraftingRegistry::new();
+        if let Err(e) = crafting_registry.load_from_directory(data_dir) {
+            error!("Failed to load crafting registry: {}", e);
         }
 
         // Start hot-reload watcher for quest files (dev mode)
@@ -141,6 +150,7 @@ impl AppState {
             entity_registry: Arc::new(entity_registry),
             item_registry: Arc::new(item_registry),
             quest_registry,
+            crafting_registry: Arc::new(crafting_registry),
         }
     }
 
@@ -157,6 +167,7 @@ impl AppState {
             room_name,
             self.entity_registry.clone(),
             self.quest_registry.clone(),
+            self.crafting_registry.clone(),
         ).await);
         self.rooms.insert(room.id.clone(), room.clone());
         room
@@ -753,6 +764,12 @@ async fn handle_socket(
         let _ = sender.send(Message::Binary(bytes)).await;
     }
 
+    // Send recipe definitions
+    let recipe_defs = state.crafting_registry.to_client_definitions();
+    if let Ok(bytes) = protocol::encode_server_message(&recipe_defs) {
+        let _ = sender.send(Message::Binary(bytes)).await;
+    }
+
     // Get player's position and send nearby chunks
     if let Some((px, py)) = room.get_player_position(&player_id).await {
         let player_chunk = chunk::ChunkCoord::from_world(px, py);
@@ -962,9 +979,11 @@ async fn handle_client_message(
         ClientMessage::AbandonQuest { quest_id: _ } => {
             // TODO: Implement quest abandonment
         }
-        _ => {
-            // Other messages not yet implemented
+        ClientMessage::Craft { recipe_id } => {
+            room.handle_craft(player_id, &recipe_id).await;
         }
+        // Auth and Register are handled via HTTP endpoints, not WebSocket
+        ClientMessage::Auth { .. } | ClientMessage::Register { .. } => {}
     }
 
     Ok(())

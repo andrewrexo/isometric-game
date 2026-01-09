@@ -10,7 +10,11 @@ pub enum ItemType {
     HealthPotion = 0,
     ManaPotion = 1,
     Gold = 2,
-    SlimeCore = 3, // Drop from slimes
+    SlimeCore = 3,
+    IronOre = 4,
+    GoblinEar = 5,
+    // TODO: Make inventory system fully data-driven using string IDs
+    // instead of this enum to eliminate hardcoded item mappings
 }
 
 impl ItemType {
@@ -20,6 +24,8 @@ impl ItemType {
             1 => ItemType::ManaPotion,
             2 => ItemType::Gold,
             3 => ItemType::SlimeCore,
+            4 => ItemType::IronOre,
+            5 => ItemType::GoblinEar,
             _ => ItemType::Gold,
         }
     }
@@ -31,6 +37,8 @@ impl ItemType {
             ItemType::ManaPotion => "mana_potion",
             ItemType::Gold => "gold",
             ItemType::SlimeCore => "slime_core",
+            ItemType::IronOre => "iron_ore",
+            ItemType::GoblinEar => "goblin_ear",
         }
     }
 
@@ -40,6 +48,8 @@ impl ItemType {
             ItemType::ManaPotion => "Mana Potion",
             ItemType::Gold => "Gold",
             ItemType::SlimeCore => "Slime Core",
+            ItemType::IronOre => "Iron Ore",
+            ItemType::GoblinEar => "Goblin Ear",
         }
     }
 
@@ -49,11 +59,28 @@ impl ItemType {
             ItemType::ManaPotion => 10,
             ItemType::Gold => 9999,
             ItemType::SlimeCore => 99,
+            ItemType::IronOre => 99,
+            ItemType::GoblinEar => 99,
         }
     }
 
     pub fn is_usable(&self) -> bool {
         matches!(self, ItemType::HealthPotion | ItemType::ManaPotion)
+    }
+
+    /// Get ItemType from string ID (for data-driven item lookup)
+    /// TODO: This mapping is hardcoded. Future enhancement: make inventory
+    /// system use string IDs directly to eliminate this mapping.
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "health_potion" => Some(ItemType::HealthPotion),
+            "mana_potion" => Some(ItemType::ManaPotion),
+            "gold" => Some(ItemType::Gold),
+            "slime_core" => Some(ItemType::SlimeCore),
+            "iron_ore" => Some(ItemType::IronOre),
+            "goblin_ear" => Some(ItemType::GoblinEar),
+            _ => None,
+        }
     }
 }
 
@@ -152,13 +179,96 @@ impl Inventory {
 
     /// Get inventory as a serializable update
     pub fn to_update(&self) -> Vec<InventorySlotUpdate> {
-        self.slots.iter().enumerate().filter_map(|(i, slot)| {
-            slot.as_ref().map(|s| InventorySlotUpdate {
-                slot: i as u8,
-                item_type: s.item_type as u8,
-                quantity: s.quantity,
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(i, slot)| {
+                slot.as_ref().map(|s| InventorySlotUpdate {
+                    slot: i as u8,
+                    item_type: s.item_type as u8,
+                    quantity: s.quantity,
+                })
             })
-        }).collect()
+            .collect()
+    }
+
+    /// Check if inventory has at least `count` of the specified item type
+    pub fn has_item(&self, item_type: ItemType, count: i32) -> bool {
+        self.count_item(item_type) >= count
+    }
+
+    /// Count total quantity of an item type across all slots
+    pub fn count_item(&self, item_type: ItemType) -> i32 {
+        self.slots
+            .iter()
+            .filter_map(|slot| slot.as_ref())
+            .filter(|slot| slot.item_type == item_type)
+            .map(|slot| slot.quantity)
+            .sum()
+    }
+
+    /// Remove a specific quantity of an item type from inventory
+    /// Returns true if successful, false if not enough items
+    pub fn remove_item(&mut self, item_type: ItemType, mut count: i32) -> bool {
+        // First check if we have enough
+        if !self.has_item(item_type, count) {
+            return false;
+        }
+
+        // Remove from slots (prefer partial stacks first to consolidate)
+        for slot in &mut self.slots {
+            if count <= 0 {
+                break;
+            }
+            if let Some(ref mut inv_slot) = slot {
+                if inv_slot.item_type == item_type {
+                    let remove = count.min(inv_slot.quantity);
+                    inv_slot.quantity -= remove;
+                    count -= remove;
+
+                    // Clear slot if empty
+                    if inv_slot.quantity <= 0 {
+                        *slot = None;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Check if inventory has space for additional items
+    pub fn has_space_for(&self, item_type: ItemType, count: i32) -> bool {
+        // Gold always has space (stored separately)
+        if item_type == ItemType::Gold {
+            return true;
+        }
+
+        let max_stack = item_type.max_stack();
+        let mut remaining = count;
+
+        // Check existing stacks for available space
+        for slot in &self.slots {
+            if remaining <= 0 {
+                return true;
+            }
+            if let Some(ref inv_slot) = slot {
+                if inv_slot.item_type == item_type {
+                    let can_add = max_stack - inv_slot.quantity;
+                    remaining -= can_add;
+                }
+            }
+        }
+
+        if remaining <= 0 {
+            return true;
+        }
+
+        // Check empty slots
+        let empty_slots = self.slots.iter().filter(|s| s.is_none()).count();
+        let slots_needed = ((remaining + max_stack - 1) / max_stack).max(0) as usize;
+
+        empty_slots >= slots_needed
     }
 }
 

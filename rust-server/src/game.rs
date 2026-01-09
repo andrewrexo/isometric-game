@@ -236,6 +236,8 @@ pub struct GameRoom {
     quest_runner: Arc<QuestRunner>,
     /// Per-player quest state
     player_quest_states: RwLock<HashMap<String, PlayerQuestState>>,
+    /// Crafting recipe registry
+    crafting_registry: Arc<crate::crafting::CraftingRegistry>,
     /// Track which chunk each player is in for streaming updates
     player_chunks: RwLock<HashMap<String, ChunkCoord>>,
     tick: RwLock<u64>,
@@ -249,6 +251,7 @@ impl GameRoom {
         name: &str,
         entity_registry: Arc<EntityRegistry>,
         quest_registry: Arc<QuestRegistry>,
+        crafting_registry: Arc<crate::crafting::CraftingRegistry>,
     ) -> Self {
         let (tx, _) = broadcast::channel(256);
         let world = Arc::new(World::new("maps/world_0"));
@@ -303,6 +306,7 @@ impl GameRoom {
             quest_registry,
             quest_runner,
             player_quest_states: RwLock::new(HashMap::new()),
+            crafting_registry,
             player_chunks: RwLock::new(HashMap::new()),
             tick: RwLock::new(0),
             broadcast_tx: tx,
@@ -1463,6 +1467,176 @@ impl GameRoom {
             };
             self.send_to_player(player_id, inv_msg).await;
         }
+    }
+
+    /// Handle a crafting request from a player
+    pub async fn handle_craft(&self, player_id: &str, recipe_id: &str) {
+        use crate::protocol::RecipeResult as ProtoRecipeResult;
+
+        // Get recipe definition
+        let recipe = match self.crafting_registry.get(recipe_id) {
+            Some(r) => r.clone(),
+            None => {
+                self.send_to_player(
+                    player_id,
+                    ServerMessage::CraftResult {
+                        success: false,
+                        recipe_id: recipe_id.to_string(),
+                        error: Some("Recipe not found".to_string()),
+                        items_gained: vec![],
+                    },
+                )
+                .await;
+                return;
+            }
+        };
+
+        // Get player and perform all checks
+        let mut players = self.players.write().await;
+        let player = match players.get_mut(player_id) {
+            Some(p) if p.active && !p.is_dead => p,
+            _ => return,
+        };
+
+        // Check level requirement
+        if player.level < recipe.level_required {
+            drop(players);
+            self.send_to_player(
+                player_id,
+                ServerMessage::CraftResult {
+                    success: false,
+                    recipe_id: recipe_id.to_string(),
+                    error: Some(format!("Requires level {}", recipe.level_required)),
+                    items_gained: vec![],
+                },
+            )
+            .await;
+            return;
+        }
+
+        // Check all ingredients
+        for ingredient in &recipe.ingredients {
+            let item_type = match ItemType::from_id(&ingredient.item_id) {
+                Some(t) => t,
+                None => {
+                    drop(players);
+                    self.send_to_player(
+                        player_id,
+                        ServerMessage::CraftResult {
+                            success: false,
+                            recipe_id: recipe_id.to_string(),
+                            error: Some(format!("Unknown item: {}", ingredient.item_id)),
+                            items_gained: vec![],
+                        },
+                    )
+                    .await;
+                    return;
+                }
+            };
+
+            if !player.inventory.has_item(item_type, ingredient.count) {
+                drop(players);
+                self.send_to_player(
+                    player_id,
+                    ServerMessage::CraftResult {
+                        success: false,
+                        recipe_id: recipe_id.to_string(),
+                        error: Some("Missing ingredients".to_string()),
+                        items_gained: vec![],
+                    },
+                )
+                .await;
+                return;
+            }
+        }
+
+        // Check inventory space for results
+        for result in &recipe.results {
+            let item_type = match ItemType::from_id(&result.item_id) {
+                Some(t) => t,
+                None => {
+                    drop(players);
+                    self.send_to_player(
+                        player_id,
+                        ServerMessage::CraftResult {
+                            success: false,
+                            recipe_id: recipe_id.to_string(),
+                            error: Some(format!("Unknown result item: {}", result.item_id)),
+                            items_gained: vec![],
+                        },
+                    )
+                    .await;
+                    return;
+                }
+            };
+
+            if !player.inventory.has_space_for(item_type, result.count) {
+                drop(players);
+                self.send_to_player(
+                    player_id,
+                    ServerMessage::CraftResult {
+                        success: false,
+                        recipe_id: recipe_id.to_string(),
+                        error: Some("Inventory full".to_string()),
+                        items_gained: vec![],
+                    },
+                )
+                .await;
+                return;
+            }
+        }
+
+        // All checks passed - consume ingredients
+        for ingredient in &recipe.ingredients {
+            let item_type = ItemType::from_id(&ingredient.item_id).unwrap();
+            player.inventory.remove_item(item_type, ingredient.count);
+        }
+
+        // Add results
+        let mut items_gained = Vec::new();
+        for result in &recipe.results {
+            let item_type = ItemType::from_id(&result.item_id).unwrap();
+            player.inventory.add_item(item_type, result.count);
+            items_gained.push(ProtoRecipeResult {
+                item_id: result.item_id.clone(),
+                count: result.count,
+            });
+        }
+
+        // Get inventory update
+        let inventory_update = player.inventory.to_update();
+        let gold = player.inventory.gold;
+        drop(players);
+
+        tracing::info!(
+            "Player {} crafted {} (gained {:?})",
+            player_id,
+            recipe_id,
+            items_gained
+        );
+
+        // Send success result
+        self.send_to_player(
+            player_id,
+            ServerMessage::CraftResult {
+                success: true,
+                recipe_id: recipe_id.to_string(),
+                error: None,
+                items_gained,
+            },
+        )
+        .await;
+
+        // Send inventory update
+        self.send_to_player(
+            player_id,
+            ServerMessage::InventoryUpdate {
+                player_id: player_id.to_string(),
+                slots: inventory_update,
+                gold,
+            },
+        )
+        .await;
     }
 
     pub async fn tick(&self) {

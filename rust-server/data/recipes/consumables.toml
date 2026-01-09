@@ -1,0 +1,49 @@
+# Consumable crafting recipes - potions, salves, etc.
+
+[slime_salve]
+display_name = "Slime Salve"
+description = "A healing salve made from slime cores. Converts cores into a health potion."
+category = "consumables"
+level_required = 1
+
+[[slime_salve.ingredients]]
+item_id = "slime_core"
+count = 3
+
+[[slime_salve.results]]
+item_id = "health_potion"
+count = 1
+
+
+[greater_health_potion]
+display_name = "Greater Health Potion"
+description = "Combine multiple health potions into a more potent brew."
+category = "consumables"
+level_required = 5
+
+[[greater_health_potion.ingredients]]
+item_id = "health_potion"
+count = 3
+
+[[greater_health_potion.ingredients]]
+item_id = "slime_core"
+count = 2
+
+[[greater_health_potion.results]]
+item_id = "health_potion"
+count = 5
+
+
+[mana_extract]
+display_name = "Mana Extract"
+description = "Extract magical essence from slime cores to create a mana potion."
+category = "consumables"
+level_required = 3
+
+[[mana_extract.ingredients]]
+item_id = "slime_core"
+count = 5
+
+[[mana_extract.results]]
+item_id = "mana_potion"
+count = 1
