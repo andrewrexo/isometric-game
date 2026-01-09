@@ -231,7 +231,7 @@ impl Renderer {
         for (_, renderable) in renderables {
             match renderable {
                 Renderable::Item(item) => {
-                    self.render_ground_item(item, &state.camera);
+                    self.render_ground_item(item, &state.camera, state);
                 }
                 Renderable::Player(player, is_local) => {
                     let is_selected = state.selected_entity_id.as_ref() == Some(&player.id);
@@ -741,7 +741,7 @@ impl Renderer {
         }
     }
 
-    fn render_ground_item(&self, item: &GroundItem, camera: &Camera) {
+    fn render_ground_item(&self, item: &GroundItem, camera: &Camera, state: &GameState) {
         let (screen_x, screen_y) = world_to_screen(item.x, item.y, camera);
 
         // Bobbing animation
@@ -751,9 +751,10 @@ impl Renderer {
         // Draw shadow
         draw_ellipse(screen_x, screen_y, 8.0, 4.0, 0.0, Color::from_rgba(0, 0, 0, 40));
 
-        // Draw item (colored circle/square based on type)
+        // Draw item (colored rectangle based on category from registry)
         let item_y = screen_y - 8.0 - bob;
-        let color = item.item_type.color();
+        let item_def = state.item_registry.get_or_placeholder(&item.item_id);
+        let color = item_def.category_color();
 
         // Draw item shape
         draw_rectangle(screen_x - 6.0, item_y - 6.0, 16.0, 12.0, color);
@@ -943,6 +944,9 @@ impl Renderer {
             self.render_dialogue(dialogue, hovered, &mut layout);
         }
 
+        // Render item tooltip last so it appears on top of everything
+        self.render_item_tooltip(state);
+
         layout
     }
 
@@ -993,7 +997,8 @@ impl Renderer {
 
             // Draw item if present
             if let Some(slot) = &state.inventory.slots[i] {
-                let color = slot.item_type.color();
+                let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                let color = item_def.category_color();
                 draw_rectangle(x + 4.0, y + 4.0, slot_size - 12.0, slot_size - 12.0, color);
 
                 // Quantity
@@ -1125,7 +1130,8 @@ impl Renderer {
 
             // Draw item if present
             if let Some(slot) = &state.inventory.slots[i] {
-                let color = slot.item_type.color();
+                let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                let color = item_def.category_color();
                 draw_rectangle(x + 4.0, y + 4.0, slot_size - 8.0, slot_size - 8.0, color);
 
                 // Quantity
@@ -1136,6 +1142,94 @@ impl Renderer {
 
             // Slot number
             self.draw_text_sharp(&(i + 1).to_string(), x + slot_size - 10.0, y + 12.0, 16.0, WHITE);
+        }
+    }
+
+    /// Render tooltip for hovered inventory/quick slot items
+    fn render_item_tooltip(&self, state: &GameState) {
+        // Check if we're hovering over an inventory or quick slot
+        let slot_idx = match &state.ui_state.hovered_element {
+            Some(UiElementId::InventorySlot(idx)) if state.ui_state.inventory_open => Some(*idx),
+            Some(UiElementId::QuickSlot(idx)) => Some(*idx),
+            _ => None,
+        };
+
+        let Some(idx) = slot_idx else { return };
+        let Some(slot) = &state.inventory.slots.get(idx).and_then(|s| s.as_ref()) else { return };
+
+        // Get item definition from registry
+        let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+
+        // Get mouse position for tooltip placement
+        let (mouse_x, mouse_y) = mouse_position();
+
+        // Calculate tooltip dimensions based on content
+        let padding = 10.0;
+        let line_height = 18.0;
+        let tooltip_width = 200.0;
+
+        // Count lines: name, category, description (may wrap), quantity if > 1
+        let mut lines = 2; // name + category always
+        if !item_def.description.is_empty() {
+            lines += 1;
+        }
+        if slot.quantity > 1 {
+            lines += 1;
+        }
+
+        let tooltip_height = padding * 2.0 + lines as f32 * line_height;
+
+        // Position tooltip near cursor, but keep on screen
+        let mut tooltip_x = mouse_x + 16.0;
+        let mut tooltip_y = mouse_y + 16.0;
+
+        // Clamp to screen bounds
+        if tooltip_x + tooltip_width > screen_width() {
+            tooltip_x = mouse_x - tooltip_width - 8.0;
+        }
+        if tooltip_y + tooltip_height > screen_height() {
+            tooltip_y = mouse_y - tooltip_height - 8.0;
+        }
+
+        // Draw tooltip background
+        draw_rectangle(
+            tooltip_x,
+            tooltip_y,
+            tooltip_width,
+            tooltip_height,
+            Color::from_rgba(20, 20, 30, 240),
+        );
+        draw_rectangle_lines(
+            tooltip_x,
+            tooltip_y,
+            tooltip_width,
+            tooltip_height,
+            1.0,
+            Color::from_rgba(100, 100, 120, 255),
+        );
+
+        let mut y = tooltip_y + padding + 12.0;
+
+        // Item name (colored by category)
+        let name_color = item_def.category_color();
+        self.draw_text_sharp(&item_def.display_name, tooltip_x + padding, y, 16.0, name_color);
+        y += line_height;
+
+        // Category
+        let category_text = format!("[{}]", item_def.category);
+        self.draw_text_sharp(&category_text, tooltip_x + padding, y, 16.0, GRAY);
+        y += line_height;
+
+        // Description
+        if !item_def.description.is_empty() {
+            self.draw_text_sharp(&item_def.description, tooltip_x + padding, y, 16.0, LIGHTGRAY);
+            y += line_height;
+        }
+
+        // Quantity (if more than 1)
+        if slot.quantity > 1 {
+            let qty_text = format!("Quantity: {}", slot.quantity);
+            self.draw_text_sharp(&qty_text, tooltip_x + padding, y, 16.0, WHITE);
         }
     }
 
@@ -1536,7 +1630,9 @@ impl Renderer {
                     ("[x]", Color::from_rgba(255, 100, 100, 255))
                 };
 
-                let text = format!("{} {} ({}/{})", marker, ingredient.item_name, have_count, need_count);
+                // Look up display name from item registry
+                let display_name = state.item_registry.get_display_name(&ingredient.item_id);
+                let text = format!("{} {} ({}/{})", marker, display_name, have_count, need_count);
                 self.draw_text_sharp(&text, detail_x + 10.0, y, 16.0, color);
                 y += 20.0;
             }
@@ -1547,7 +1643,9 @@ impl Renderer {
             y += 20.0;
 
             for result in &recipe.results {
-                let text = format!("  {} x{}", result.item_name, result.count);
+                // Look up display name from item registry
+                let display_name = state.item_registry.get_display_name(&result.item_id);
+                let text = format!("  {} x{}", display_name, result.count);
                 self.draw_text_sharp(&text, detail_x + 10.0, y, 16.0, Color::from_rgba(150, 200, 255, 255));
                 y += 20.0;
             }

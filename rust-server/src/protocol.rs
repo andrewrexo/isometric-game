@@ -138,7 +138,7 @@ pub enum ServerMessage {
     },
     ItemDropped {
         id: String,
-        item_type: u8,
+        item_id: String,
         x: f32,
         y: f32,
         quantity: i32,
@@ -158,7 +158,7 @@ pub enum ServerMessage {
     ItemUsed {
         player_id: String,
         slot: u8,
-        item_type: u8,
+        item_id: String,
         effect: String, // e.g., "heal:30"
     },
     // Quest-related messages
@@ -619,7 +619,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
         }
         ServerMessage::ItemDropped {
             id,
-            item_type,
+            item_id,
             x,
             y,
             quantity,
@@ -630,8 +630,8 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                 Value::String(id.clone().into()),
             ));
             map.push((
-                Value::String("item_type".into()),
-                Value::Integer((*item_type as i64).into()),
+                Value::String("item_id".into()),
+                Value::String(item_id.clone().into()),
             ));
             map.push((Value::String("x".into()), Value::F64(*x as f64)));
             map.push((Value::String("y".into()), Value::F64(*y as f64)));
@@ -668,7 +668,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             let slot_values: Vec<Value> = slots.iter().map(|s| {
                 let mut smap = Vec::new();
                 smap.push((Value::String("slot".into()), Value::Integer((s.slot as i64).into())));
-                smap.push((Value::String("item_type".into()), Value::Integer((s.item_type as i64).into())));
+                smap.push((Value::String("item_id".into()), Value::String(s.item_id.clone().into())));
                 smap.push((Value::String("quantity".into()), Value::Integer((s.quantity as i64).into())));
                 Value::Map(smap)
             }).collect();
@@ -677,11 +677,11 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("gold".into()), Value::Integer((*gold as i64).into())));
             Value::Map(map)
         }
-        ServerMessage::ItemUsed { player_id, slot, item_type, effect } => {
+        ServerMessage::ItemUsed { player_id, slot, item_id, effect } => {
             let mut map = Vec::new();
             map.push((Value::String("player_id".into()), Value::String(player_id.clone().into())));
             map.push((Value::String("slot".into()), Value::Integer((*slot as i64).into())));
-            map.push((Value::String("item_type".into()), Value::Integer((*item_type as i64).into())));
+            map.push((Value::String("item_id".into()), Value::String(item_id.clone().into())));
             map.push((Value::String("effect".into()), Value::String(effect.clone().into())));
             Value::Map(map)
         }

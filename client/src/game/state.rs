@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use super::entities::Player;
 use super::item::{GroundItem, Inventory, RecipeDefinition};
+use super::item_registry::ItemRegistry;
 use super::npc::Npc;
 use super::tilemap::Tilemap;
 use super::chunk::ChunkManager;
@@ -161,6 +162,9 @@ pub struct GameState {
     // Inventory
     pub inventory: Inventory,
 
+    // Item registry (loaded from server)
+    pub item_registry: ItemRegistry,
+
     // Crafting
     pub recipe_definitions: Vec<RecipeDefinition>,
 
@@ -193,6 +197,7 @@ impl GameState {
             damage_events: Vec::new(),
             level_up_events: Vec::new(),
             inventory: Inventory::new(),
+            item_registry: ItemRegistry::new(),
             recipe_definitions: Vec::new(),
             camera: Camera::default(),
             ui_state: UiState::default(),

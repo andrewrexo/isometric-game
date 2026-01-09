@@ -1,88 +1,16 @@
 use serde::Serialize;
 
+use crate::data::ItemRegistry;
+
 // ============================================================================
-// Item Types
+// Constants
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[repr(u8)]
-pub enum ItemType {
-    HealthPotion = 0,
-    ManaPotion = 1,
-    Gold = 2,
-    SlimeCore = 3,
-    IronOre = 4,
-    GoblinEar = 5,
-    // TODO: Make inventory system fully data-driven using string IDs
-    // instead of this enum to eliminate hardcoded item mappings
-}
+/// Gold item ID - gold is handled specially (stored in inventory.gold field)
+pub const GOLD_ITEM_ID: &str = "gold";
 
-impl ItemType {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => ItemType::HealthPotion,
-            1 => ItemType::ManaPotion,
-            2 => ItemType::Gold,
-            3 => ItemType::SlimeCore,
-            4 => ItemType::IronOre,
-            5 => ItemType::GoblinEar,
-            _ => ItemType::Gold,
-        }
-    }
-
-    /// Get the item ID string for quest matching (e.g., "slime_core")
-    pub fn id(&self) -> &'static str {
-        match self {
-            ItemType::HealthPotion => "health_potion",
-            ItemType::ManaPotion => "mana_potion",
-            ItemType::Gold => "gold",
-            ItemType::SlimeCore => "slime_core",
-            ItemType::IronOre => "iron_ore",
-            ItemType::GoblinEar => "goblin_ear",
-        }
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            ItemType::HealthPotion => "Health Potion",
-            ItemType::ManaPotion => "Mana Potion",
-            ItemType::Gold => "Gold",
-            ItemType::SlimeCore => "Slime Core",
-            ItemType::IronOre => "Iron Ore",
-            ItemType::GoblinEar => "Goblin Ear",
-        }
-    }
-
-    pub fn max_stack(&self) -> i32 {
-        match self {
-            ItemType::HealthPotion => 10,
-            ItemType::ManaPotion => 10,
-            ItemType::Gold => 9999,
-            ItemType::SlimeCore => 99,
-            ItemType::IronOre => 99,
-            ItemType::GoblinEar => 99,
-        }
-    }
-
-    pub fn is_usable(&self) -> bool {
-        matches!(self, ItemType::HealthPotion | ItemType::ManaPotion)
-    }
-
-    /// Get ItemType from string ID (for data-driven item lookup)
-    /// TODO: This mapping is hardcoded. Future enhancement: make inventory
-    /// system use string IDs directly to eliminate this mapping.
-    pub fn from_id(id: &str) -> Option<Self> {
-        match id {
-            "health_potion" => Some(ItemType::HealthPotion),
-            "mana_potion" => Some(ItemType::ManaPotion),
-            "gold" => Some(ItemType::Gold),
-            "slime_core" => Some(ItemType::SlimeCore),
-            "iron_ore" => Some(ItemType::IronOre),
-            "goblin_ear" => Some(ItemType::GoblinEar),
-            _ => None,
-        }
-    }
-}
+/// Default max stack for unknown items
+pub const DEFAULT_MAX_STACK: i32 = 99;
 
 // ============================================================================
 // Inventory
@@ -92,13 +20,13 @@ pub const INVENTORY_SIZE: usize = 20;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct InventorySlot {
-    pub item_type: ItemType,
+    pub item_id: String,
     pub quantity: i32,
 }
 
 impl InventorySlot {
-    pub fn new(item_type: ItemType, quantity: i32) -> Self {
-        Self { item_type, quantity }
+    pub fn new(item_id: String, quantity: i32) -> Self {
+        Self { item_id, quantity }
     }
 }
 
@@ -117,14 +45,17 @@ impl Inventory {
     }
 
     /// Try to add an item to inventory. Returns the quantity that couldn't fit.
-    pub fn add_item(&mut self, item_type: ItemType, mut quantity: i32) -> i32 {
+    pub fn add_item(&mut self, item_id: &str, mut quantity: i32, registry: &ItemRegistry) -> i32 {
         // Gold goes to separate counter
-        if item_type == ItemType::Gold {
+        if item_id == GOLD_ITEM_ID {
             self.gold += quantity;
             return 0;
         }
 
-        let max_stack = item_type.max_stack();
+        let max_stack = registry
+            .get(item_id)
+            .map(|def| def.max_stack)
+            .unwrap_or(DEFAULT_MAX_STACK);
 
         // First, try to stack with existing items
         for slot in &mut self.slots {
@@ -132,7 +63,7 @@ impl Inventory {
                 break;
             }
             if let Some(ref mut inv_slot) = slot {
-                if inv_slot.item_type == item_type {
+                if inv_slot.item_id == item_id {
                     let can_add = max_stack - inv_slot.quantity;
                     if can_add > 0 {
                         let add = quantity.min(can_add);
@@ -150,7 +81,7 @@ impl Inventory {
             }
             if slot.is_none() {
                 let add = quantity.min(max_stack);
-                *slot = Some(InventorySlot::new(item_type, add));
+                *slot = Some(InventorySlot::new(item_id.to_string(), add));
                 quantity -= add;
             }
         }
@@ -158,20 +89,26 @@ impl Inventory {
         quantity // Return what couldn't fit
     }
 
-    /// Use an item at the given slot. Returns true if successful.
-    pub fn use_item(&mut self, slot_index: usize) -> Option<ItemType> {
+    /// Use an item at the given slot. Returns the item_id if successful.
+    pub fn use_item(&mut self, slot_index: usize, registry: &ItemRegistry) -> Option<String> {
         if slot_index >= INVENTORY_SIZE {
             return None;
         }
 
         if let Some(ref mut slot) = self.slots[slot_index] {
-            if slot.item_type.is_usable() {
-                let item_type = slot.item_type;
+            // Check if item is usable via registry
+            let is_usable = registry
+                .get(&slot.item_id)
+                .map(|def| def.is_usable())
+                .unwrap_or(false);
+
+            if is_usable {
+                let item_id = slot.item_id.clone();
                 slot.quantity -= 1;
                 if slot.quantity <= 0 {
                     self.slots[slot_index] = None;
                 }
-                return Some(item_type);
+                return Some(item_id);
             }
         }
         None
@@ -185,33 +122,33 @@ impl Inventory {
             .filter_map(|(i, slot)| {
                 slot.as_ref().map(|s| InventorySlotUpdate {
                     slot: i as u8,
-                    item_type: s.item_type as u8,
+                    item_id: s.item_id.clone(),
                     quantity: s.quantity,
                 })
             })
             .collect()
     }
 
-    /// Check if inventory has at least `count` of the specified item type
-    pub fn has_item(&self, item_type: ItemType, count: i32) -> bool {
-        self.count_item(item_type) >= count
+    /// Check if inventory has at least `count` of the specified item
+    pub fn has_item(&self, item_id: &str, count: i32) -> bool {
+        self.count_item(item_id) >= count
     }
 
-    /// Count total quantity of an item type across all slots
-    pub fn count_item(&self, item_type: ItemType) -> i32 {
+    /// Count total quantity of an item across all slots
+    pub fn count_item(&self, item_id: &str) -> i32 {
         self.slots
             .iter()
             .filter_map(|slot| slot.as_ref())
-            .filter(|slot| slot.item_type == item_type)
+            .filter(|slot| slot.item_id == item_id)
             .map(|slot| slot.quantity)
             .sum()
     }
 
-    /// Remove a specific quantity of an item type from inventory
+    /// Remove a specific quantity of an item from inventory
     /// Returns true if successful, false if not enough items
-    pub fn remove_item(&mut self, item_type: ItemType, mut count: i32) -> bool {
+    pub fn remove_item(&mut self, item_id: &str, mut count: i32) -> bool {
         // First check if we have enough
-        if !self.has_item(item_type, count) {
+        if !self.has_item(item_id, count) {
             return false;
         }
 
@@ -221,7 +158,7 @@ impl Inventory {
                 break;
             }
             if let Some(ref mut inv_slot) = slot {
-                if inv_slot.item_type == item_type {
+                if inv_slot.item_id == item_id {
                     let remove = count.min(inv_slot.quantity);
                     inv_slot.quantity -= remove;
                     count -= remove;
@@ -238,13 +175,16 @@ impl Inventory {
     }
 
     /// Check if inventory has space for additional items
-    pub fn has_space_for(&self, item_type: ItemType, count: i32) -> bool {
+    pub fn has_space_for(&self, item_id: &str, count: i32, registry: &ItemRegistry) -> bool {
         // Gold always has space (stored separately)
-        if item_type == ItemType::Gold {
+        if item_id == GOLD_ITEM_ID {
             return true;
         }
 
-        let max_stack = item_type.max_stack();
+        let max_stack = registry
+            .get(item_id)
+            .map(|def| def.max_stack)
+            .unwrap_or(DEFAULT_MAX_STACK);
         let mut remaining = count;
 
         // Check existing stacks for available space
@@ -253,7 +193,7 @@ impl Inventory {
                 return true;
             }
             if let Some(ref inv_slot) = slot {
-                if inv_slot.item_type == item_type {
+                if inv_slot.item_id == item_id {
                     let can_add = max_stack - inv_slot.quantity;
                     remaining -= can_add;
                 }
@@ -275,7 +215,7 @@ impl Inventory {
 #[derive(Debug, Clone, Serialize)]
 pub struct InventorySlotUpdate {
     pub slot: u8,
-    pub item_type: u8,
+    pub item_id: String,
     pub quantity: i32,
 }
 
@@ -286,7 +226,7 @@ pub struct InventorySlotUpdate {
 #[derive(Debug, Clone)]
 pub struct GroundItem {
     pub id: String,
-    pub item_type: ItemType,
+    pub item_id: String,
     pub x: f32,
     pub y: f32,
     pub quantity: i32,
@@ -295,10 +235,18 @@ pub struct GroundItem {
 }
 
 impl GroundItem {
-    pub fn new(id: &str, item_type: ItemType, x: f32, y: f32, quantity: i32, owner_id: Option<String>, current_time: u64) -> Self {
+    pub fn new(
+        id: &str,
+        item_id: &str,
+        x: f32,
+        y: f32,
+        quantity: i32,
+        owner_id: Option<String>,
+        current_time: u64,
+    ) -> Self {
         Self {
             id: id.to_string(),
-            item_type,
+            item_id: item_id.to_string(),
             x,
             y,
             quantity,
@@ -338,7 +286,7 @@ impl GroundItem {
 #[derive(Debug, Clone, Serialize)]
 pub struct GroundItemUpdate {
     pub id: String,
-    pub item_type: u8,
+    pub item_id: String,
     pub x: f32,
     pub y: f32,
     pub quantity: i32,
@@ -348,7 +296,7 @@ impl From<&GroundItem> for GroundItemUpdate {
     fn from(item: &GroundItem) -> Self {
         Self {
             id: item.id.clone(),
-            item_type: item.item_type as u8,
+            item_id: item.item_id.clone(),
             x: item.x,
             y: item.y,
             quantity: item.quantity,
@@ -364,7 +312,13 @@ use crate::npc::NpcType;
 use rand::Rng;
 
 /// Generate random drops for an NPC
-pub fn generate_drops(npc_type: NpcType, x: f32, y: f32, killer_id: &str, current_time: u64) -> Vec<GroundItem> {
+pub fn generate_drops(
+    npc_type: NpcType,
+    x: f32,
+    y: f32,
+    killer_id: &str,
+    current_time: u64,
+) -> Vec<GroundItem> {
     let mut drops = Vec::new();
     let mut item_counter = 0u32;
     let mut rng = rand::thread_rng();
@@ -377,7 +331,7 @@ pub fn generate_drops(npc_type: NpcType, x: f32, y: f32, killer_id: &str, curren
             item_counter += 1;
             drops.push(GroundItem::new(
                 &id,
-                ItemType::Gold,
+                GOLD_ITEM_ID,
                 x,
                 y,
                 gold_amount,
@@ -391,7 +345,7 @@ pub fn generate_drops(npc_type: NpcType, x: f32, y: f32, killer_id: &str, curren
                 item_counter += 1;
                 drops.push(GroundItem::new(
                     &id,
-                    ItemType::SlimeCore,
+                    "slime_core",
                     x + 0.3, // Offset slightly so items don't stack
                     y + 0.3,
                     1,
@@ -403,9 +357,10 @@ pub fn generate_drops(npc_type: NpcType, x: f32, y: f32, killer_id: &str, curren
             // 20% chance to drop Health Potion
             if rng.gen_range(0..100) < 20 {
                 let id = format!("item_{}_{}", current_time, item_counter);
+                let _ = item_counter; // silence unused warning
                 drops.push(GroundItem::new(
                     &id,
-                    ItemType::HealthPotion,
+                    "health_potion",
                     x - 0.3,
                     y - 0.3,
                     1,

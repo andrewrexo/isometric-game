@@ -1,7 +1,7 @@
 use rand::Rng;
 
 use super::prototype::EntityPrototype;
-use crate::item::{GroundItem, ItemType};
+use crate::item::{GroundItem, GOLD_ITEM_ID};
 
 /// Generate loot drops from a prototype's loot table
 pub fn generate_loot_from_prototype(
@@ -27,7 +27,7 @@ pub fn generate_loot_from_prototype(
             item_counter += 1;
             drops.push(GroundItem::new(
                 &id,
-                ItemType::Gold,
+                GOLD_ITEM_ID,
                 x,
                 y,
                 gold_amount,
@@ -37,7 +37,7 @@ pub fn generate_loot_from_prototype(
         }
     }
 
-    // Loot table drops
+    // Loot table drops - now using string item IDs directly
     for entry in &prototype.loot {
         if rng.gen::<f32>() < entry.drop_chance {
             let quantity = rng.gen_range(entry.quantity_min..=entry.quantity_max);
@@ -45,18 +45,10 @@ pub fn generate_loot_from_prototype(
                 let id = format!("item_{}_{}", current_time, item_counter);
                 item_counter += 1;
 
-                // Map item_id to ItemType
-                // TODO: Use ItemRegistry lookup when items are fully data-driven
-                let item_type = match entry.item_id.as_str() {
-                    "slime_core" => ItemType::SlimeCore,
-                    "health_potion" => ItemType::HealthPotion,
-                    "mana_potion" => ItemType::ManaPotion,
-                    _ => continue, // Skip unknown items for now
-                };
-
+                // Use the item_id string directly from loot table
                 drops.push(GroundItem::new(
                     &id,
-                    item_type,
+                    &entry.item_id,
                     x + (item_counter as f32 * 0.3),
                     y + (item_counter as f32 * 0.3),
                     quantity,

@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::chunk::ChunkCoord;
 use crate::entity::{EntityPrototype, EntityRegistry};
-use crate::item::{self, GroundItem, Inventory, ItemType};
+use crate::data::ItemRegistry;
+use crate::item::{self, GroundItem, Inventory, GOLD_ITEM_ID};
 use crate::npc::{Npc, NpcType, NpcUpdate};
 use crate::protocol::{ServerMessage, QuestObjectiveData};
 use crate::quest::{QuestRegistry, QuestRunner, PlayerQuestState, QuestEvent};
@@ -238,6 +239,8 @@ pub struct GameRoom {
     player_quest_states: RwLock<HashMap<String, PlayerQuestState>>,
     /// Crafting recipe registry
     crafting_registry: Arc<crate::crafting::CraftingRegistry>,
+    /// Item definition registry
+    item_registry: Arc<ItemRegistry>,
     /// Track which chunk each player is in for streaming updates
     player_chunks: RwLock<HashMap<String, ChunkCoord>>,
     tick: RwLock<u64>,
@@ -252,6 +255,7 @@ impl GameRoom {
         entity_registry: Arc<EntityRegistry>,
         quest_registry: Arc<QuestRegistry>,
         crafting_registry: Arc<crate::crafting::CraftingRegistry>,
+        item_registry: Arc<ItemRegistry>,
     ) -> Self {
         let (tx, _) = broadcast::channel(256);
         let world = Arc::new(World::new("maps/world_0"));
@@ -307,6 +311,7 @@ impl GameRoom {
             quest_runner,
             player_quest_states: RwLock::new(HashMap::new()),
             crafting_registry,
+            item_registry,
             player_chunks: RwLock::new(HashMap::new()),
             tick: RwLock::new(0),
             broadcast_tx: tx,
@@ -392,15 +397,27 @@ impl GameRoom {
         player.exp_to_next_level = exp_to_next_level;
         player.inventory.gold = gold;
 
-        // Restore inventory from JSON
-        if let Ok(slots) = serde_json::from_str::<Vec<(usize, u8, i32)>>(inventory_json) {
-            for (slot_idx, item_type, quantity) in slots {
+        // Restore inventory from JSON - support both old (u8) and new (String) formats
+        if let Ok(slots) = serde_json::from_str::<Vec<(usize, String, i32)>>(inventory_json) {
+            // New format: (slot_idx, item_id, quantity)
+            for (slot_idx, item_id, quantity) in slots {
                 if slot_idx < player.inventory.slots.len() {
-                    let item = item::ItemType::from_u8(item_type);
-                    player.inventory.slots[slot_idx] = Some(item::InventorySlot {
-                        item_type: item,
-                        quantity,
-                    });
+                    player.inventory.slots[slot_idx] = Some(item::InventorySlot::new(item_id, quantity));
+                }
+            }
+        } else if let Ok(slots) = serde_json::from_str::<Vec<(usize, u8, i32)>>(inventory_json) {
+            // Legacy format: (slot_idx, item_type_u8, quantity) - migrate to string IDs
+            for (slot_idx, item_type_u8, quantity) in slots {
+                if slot_idx < player.inventory.slots.len() {
+                    let item_id = match item_type_u8 {
+                        0 => "health_potion",
+                        1 => "mana_potion",
+                        3 => "slime_core",
+                        4 => "iron_ore",
+                        5 => "goblin_ear",
+                        _ => continue, // Skip unknown items (2 was gold, handled separately)
+                    }.to_string();
+                    player.inventory.slots[slot_idx] = Some(item::InventorySlot::new(item_id, quantity));
                 }
             }
         }
@@ -431,12 +448,12 @@ impl GameRoom {
     pub async fn get_player_save_data(&self, player_id: &str) -> Option<PlayerSaveData> {
         let players = self.players.read().await;
         players.get(player_id).map(|p| {
-            // Serialize inventory to JSON
-            let inventory_slots: Vec<(usize, u8, i32)> = p.inventory.slots
+            // Serialize inventory to JSON - new format with string item IDs
+            let inventory_slots: Vec<(usize, String, i32)> = p.inventory.slots
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, slot)| {
-                    slot.as_ref().map(|s| (idx, s.item_type as u8, s.quantity))
+                    slot.as_ref().map(|s| (idx, s.item_id.clone(), s.quantity))
                 })
                 .collect();
             let inventory_json = serde_json::to_string(&inventory_slots).unwrap_or_else(|_| "[]".to_string());
@@ -518,6 +535,16 @@ impl GameRoom {
     pub async fn get_player_position(&self, player_id: &str) -> Option<(i32, i32)> {
         let players = self.players.read().await;
         players.get(player_id).map(|p| (p.x, p.y))
+    }
+
+    /// Get the initial inventory update message for a player (used on connection)
+    pub async fn get_player_inventory_update(&self, player_id: &str) -> Option<ServerMessage> {
+        let players = self.players.read().await;
+        players.get(player_id).map(|p| ServerMessage::InventoryUpdate {
+            player_id: player_id.to_string(),
+            slots: p.inventory.to_update(),
+            gold: p.inventory.gold,
+        })
     }
 
     pub async fn get_all_npcs(&self) -> Vec<Npc> {
@@ -817,7 +844,7 @@ impl GameRoom {
                     // Broadcast item drop
                     let drop_msg = ServerMessage::ItemDropped {
                         id: item.id.clone(),
-                        item_type: item.item_type as u8,
+                        item_id: item.item_id.clone(),
                         x: item.x,
                         y: item.y,
                         quantity: item.quantity,
@@ -1023,11 +1050,11 @@ impl GameRoom {
                     return None;
                 }
 
-                Some((item.item_type, item.quantity))
+                Some((item.item_id.clone(), item.quantity))
             }).flatten()
         };
 
-        if let Some((item_type, quantity)) = item_info {
+        if let Some((picked_item_id, quantity)) = item_info {
             // Remove item from ground
             let removed = {
                 let mut items = self.ground_items.write().await;
@@ -1035,13 +1062,18 @@ impl GameRoom {
             };
 
             if removed {
-                tracing::debug!("Player {} picked up {} x{}", player_id, item_type.name(), quantity);
+                // Get display name from registry for logging
+                let display_name = self.item_registry
+                    .get(&picked_item_id)
+                    .map(|def| def.display_name.as_str())
+                    .unwrap_or(&picked_item_id);
+                tracing::debug!("Player {} picked up {} x{}", player_id, display_name, quantity);
 
                 // Add to player's inventory
                 let (leftover, inventory_update, gold) = {
                     let mut players = self.players.write().await;
                     if let Some(player) = players.get_mut(player_id) {
-                        let leftover = player.inventory.add_item(item_type, quantity);
+                        let leftover = player.inventory.add_item(&picked_item_id, quantity, &self.item_registry);
                         (leftover, player.inventory.to_update(), player.inventory.gold)
                     } else {
                         return;
@@ -1051,7 +1083,7 @@ impl GameRoom {
                 // Process quest item collection (amount actually picked up)
                 let picked_up_count = quantity - leftover;
                 if picked_up_count > 0 {
-                    self.process_quest_item_collect(player_id, item_type.id(), picked_up_count).await;
+                    self.process_quest_item_collect(player_id, &picked_item_id, picked_up_count).await;
                 }
 
                 // Broadcast pickup (public info - everyone sees item disappear)
@@ -1437,7 +1469,7 @@ impl GameRoom {
 
     pub async fn handle_use_item(&self, player_id: &str, slot_index: u8) {
         // Get player and try to use item
-        let (used_item, effect, inventory_update, gold) = {
+        let (used_item_id, effect, inventory_update, gold) = {
             let mut players = self.players.write().await;
             if let Some(player) = players.get_mut(player_id) {
                 // Dead players can't use items
@@ -1445,23 +1477,35 @@ impl GameRoom {
                     return;
                 }
 
-                if let Some(item_type) = player.inventory.use_item(slot_index as usize) {
-                    // Apply item effect
-                    let effect = match item_type {
-                        ItemType::HealthPotion => {
-                            let heal = 30;
-                            player.hp = (player.hp + heal).min(player.max_hp);
-                            format!("heal:{}", heal)
+                if let Some(item_id) = player.inventory.use_item(slot_index as usize, &self.item_registry) {
+                    // Get effect from registry
+                    let effect = if let Some(def) = self.item_registry.get(&item_id) {
+                        use crate::data::UseEffect;
+                        match &def.use_effect {
+                            Some(UseEffect::Heal { amount }) => {
+                                player.hp = (player.hp + amount).min(player.max_hp);
+                                format!("heal:{}", amount)
+                            }
+                            Some(UseEffect::RestoreMana { amount }) => {
+                                // Mana not implemented yet
+                                format!("mana:{}", amount)
+                            }
+                            Some(UseEffect::Buff { stat, amount, duration_ms }) => {
+                                // Buffs not implemented yet
+                                format!("buff:{}:{}:{}", stat, amount, duration_ms)
+                            }
+                            Some(UseEffect::Teleport { destination }) => {
+                                // Teleport not implemented yet
+                                format!("teleport:{}", destination)
+                            }
+                            None => "none".to_string(),
                         }
-                        ItemType::ManaPotion => {
-                            // Mana not implemented yet
-                            "mana:20".to_string()
-                        }
-                        _ => "none".to_string(),
+                    } else {
+                        "none".to_string()
                     };
 
                     let update = player.inventory.to_update();
-                    (Some(item_type), effect, update, player.inventory.gold)
+                    (Some(item_id), effect, update, player.inventory.gold)
                 } else {
                     return;
                 }
@@ -1470,14 +1514,18 @@ impl GameRoom {
             }
         };
 
-        if let Some(item_type) = used_item {
-            tracing::debug!("Player {} used {} ({})", player_id, item_type.name(), effect);
+        if let Some(item_id) = used_item_id {
+            let display_name = self.item_registry
+                .get(&item_id)
+                .map(|def| def.display_name.as_str())
+                .unwrap_or(&item_id);
+            tracing::debug!("Player {} used {} ({})", player_id, display_name, effect);
 
             // SECURITY: Unicast item used and inventory update (private to this player)
             let used_msg = ServerMessage::ItemUsed {
                 player_id: player_id.to_string(),
                 slot: slot_index,
-                item_type: item_type as u8,
+                item_id: item_id.clone(),
                 effect,
             };
             self.send_to_player(player_id, used_msg).await;
@@ -1536,27 +1584,9 @@ impl GameRoom {
             return;
         }
 
-        // Check all ingredients
+        // Check all ingredients (using string IDs now)
         for ingredient in &recipe.ingredients {
-            let item_type = match ItemType::from_id(&ingredient.item_id) {
-                Some(t) => t,
-                None => {
-                    drop(players);
-                    self.send_to_player(
-                        player_id,
-                        ServerMessage::CraftResult {
-                            success: false,
-                            recipe_id: recipe_id.to_string(),
-                            error: Some(format!("Unknown item: {}", ingredient.item_id)),
-                            items_gained: vec![],
-                        },
-                    )
-                    .await;
-                    return;
-                }
-            };
-
-            if !player.inventory.has_item(item_type, ingredient.count) {
+            if !player.inventory.has_item(&ingredient.item_id, ingredient.count) {
                 drop(players);
                 self.send_to_player(
                     player_id,
@@ -1574,25 +1604,7 @@ impl GameRoom {
 
         // Check inventory space for results
         for result in &recipe.results {
-            let item_type = match ItemType::from_id(&result.item_id) {
-                Some(t) => t,
-                None => {
-                    drop(players);
-                    self.send_to_player(
-                        player_id,
-                        ServerMessage::CraftResult {
-                            success: false,
-                            recipe_id: recipe_id.to_string(),
-                            error: Some(format!("Unknown result item: {}", result.item_id)),
-                            items_gained: vec![],
-                        },
-                    )
-                    .await;
-                    return;
-                }
-            };
-
-            if !player.inventory.has_space_for(item_type, result.count) {
+            if !player.inventory.has_space_for(&result.item_id, result.count, &self.item_registry) {
                 drop(players);
                 self.send_to_player(
                     player_id,
@@ -1610,18 +1622,20 @@ impl GameRoom {
 
         // All checks passed - consume ingredients
         for ingredient in &recipe.ingredients {
-            let item_type = ItemType::from_id(&ingredient.item_id).unwrap();
-            player.inventory.remove_item(item_type, ingredient.count);
+            player.inventory.remove_item(&ingredient.item_id, ingredient.count);
         }
 
         // Add results
         let mut items_gained = Vec::new();
         for result in &recipe.results {
-            let item_type = ItemType::from_id(&result.item_id).unwrap();
-            player.inventory.add_item(item_type, result.count);
+            player.inventory.add_item(&result.item_id, result.count, &self.item_registry);
+            let display_name = self.item_registry
+                .get(&result.item_id)
+                .map(|def| def.display_name.clone())
+                .unwrap_or_else(|| result.item_id.clone());
             items_gained.push(ProtoRecipeResult {
                 item_id: result.item_id.clone(),
-                item_name: item_type.name().to_string(),
+                item_name: display_name,
                 count: result.count,
             });
         }

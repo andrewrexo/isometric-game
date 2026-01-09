@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, DamageEvent, LevelUpEvent, GroundItem, ItemType, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition};
 use crate::game::npc::{Npc, NpcType, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -648,14 +648,14 @@ impl NetworkClient {
             "itemDropped" => {
                 if let Some(value) = data {
                     let id = extract_string(value, "id").unwrap_or_default();
-                    let item_type = extract_u8(value, "item_type").unwrap_or(2);
+                    let item_id = extract_string(value, "item_id").unwrap_or_else(|| "unknown".to_string());
                     let x = extract_f32(value, "x").unwrap_or(0.0);
                     let y = extract_f32(value, "y").unwrap_or(0.0);
                     let quantity = extract_i32(value, "quantity").unwrap_or(1);
 
-                    log::debug!("Item dropped: {} at ({}, {})", id, x, y);
+                    log::debug!("Item dropped: {} ({}) at ({}, {})", id, item_id, x, y);
 
-                    let item = GroundItem::new(id.clone(), ItemType::from_u8(item_type), x, y, quantity);
+                    let item = GroundItem::new(id.clone(), item_id, x, y, quantity);
                     state.ground_items.insert(id, item);
                 }
             }
@@ -690,14 +690,11 @@ impl NetworkClient {
                     if let Some(slots) = extract_array(value, "slots") {
                         for slot_value in slots {
                             let slot_idx = extract_u8(slot_value, "slot").unwrap_or(0) as usize;
-                            let item_type = extract_u8(slot_value, "item_type").unwrap_or(0);
+                            let item_id = extract_string(slot_value, "item_id").unwrap_or_default();
                             let quantity = extract_i32(slot_value, "quantity").unwrap_or(0);
 
-                            if slot_idx < state.inventory.slots.len() {
-                                state.inventory.slots[slot_idx] = Some(InventorySlot {
-                                    item_type: ItemType::from_u8(item_type),
-                                    quantity,
-                                });
+                            if slot_idx < state.inventory.slots.len() && !item_id.is_empty() {
+                                state.inventory.slots[slot_idx] = Some(InventorySlot::new(item_id, quantity));
                             }
                         }
                     }
@@ -718,9 +715,9 @@ impl NetworkClient {
                 // Server sends this only to the owning player (unicast)
                 if let Some(value) = data {
                     let slot = extract_u8(value, "slot").unwrap_or(0);
-                    let item_type = extract_u8(value, "item_type").unwrap_or(0);
+                    let item_id = extract_string(value, "item_id").unwrap_or_default();
                     let effect = extract_string(value, "effect").unwrap_or_default();
-                    log::debug!("Item used: slot {} type {} effect {}", slot, item_type, effect);
+                    log::debug!("Item used: slot {} item {} effect {}", slot, item_id, effect);
                 }
             }
 
@@ -887,6 +884,36 @@ impl NetworkClient {
             "dialogueClosed" => {
                 // Server tells us to close dialogue
                 state.ui_state.active_dialogue = None;
+            }
+
+            // ========== Item Definition Messages ==========
+
+            "itemDefinitions" => {
+                if let Some(value) = data {
+                    let mut items = Vec::new();
+
+                    if let Some(items_arr) = extract_array(value, "items") {
+                        for item_value in items_arr {
+                            let id = extract_string(item_value, "id").unwrap_or_default();
+                            let display_name = extract_string(item_value, "display_name").unwrap_or_default();
+                            let sprite = extract_string(item_value, "sprite").unwrap_or_default();
+                            let category = extract_string(item_value, "category").unwrap_or_else(|| "material".to_string());
+                            let max_stack = extract_i32(item_value, "max_stack").unwrap_or(99);
+                            let description = extract_string(item_value, "description").unwrap_or_default();
+
+                            items.push(ItemDefinition {
+                                id,
+                                display_name,
+                                sprite,
+                                category,
+                                max_stack,
+                                description,
+                            });
+                        }
+                    }
+
+                    state.item_registry.load_from_server(items);
+                }
             }
 
             // ========== Crafting System Messages ==========

@@ -168,6 +168,7 @@ impl AppState {
             self.entity_registry.clone(),
             self.quest_registry.clone(),
             self.crafting_registry.clone(),
+            self.item_registry.clone(),
         ).await);
         self.rooms.insert(room.id.clone(), room.clone());
         room
@@ -805,6 +806,13 @@ async fn handle_socket(
     // Send active quests to this client (from saved state)
     for quest_msg in room.get_active_quest_messages(&player_id).await {
         if let Ok(bytes) = protocol::encode_server_message(&quest_msg) {
+            let _ = sender.send(Message::Binary(bytes)).await;
+        }
+    }
+
+    // Send initial inventory to this client
+    if let Some(inv_msg) = room.get_player_inventory_update(&player_id).await {
+        if let Ok(bytes) = protocol::encode_server_message(&inv_msg) {
             let _ = sender.send(Message::Binary(bytes)).await;
         }
     }
