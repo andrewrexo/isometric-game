@@ -221,6 +221,10 @@ pub enum ServerMessage {
         error: Option<String>,
         items_gained: Vec<RecipeResult>,
     },
+    /// Tell client to open the shop/crafting UI for a merchant NPC
+    ShopOpen {
+        npc_id: String,
+    },
 }
 
 /// Layer data for chunk transmission
@@ -272,6 +276,7 @@ pub struct QuestObjectiveData {
 #[derive(Debug, Clone, Serialize)]
 pub struct RecipeIngredient {
     pub item_id: String,
+    pub item_name: String,
     pub count: i32,
 }
 
@@ -279,6 +284,7 @@ pub struct RecipeIngredient {
 #[derive(Debug, Clone, Serialize)]
 pub struct RecipeResult {
     pub item_id: String,
+    pub item_name: String,
     pub count: i32,
 }
 
@@ -328,6 +334,7 @@ impl ServerMessage {
             ServerMessage::DialogueClosed => "dialogueClosed",
             ServerMessage::RecipeDefinitions { .. } => "recipeDefinitions",
             ServerMessage::CraftResult { .. } => "craftResult",
+            ServerMessage::ShopOpen { .. } => "shopOpen",
         }
     }
 }
@@ -847,14 +854,15 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                 .map(|r| {
                     let mut rmap = Vec::new();
                     rmap.push((Value::String("id".into()), Value::String(r.id.clone().into())));
-                    rmap.push((Value::String("displayName".into()), Value::String(r.display_name.clone().into())));
+                    rmap.push((Value::String("display_name".into()), Value::String(r.display_name.clone().into())));
                     rmap.push((Value::String("description".into()), Value::String(r.description.clone().into())));
                     rmap.push((Value::String("category".into()), Value::String(r.category.clone().into())));
-                    rmap.push((Value::String("levelRequired".into()), Value::Integer((r.level_required as i64).into())));
+                    rmap.push((Value::String("level_required".into()), Value::Integer((r.level_required as i64).into())));
 
                     let ingredient_values: Vec<Value> = r.ingredients.iter().map(|i| {
                         let mut imap = Vec::new();
-                        imap.push((Value::String("itemId".into()), Value::String(i.item_id.clone().into())));
+                        imap.push((Value::String("item_id".into()), Value::String(i.item_id.clone().into())));
+                        imap.push((Value::String("item_name".into()), Value::String(i.item_name.clone().into())));
                         imap.push((Value::String("count".into()), Value::Integer((i.count as i64).into())));
                         Value::Map(imap)
                     }).collect();
@@ -862,7 +870,8 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
 
                     let result_values: Vec<Value> = r.results.iter().map(|res| {
                         let mut resmap = Vec::new();
-                        resmap.push((Value::String("itemId".into()), Value::String(res.item_id.clone().into())));
+                        resmap.push((Value::String("item_id".into()), Value::String(res.item_id.clone().into())));
+                        resmap.push((Value::String("item_name".into()), Value::String(res.item_name.clone().into())));
                         resmap.push((Value::String("count".into()), Value::Integer((res.count as i64).into())));
                         Value::Map(resmap)
                     }).collect();
@@ -894,6 +903,11 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             }).collect();
             map.push((Value::String("itemsGained".into()), Value::Array(item_values)));
 
+            Value::Map(map)
+        }
+        ServerMessage::ShopOpen { npc_id } => {
+            let mut map = Vec::new();
+            map.push((Value::String("npc_id".into()), Value::String(npc_id.clone().into())));
             Value::Map(map)
         }
     };

@@ -7,6 +7,8 @@ pub enum ItemType {
     ManaPotion = 1,
     Gold = 2,
     SlimeCore = 3,
+    IronOre = 4,
+    GoblinEar = 5,
 }
 
 impl ItemType {
@@ -16,6 +18,8 @@ impl ItemType {
             1 => ItemType::ManaPotion,
             2 => ItemType::Gold,
             3 => ItemType::SlimeCore,
+            4 => ItemType::IronOre,
+            5 => ItemType::GoblinEar,
             _ => ItemType::Gold,
         }
     }
@@ -26,6 +30,8 @@ impl ItemType {
             ItemType::ManaPotion => "Mana Potion",
             ItemType::Gold => "Gold",
             ItemType::SlimeCore => "Slime Core",
+            ItemType::IronOre => "Iron Ore",
+            ItemType::GoblinEar => "Goblin Ear",
         }
     }
 
@@ -36,6 +42,21 @@ impl ItemType {
             ItemType::ManaPotion => BLUE,
             ItemType::Gold => GOLD,
             ItemType::SlimeCore => GREEN,
+            ItemType::IronOre => GRAY,
+            ItemType::GoblinEar => DARKGREEN,
+        }
+    }
+
+    /// Get ItemType from string ID (for recipe matching)
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "health_potion" => Some(ItemType::HealthPotion),
+            "mana_potion" => Some(ItemType::ManaPotion),
+            "gold" => Some(ItemType::Gold),
+            "slime_core" => Some(ItemType::SlimeCore),
+            "iron_ore" => Some(ItemType::IronOre),
+            "goblin_ear" => Some(ItemType::GoblinEar),
+            _ => None,
         }
     }
 }
@@ -87,4 +108,52 @@ impl Inventory {
             gold: 0,
         }
     }
+
+    /// Count total quantity of an item type across all slots
+    pub fn count_item(&self, item_type: ItemType) -> i32 {
+        self.slots
+            .iter()
+            .filter_map(|slot| slot.as_ref())
+            .filter(|slot| slot.item_type == item_type)
+            .map(|slot| slot.quantity)
+            .sum()
+    }
+
+    /// Count total quantity of an item by string ID
+    pub fn count_item_by_id(&self, item_id: &str) -> i32 {
+        if let Some(item_type) = ItemType::from_id(item_id) {
+            self.count_item(item_type)
+        } else {
+            0
+        }
+    }
+}
+
+// ============================================================================
+// Recipe Definitions (received from server)
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct RecipeIngredient {
+    pub item_id: String,
+    pub item_name: String,
+    pub count: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct RecipeResult {
+    pub item_id: String,
+    pub item_name: String,
+    pub count: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct RecipeDefinition {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub category: String,
+    pub level_required: i32,
+    pub ingredients: Vec<RecipeIngredient>,
+    pub results: Vec<RecipeResult>,
 }

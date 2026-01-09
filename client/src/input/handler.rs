@@ -16,6 +16,8 @@ pub enum InputCommand {
     Interact { npc_id: String },
     DialogueChoice { quest_id: String, choice_id: String },
     CloseDialogue,
+    // Crafting commands
+    Craft { recipe_id: String },
 }
 
 /// Cardinal directions for isometric movement (no diagonals)
@@ -101,6 +103,69 @@ impl InputHandler {
             }
 
             // Don't process other input while dialogue is open
+            return commands;
+        }
+
+        // Handle crafting mode
+        if state.ui_state.crafting_open {
+            // Escape or E closes crafting
+            if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::E) {
+                state.ui_state.crafting_open = false;
+                state.ui_state.crafting_npc_id = None;
+                return commands;
+            }
+
+            // Get unique categories from recipes
+            let categories: Vec<&str> = {
+                let mut cats: Vec<&str> = state.recipe_definitions.iter()
+                    .map(|r| r.category.as_str())
+                    .collect();
+                cats.sort();
+                cats.dedup();
+                cats
+            };
+
+            // Left/Right navigate categories
+            if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
+                if state.ui_state.crafting_selected_category > 0 {
+                    state.ui_state.crafting_selected_category -= 1;
+                    state.ui_state.crafting_selected_recipe = 0;
+                }
+            }
+            if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D) {
+                if state.ui_state.crafting_selected_category < categories.len().saturating_sub(1) {
+                    state.ui_state.crafting_selected_category += 1;
+                    state.ui_state.crafting_selected_recipe = 0;
+                }
+            }
+
+            // Get recipes for current category
+            let current_category = categories.get(state.ui_state.crafting_selected_category).copied().unwrap_or("consumables");
+            let recipes_in_category: Vec<&crate::game::RecipeDefinition> = state.recipe_definitions.iter()
+                .filter(|r| r.category == current_category)
+                .collect();
+
+            // Up/Down navigate recipes
+            if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
+                if state.ui_state.crafting_selected_recipe > 0 {
+                    state.ui_state.crafting_selected_recipe -= 1;
+                }
+            }
+            if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
+                if state.ui_state.crafting_selected_recipe < recipes_in_category.len().saturating_sub(1) {
+                    state.ui_state.crafting_selected_recipe += 1;
+                }
+            }
+
+            // Enter or C crafts selected recipe
+            if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::C) {
+                if let Some(recipe) = recipes_in_category.get(state.ui_state.crafting_selected_recipe) {
+                    log::info!("Crafting: {}", recipe.id);
+                    commands.push(InputCommand::Craft { recipe_id: recipe.id.clone() });
+                }
+            }
+
+            // Don't process other input while crafting is open
             return commands;
         }
 

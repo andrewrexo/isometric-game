@@ -1118,8 +1118,30 @@ impl GameRoom {
             return;
         }
 
+        // Check entity prototype for behaviors
+        let prototype = self.entity_registry.get(&entity_type);
+
+        // Check if this NPC is a merchant/craftsman
+        let is_merchant = prototype.as_ref()
+            .map(|p| p.behaviors.merchant || p.behaviors.craftsman)
+            .unwrap_or(false);
+
         // Check if this NPC has quests associated with it
         let quests = self.quest_registry.get_quests_for_npc(&entity_type).await;
+
+        // If merchant/craftsman and no quests (or quest_giver behavior is not set), open shop
+        let is_quest_giver = prototype.as_ref()
+            .map(|p| p.behaviors.quest_giver)
+            .unwrap_or(false);
+
+        if is_merchant && (quests.is_empty() || !is_quest_giver) {
+            tracing::info!("Player {} opening shop with NPC {} ({})", player_id, npc_id, entity_type);
+            let msg = ServerMessage::ShopOpen {
+                npc_id: npc_id.to_string(),
+            };
+            self.send_to_player(player_id, msg).await;
+            return;
+        }
 
         if quests.is_empty() {
             tracing::debug!("NPC {} ({}) has no quests", npc_id, entity_type);
@@ -1599,6 +1621,7 @@ impl GameRoom {
             player.inventory.add_item(item_type, result.count);
             items_gained.push(ProtoRecipeResult {
                 item_id: result.item_id.clone(),
+                item_name: item_type.name().to_string(),
                 count: result.count,
             });
         }

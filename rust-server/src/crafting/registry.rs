@@ -106,6 +106,7 @@ impl CraftingRegistry {
 
     /// Generate recipe definitions message for client sync
     pub fn to_client_definitions(&self) -> crate::protocol::ServerMessage {
+        use crate::item::ItemType;
         use crate::protocol::{ClientRecipeDef, RecipeIngredient, RecipeResult};
 
         let recipes: Vec<ClientRecipeDef> = self
@@ -120,17 +121,31 @@ impl CraftingRegistry {
                 ingredients: recipe
                     .ingredients
                     .iter()
-                    .map(|i| RecipeIngredient {
-                        item_id: i.item_id.clone(),
-                        count: i.count,
+                    .map(|i| {
+                        // Look up item name from ItemType
+                        let item_name = ItemType::from_id(&i.item_id)
+                            .map(|t| t.name().to_string())
+                            .unwrap_or_else(|| i.item_id.clone());
+                        RecipeIngredient {
+                            item_id: i.item_id.clone(),
+                            item_name,
+                            count: i.count,
+                        }
                     })
                     .collect(),
                 results: recipe
                     .results
                     .iter()
-                    .map(|r| RecipeResult {
-                        item_id: r.item_id.clone(),
-                        count: r.count,
+                    .map(|r| {
+                        // Look up item name from ItemType
+                        let item_name = ItemType::from_id(&r.item_id)
+                            .map(|t| t.name().to_string())
+                            .unwrap_or_else(|| r.item_id.clone());
+                        RecipeResult {
+                            item_id: r.item_id.clone(),
+                            item_name,
+                            count: r.count,
+                        }
                     })
                     .collect(),
             })

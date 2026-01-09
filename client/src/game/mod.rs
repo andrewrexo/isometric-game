@@ -9,5 +9,5 @@ pub use state::{GameState, Camera, ConnectionStatus, ChatMessage, UiState, Damag
 pub use entities::{Player, Direction};
 pub use tilemap::{Tilemap, TilemapLayer, LayerType};
 pub use npc::{Npc, NpcType, NpcState};
-pub use item::{GroundItem, ItemType, Inventory, InventorySlot, INVENTORY_SIZE};
+pub use item::{GroundItem, ItemType, Inventory, InventorySlot, INVENTORY_SIZE, RecipeDefinition, RecipeIngredient, RecipeResult};
 pub use chunk::{ChunkManager, ChunkCoord, ChunkLayerType, Chunk, CHUNK_SIZE};

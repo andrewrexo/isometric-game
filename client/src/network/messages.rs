@@ -48,6 +48,9 @@ pub enum ClientMessage {
 
     #[serde(rename = "abandonQuest")]
     AbandonQuest { quest_id: String },
+
+    #[serde(rename = "craft")]
+    Craft { recipe_id: String },
 }
 
 impl ClientMessage {
@@ -116,6 +119,10 @@ impl ClientMessage {
             ClientMessage::AbandonQuest { quest_id } => {
                 data.insert("quest_id".into(), Value::String(quest_id.clone().into()));
                 "abandonQuest"
+            }
+            ClientMessage::Craft { recipe_id } => {
+                data.insert("recipe_id".into(), Value::String(recipe_id.clone().into()));
+                "craft"
             }
         };
 

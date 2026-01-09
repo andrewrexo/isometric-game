@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
@@ -793,6 +793,11 @@ impl Renderer {
             self.render_quest_log(state);
         }
 
+        // Crafting UI (when open)
+        if state.ui_state.crafting_open {
+            self.render_crafting(state);
+        }
+
         // Quick slots (always visible at bottom)
         self.render_quick_slots(state);
 
@@ -1175,5 +1180,193 @@ impl Renderer {
                 Color::from_rgba(100, 255, 100, alpha),
             );
         }
+    }
+
+    /// Render the crafting panel (shop UI)
+    fn render_crafting(&self, state: &GameState) {
+        let panel_width = 650.0;
+        let panel_height = 450.0;
+        let panel_x = (screen_width() - panel_width) / 2.0;
+        let panel_y = (screen_height() - panel_height) / 2.0;
+
+        // Semi-transparent overlay
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 150));
+
+        // Panel background
+        draw_rectangle(panel_x, panel_y, panel_width, panel_height, Color::from_rgba(30, 30, 45, 245));
+        draw_rectangle_lines(panel_x, panel_y, panel_width, panel_height, 2.0, Color::from_rgba(100, 100, 140, 255));
+
+        // Title
+        draw_text("CRAFTING", panel_x + 15.0, panel_y + 28.0, 22.0, Color::from_rgba(255, 220, 100, 255));
+        draw_text("[E] Close", panel_x + panel_width - 80.0, panel_y + 25.0, 14.0, GRAY);
+
+        // Separator
+        draw_line(panel_x + 10.0, panel_y + 40.0, panel_x + panel_width - 10.0, panel_y + 40.0, 1.0, GRAY);
+
+        // Get unique categories
+        let categories: Vec<&str> = {
+            let mut cats: Vec<&str> = state.recipe_definitions.iter()
+                .map(|r| r.category.as_str())
+                .collect();
+            cats.sort();
+            cats.dedup();
+            cats
+        };
+
+        if categories.is_empty() {
+            draw_text("No recipes available", panel_x + 20.0, panel_y + 80.0, 16.0, GRAY);
+            return;
+        }
+
+        // Category tabs
+        let tab_y = panel_y + 55.0;
+        let tab_height = 28.0;
+        let mut tab_x = panel_x + 15.0;
+
+        for (i, category) in categories.iter().enumerate() {
+            let is_selected = i == state.ui_state.crafting_selected_category;
+            let tab_width = measure_text(category, None, 14, 1.0).width + 20.0;
+
+            let bg_color = if is_selected {
+                Color::from_rgba(70, 70, 100, 255)
+            } else {
+                Color::from_rgba(50, 50, 70, 255)
+            };
+            let text_color = if is_selected { WHITE } else { LIGHTGRAY };
+
+            draw_rectangle(tab_x, tab_y, tab_width, tab_height, bg_color);
+            if is_selected {
+                draw_rectangle_lines(tab_x, tab_y, tab_width, tab_height, 1.0, WHITE);
+            }
+
+            // Capitalize first letter
+            let display_name: String = category.chars().enumerate()
+                .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
+                .collect();
+            draw_text(&display_name, tab_x + 10.0, tab_y + 19.0, 14.0, text_color);
+
+            tab_x += tab_width + 5.0;
+        }
+
+        // Get recipes for current category
+        let current_category = categories.get(state.ui_state.crafting_selected_category).copied().unwrap_or("consumables");
+        let recipes: Vec<&RecipeDefinition> = state.recipe_definitions.iter()
+            .filter(|r| r.category == current_category)
+            .collect();
+
+        // Split panel: left = recipe list, right = details
+        let list_width = 220.0;
+        let list_x = panel_x + 15.0;
+        let content_y = tab_y + tab_height + 15.0;
+        let content_height = panel_height - (content_y - panel_y) - 40.0;
+
+        // Recipe list background
+        draw_rectangle(list_x, content_y, list_width, content_height, Color::from_rgba(25, 25, 35, 255));
+        draw_rectangle_lines(list_x, content_y, list_width, content_height, 1.0, Color::from_rgba(70, 70, 90, 255));
+
+        // Recipe list
+        let line_height = 26.0;
+        let mut y = content_y + 5.0;
+
+        for (i, recipe) in recipes.iter().enumerate() {
+            if y > content_y + content_height - line_height {
+                break;
+            }
+
+            let is_selected = i == state.ui_state.crafting_selected_recipe;
+
+            if is_selected {
+                draw_rectangle(list_x + 2.0, y, list_width - 4.0, line_height - 2.0, Color::from_rgba(60, 80, 120, 255));
+            }
+
+            let marker = if is_selected { ">" } else { " " };
+            let text_color = if is_selected { WHITE } else { LIGHTGRAY };
+
+            draw_text(&format!("{} {}", marker, recipe.display_name), list_x + 8.0, y + 18.0, 14.0, text_color);
+
+            // Level indicator
+            if recipe.level_required > 1 {
+                let level_text = format!("Lv{}", recipe.level_required);
+                let level_width = measure_text(&level_text, None, 10, 1.0).width;
+                draw_text(&level_text, list_x + list_width - level_width - 10.0, y + 16.0, 10.0, GRAY);
+            }
+
+            y += line_height;
+        }
+
+        // Detail panel
+        let detail_x = list_x + list_width + 15.0;
+        let detail_width = panel_width - list_width - 45.0;
+
+        if let Some(recipe) = recipes.get(state.ui_state.crafting_selected_recipe) {
+            // Recipe name
+            draw_text(&recipe.display_name, detail_x, content_y + 22.0, 20.0, WHITE);
+
+            // Description
+            draw_text(&recipe.description, detail_x, content_y + 45.0, 12.0, LIGHTGRAY);
+
+            // Level requirement
+            if recipe.level_required > 1 {
+                let level_color = if let Some(player) = state.get_local_player() {
+                    if player.level >= recipe.level_required { GREEN } else { RED }
+                } else {
+                    GRAY
+                };
+                draw_text(&format!("Requires Level {}", recipe.level_required), detail_x, content_y + 65.0, 12.0, level_color);
+            }
+
+            // Ingredients section
+            let ing_y = content_y + 90.0;
+            draw_text("Ingredients:", detail_x, ing_y, 14.0, Color::from_rgba(200, 200, 200, 255));
+
+            let mut y = ing_y + 20.0;
+            let mut can_craft = true;
+
+            for ingredient in &recipe.ingredients {
+                let have_count = state.inventory.count_item_by_id(&ingredient.item_id);
+                let need_count = ingredient.count;
+                let has_enough = have_count >= need_count;
+
+                if !has_enough {
+                    can_craft = false;
+                }
+
+                let (marker, color) = if has_enough {
+                    ("[v]", Color::from_rgba(100, 255, 100, 255))
+                } else {
+                    ("[x]", Color::from_rgba(255, 100, 100, 255))
+                };
+
+                let text = format!("{} {} ({}/{})", marker, ingredient.item_name, have_count, need_count);
+                draw_text(&text, detail_x + 10.0, y, 13.0, color);
+                y += 20.0;
+            }
+
+            // Results section
+            y += 10.0;
+            draw_text("Creates:", detail_x, y, 14.0, Color::from_rgba(200, 200, 200, 255));
+            y += 20.0;
+
+            for result in &recipe.results {
+                let text = format!("  {} x{}", result.item_name, result.count);
+                draw_text(&text, detail_x + 10.0, y, 13.0, Color::from_rgba(150, 200, 255, 255));
+                y += 20.0;
+            }
+
+            // Craft button hint
+            let craft_y = content_y + content_height - 25.0;
+            if can_craft {
+                draw_rectangle(detail_x, craft_y, 120.0, 24.0, Color::from_rgba(50, 120, 50, 255));
+                draw_rectangle_lines(detail_x, craft_y, 120.0, 24.0, 1.0, GREEN);
+                draw_text("[Enter] Craft", detail_x + 15.0, craft_y + 17.0, 14.0, WHITE);
+            } else {
+                draw_rectangle(detail_x, craft_y, 140.0, 24.0, Color::from_rgba(80, 50, 50, 255));
+                draw_text("Missing Materials", detail_x + 10.0, craft_y + 17.0, 14.0, RED);
+            }
+        }
+
+        // Navigation hints at bottom
+        draw_text("[A/D] Category   [W/S] Select   [Enter/C] Craft   [E/Esc] Close",
+            panel_x + 15.0, panel_y + panel_height - 15.0, 11.0, GRAY);
     }
 }

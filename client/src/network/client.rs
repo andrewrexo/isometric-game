@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, DamageEvent, LevelUpEvent, GroundItem, ItemType, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, DamageEvent, LevelUpEvent, GroundItem, ItemType, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult};
 use crate::game::npc::{Npc, NpcType, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -887,6 +887,89 @@ impl NetworkClient {
             "dialogueClosed" => {
                 // Server tells us to close dialogue
                 state.ui_state.active_dialogue = None;
+            }
+
+            // ========== Crafting System Messages ==========
+
+            "recipeDefinitions" => {
+                if let Some(value) = data {
+                    state.recipe_definitions.clear();
+
+                    if let Some(recipes_arr) = extract_array(value, "recipes") {
+                        for recipe_value in recipes_arr {
+                            let id = extract_string(recipe_value, "id").unwrap_or_default();
+                            let display_name = extract_string(recipe_value, "display_name").unwrap_or_default();
+                            let description = extract_string(recipe_value, "description").unwrap_or_default();
+                            let category = extract_string(recipe_value, "category").unwrap_or_else(|| "consumables".to_string());
+                            let level_required = extract_i32(recipe_value, "level_required").unwrap_or(1);
+
+                            // Parse ingredients
+                            let mut ingredients = Vec::new();
+                            if let Some(ing_arr) = extract_array(recipe_value, "ingredients") {
+                                for ing_value in ing_arr {
+                                    let item_id = extract_string(ing_value, "item_id").unwrap_or_default();
+                                    let item_name = extract_string(ing_value, "item_name").unwrap_or_default();
+                                    let count = extract_i32(ing_value, "count").unwrap_or(1);
+                                    ingredients.push(RecipeIngredient { item_id, item_name, count });
+                                }
+                            }
+
+                            // Parse results
+                            let mut results = Vec::new();
+                            if let Some(res_arr) = extract_array(recipe_value, "results") {
+                                for res_value in res_arr {
+                                    let item_id = extract_string(res_value, "item_id").unwrap_or_default();
+                                    let item_name = extract_string(res_value, "item_name").unwrap_or_default();
+                                    let count = extract_i32(res_value, "count").unwrap_or(1);
+                                    results.push(RecipeResult { item_id, item_name, count });
+                                }
+                            }
+
+                            state.recipe_definitions.push(RecipeDefinition {
+                                id,
+                                display_name,
+                                description,
+                                category,
+                                level_required,
+                                ingredients,
+                                results,
+                            });
+                        }
+                    }
+
+                    log::info!("Received {} recipe definitions", state.recipe_definitions.len());
+                }
+            }
+
+            "shopOpen" => {
+                if let Some(value) = data {
+                    let npc_id = extract_string(value, "npc_id").unwrap_or_default();
+                    log::info!("Opening shop for NPC: {}", npc_id);
+
+                    state.ui_state.crafting_open = true;
+                    state.ui_state.crafting_npc_id = Some(npc_id);
+                    state.ui_state.crafting_selected_category = 0;
+                    state.ui_state.crafting_selected_recipe = 0;
+                }
+            }
+
+            "craftResult" => {
+                if let Some(value) = data {
+                    let success = value.as_map()
+                        .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("success")))
+                        .and_then(|(_, v)| v.as_bool())
+                        .unwrap_or(false);
+                    let recipe_id = extract_string(value, "recipe_id").unwrap_or_default();
+                    let error = extract_string(value, "error");
+
+                    if success {
+                        log::info!("Crafting success: {}", recipe_id);
+                        // Inventory update will come separately
+                    } else {
+                        log::warn!("Crafting failed: {} - {:?}", recipe_id, error);
+                        // TODO: Show error message in UI
+                    }
+                }
             }
 
             _ => {

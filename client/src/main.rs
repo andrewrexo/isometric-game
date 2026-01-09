@@ -237,6 +237,8 @@ fn run_game_frame(
                 // Just close locally, no server message needed
                 continue;
             },
+            // Crafting command
+            InputCommand::Craft { recipe_id } => ClientMessage::Craft { recipe_id: recipe_id.clone() },
         };
         network.send(&msg);
     }

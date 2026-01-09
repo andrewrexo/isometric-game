@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use super::entities::Player;
-use super::item::{GroundItem, Inventory};
+use super::item::{GroundItem, Inventory, RecipeDefinition};
 use super::npc::Npc;
 use super::tilemap::Tilemap;
 use super::chunk::ChunkManager;
@@ -101,6 +101,11 @@ pub struct UiState {
     pub active_quests: Vec<ActiveQuest>,
     pub quest_completed_events: Vec<QuestCompletedEvent>,
     pub quest_log_open: bool,
+    // Crafting UI state
+    pub crafting_open: bool,
+    pub crafting_selected_category: usize,
+    pub crafting_selected_recipe: usize,
+    pub crafting_npc_id: Option<String>,
 }
 
 impl Default for UiState {
@@ -114,6 +119,10 @@ impl Default for UiState {
             active_quests: Vec::new(),
             quest_completed_events: Vec::new(),
             quest_log_open: false,
+            crafting_open: false,
+            crafting_selected_category: 0,
+            crafting_selected_recipe: 0,
+            crafting_npc_id: None,
         }
     }
 }
@@ -148,6 +157,9 @@ pub struct GameState {
     // Inventory
     pub inventory: Inventory,
 
+    // Crafting
+    pub recipe_definitions: Vec<RecipeDefinition>,
+
     // Camera and UI
     pub camera: Camera,
     pub ui_state: UiState,
@@ -177,6 +189,7 @@ impl GameState {
             damage_events: Vec::new(),
             level_up_events: Vec::new(),
             inventory: Inventory::new(),
+            recipe_definitions: Vec::new(),
             camera: Camera::default(),
             ui_state: UiState::default(),
             server_tick: 0,
