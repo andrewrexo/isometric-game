@@ -785,6 +785,13 @@ async fn handle_socket(
         }
     }
 
+    // Send active quests to this client (from saved state)
+    for quest_msg in room.get_active_quest_messages(&player_id).await {
+        if let Ok(bytes) = protocol::encode_server_message(&quest_msg) {
+            let _ = sender.send(Message::Binary(bytes)).await;
+        }
+    }
+
     // Notify others about this player
     let (x, y) = room.get_player_position(&player_id).await.unwrap_or((0, 0));
     room.broadcast(ServerMessage::PlayerJoined {

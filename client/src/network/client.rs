@@ -833,8 +833,8 @@ impl NetworkClient {
                         });
                     }
 
-                    // Close any open dialogue
-                    state.ui_state.active_dialogue = None;
+                    // Don't close dialogue here - let user read the quest acceptance message
+                    // Dialogue will close when user presses continue or server sends dialogueClosed
                 }
             }
 

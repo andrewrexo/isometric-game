@@ -85,6 +85,8 @@ pub struct ScriptResult {
     pub notifications: Vec<String>,
     /// Bonus rewards granted
     pub bonus_rewards: Option<BonusReward>,
+    /// New dialogue step to persist (for tracking dialogue progress)
+    pub new_dialogue_step: Option<u32>,
 }
 
 impl Default for ScriptResult {
@@ -95,6 +97,7 @@ impl Default for ScriptResult {
             quest_completed: false,
             notifications: Vec::new(),
             bonus_rewards: None,
+            new_dialogue_step: None,
         }
     }
 }
@@ -227,6 +230,19 @@ impl QuestRunner {
         ctx_table.set("_quest_id", ctx.quest_id.clone())?;
         ctx_table.set("_player_choice", player_choice.unwrap_or(""))?;
 
+        // Track dialogue step to handle __continue__ correctly
+        // When __continue__ is received, we need to skip past already-shown dialogues
+        let dialogue_step_key = format!("{}_dialogue_step", ctx.quest_id);
+        let current_step: u32 = ctx.quest_state.flags
+            .get(&dialogue_step_key)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        ctx_table.set("_dialogue_step", current_step)?;
+        ctx_table.set("_dialogue_counter", 0u32)?;
+        // If we're receiving __continue__, we increment the step to skip the previous dialogue
+        let is_continue = player_choice == Some("__continue__");
+        ctx_table.set("_is_continue", is_continue)?;
+
         // Add result accumulator
         let result_table = lua.create_table()?;
         result_table.set("quest_accepted", false)?;
@@ -316,11 +332,13 @@ impl QuestRunner {
         let player_choice_val = player_choice.map(|s| s.to_string());
         let show_dialogue = lua.create_function(move |lua, (this, options): (Table, Table)| {
             let result: Table = this.get("_result")?;
-
-            // Store the dialogue info
-            result.set("dialogue", options.clone())?;
-
             let current_choice: String = this.get("_player_choice").unwrap_or_default();
+            let is_continue: bool = this.get("_is_continue").unwrap_or(false);
+
+            // Track dialogue counter for step-based skipping
+            let counter: u32 = this.get("_dialogue_counter").unwrap_or(0);
+            let step: u32 = this.get("_dialogue_step").unwrap_or(0);
+            this.set("_dialogue_counter", counter + 1)?;
 
             // If there are choices, we need a real choice (not __continue__)
             let choices: Option<Table> = options.get("choices").ok();
@@ -328,26 +346,42 @@ impl QuestRunner {
                 // Check if there are actual choices
                 let has_choices = choice_table.len().unwrap_or(0) > 0;
                 if has_choices {
+                    // If we're processing __continue__ and this dialogue is before the step we're at,
+                    // skip it (return nil so the script continues past it)
+                    if is_continue && counter < step {
+                        return Ok(Value::Nil);
+                    }
+
                     // Check if we have a real player choice (not __continue__)
                     if !current_choice.is_empty() && current_choice != "__continue__" {
                         // Clear the choice so it's not reused in recursive calls
                         this.set("_player_choice", "")?;
+                        // Update dialogue step to current counter so we're past this dialogue
+                        result.set("_new_dialogue_step", counter + 1)?;
                         return Ok(Value::String(lua.create_string(&current_choice)?));
                     }
-                    // No valid choice yet - throw special error to pause script execution
-                    // This prevents the script from continuing to the else branch
+                    // No valid choice yet - store dialogue and pause script execution
+                    result.set("dialogue", options.clone())?;
+                    result.set("_new_dialogue_step", counter)?;
                     return Err(mlua::Error::RuntimeError("__WAIT_FOR_CHOICE__".to_string()));
                 }
             }
 
-            // No choices - check if we have a continue signal from client
-            if current_choice == "__continue__" {
-                // Client acknowledged, clear the signal and continue script
-                this.set("_player_choice", "")?;
+            // No choices dialogue
+            // If we're processing __continue__ and this is the dialogue we were waiting on,
+            // continue past it
+            if is_continue && counter == step {
+                // Clear the continue flag so subsequent dialogues work normally
+                this.set("_is_continue", false)?;
+                // Increment step for next dialogue
+                result.set("_new_dialogue_step", counter + 1)?;
                 return Ok(Value::Nil);
             }
 
-            // No continue signal yet - pause script and show this dialogue
+            // If we're past the current step, this is a new dialogue - pause and wait
+            // No continue signal yet - store dialogue and pause script
+            result.set("dialogue", options.clone())?;
+            result.set("_new_dialogue_step", counter)?;
             return Err(mlua::Error::RuntimeError("__WAIT_FOR_CONTINUE__".to_string()));
         })?;
         ctx_table.set("show_dialogue", show_dialogue)?;
@@ -429,6 +463,11 @@ impl QuestRunner {
                 exp,
                 items: Vec::new(),
             });
+        }
+
+        // Extract new dialogue step for persistence
+        if let Ok(step) = result_table.get::<u32>("_new_dialogue_step") {
+            result.new_dialogue_step = Some(step);
         }
 
         Ok(result)

@@ -75,27 +75,28 @@ end
 
 -- Complete the quest with bonus check
 function complete_quest(ctx)
-    -- Complete the quest FIRST (grants rewards, updates state)
+    -- Check for speed bonus first (before completing, so duration is accurate)
+    local duration = ctx:get_quest_duration()
+
+    -- Show dialogue FIRST - script pauses here until user dismisses
+    if duration < 300 then  -- Under 5 minutes
+        ctx:show_dialogue({
+            speaker = "Village Elder",
+            text = "Incredible speed! The slimes didn't stand a chance. Take this extra reward!"
+        })
+        ctx:grant_bonus_reward({ gold = 25 })
+    else
+        ctx:show_dialogue({
+            speaker = "Village Elder",
+            text = "Wonderful work! The village is safer thanks to you."
+        })
+    end
+
+    -- After user dismisses dialogue, complete the quest (grants rewards, updates state)
     ctx:complete_quest()
 
     -- Unlock next quest in chain
     ctx:unlock_quest("forest_dangers")
-
-    -- Check for speed bonus
-    local duration = ctx:get_quest_duration()
-
-    if duration < 300 then  -- Under 5 minutes
-        ctx:grant_bonus_reward({ gold = 25 })
-        ctx:show_dialogue({
-            speaker = "Village Elder",
-            text = "Incredible speed! The slimes didn't stand a chance. Take this extra reward! When you're ready for another task, speak with me again."
-        })
-    else
-        ctx:show_dialogue({
-            speaker = "Village Elder",
-            text = "Wonderful work! The village is safer thanks to you. When you're ready for another task, speak with me again."
-        })
-    end
 end
 
 -- Post-completion dialogue

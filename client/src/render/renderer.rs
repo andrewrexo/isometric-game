@@ -1068,14 +1068,15 @@ impl Renderer {
         }
     }
 
-    /// Render the quest objective tracker (top-left corner)
+    /// Render the quest objective tracker (top-left corner, below debug info)
     fn render_quest_tracker(&self, state: &GameState) {
         if state.ui_state.active_quests.is_empty() {
             return;
         }
 
         let tracker_x = 10.0;
-        let tracker_y = 80.0;
+        // Start below debug info (which ends at ~Y=120 when enabled)
+        let tracker_y = if state.debug_mode { 150.0 } else { 20.0 };
         let line_height = 18.0;
 
         let mut y = tracker_y;

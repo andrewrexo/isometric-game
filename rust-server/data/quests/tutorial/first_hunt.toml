@@ -8,6 +8,7 @@ description = "The forest slimes have become aggressive. Help thin their numbers
 giver_npc = "elder_villager"
 level_required = 1
 lua_script = "tutorial/first_hunt.lua"
+repeatable = true
 
 [quest.chain]
 # This is the first quest in the tutorial chain

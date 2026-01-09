@@ -8,7 +8,7 @@ use crate::chunk::ChunkCoord;
 use crate::entity::{EntityPrototype, EntityRegistry};
 use crate::item::{self, GroundItem, Inventory, ItemType};
 use crate::npc::{Npc, NpcType, NpcUpdate};
-use crate::protocol::ServerMessage;
+use crate::protocol::{ServerMessage, QuestObjectiveData};
 use crate::quest::{QuestRegistry, QuestRunner, PlayerQuestState, QuestEvent};
 use crate::world::World;
 
@@ -461,6 +461,44 @@ impl GameRoom {
     pub async fn get_player_quest_state(&self, player_id: &str) -> Option<PlayerQuestState> {
         let quest_states = self.player_quest_states.read().await;
         quest_states.get(player_id).cloned()
+    }
+
+    /// Get QuestAccepted messages for all active quests (for syncing on login)
+    pub async fn get_active_quest_messages(&self, player_id: &str) -> Vec<ServerMessage> {
+        let quest_states = self.player_quest_states.read().await;
+        let quest_state = match quest_states.get(player_id) {
+            Some(state) => state,
+            None => return Vec::new(),
+        };
+
+        let mut messages = Vec::new();
+        for (quest_id, progress) in &quest_state.active_quests {
+            if let Some(quest) = self.quest_registry.get(quest_id).await {
+                let objectives: Vec<QuestObjectiveData> = quest.objectives
+                    .iter()
+                    .map(|o| {
+                        // Get current progress from saved state
+                        let (current, completed) = progress.objectives
+                            .get(&o.id)
+                            .map(|p| (p.current, p.completed))
+                            .unwrap_or((0, false));
+                        QuestObjectiveData {
+                            id: o.id.clone(),
+                            description: o.description.clone(),
+                            current,
+                            target: o.count,
+                            completed,
+                        }
+                    })
+                    .collect();
+                messages.push(ServerMessage::QuestAccepted {
+                    quest_id: quest_id.clone(),
+                    quest_name: quest.name.clone(),
+                    objectives,
+                });
+            }
+        }
+        messages
     }
 
     pub async fn player_count(&self) -> usize {
@@ -1091,8 +1129,10 @@ impl GameRoom {
             .or_insert_with(PlayerQuestState::new);
 
         // Find the appropriate quest to interact with
-        // Priority: 1) Active quest ready to complete, 2) Active quest in progress, 3) Available new quest
+        // Priority: 1) Active quest ready to complete, 2) Active quest in progress,
+        //           3) Available new quest (or repeatable completed quest), 4) Completed quest (for post-completion dialogue)
         let mut target_quest: Option<(String, &str)> = None;
+        let mut completed_quest: Option<(String, &str)> = None;
 
         for quest in &quests {
             let quest_id = &quest.id;
@@ -1106,12 +1146,32 @@ impl GameRoom {
                     target_quest = Some((quest_id.clone(), "in_progress"));
                     // Don't break, keep looking for ready_to_complete
                 }
-            } else if !quest_state.is_quest_completed(quest_id) {
+            } else if quest_state.is_quest_completed(quest_id) {
+                // Quest is completed
+                if quest.repeatable {
+                    // Repeatable quest - treat as not started so player can do it again
+                    if target_quest.is_none() {
+                        // Remove from completed list so it can be restarted
+                        quest_state.completed_quests.retain(|id| id != quest_id);
+                        target_quest = Some((quest_id.clone(), "not_started"));
+                    }
+                } else {
+                    // Non-repeatable - save as fallback for post-completion dialogue
+                    if completed_quest.is_none() {
+                        completed_quest = Some((quest_id.clone(), "completed"));
+                    }
+                }
+            } else {
                 // Player doesn't have this quest and hasn't completed it
                 if target_quest.is_none() {
                     target_quest = Some((quest_id.clone(), "not_started"));
                 }
             }
+        }
+
+        // Use completed quest as fallback if no other quest is found
+        if target_quest.is_none() {
+            target_quest = completed_quest;
         }
 
         if let Some((quest_id, state)) = target_quest {
@@ -1164,6 +1224,12 @@ impl GameRoom {
                             choices,
                         };
                         self.send_to_player(player_id, msg).await;
+
+                        // Persist dialogue step for proper dialogue flow
+                        if let Some(step) = script_result.new_dialogue_step {
+                            let step_key = format!("{}_dialogue_step", quest_id);
+                            quest_state.set_flag(&step_key, &step.to_string());
+                        }
                     }
 
                     // Handle quest acceptance
@@ -1175,6 +1241,24 @@ impl GameRoom {
                                 .collect();
                             quest_state.start_quest(&quest_id, &objective_targets);
                             tracing::info!("Player {} accepted quest {}", player_id, quest_id);
+
+                            // Send QuestAccepted to client
+                            let objectives: Vec<QuestObjectiveData> = quest.objectives
+                                .iter()
+                                .map(|o| QuestObjectiveData {
+                                    id: o.id.clone(),
+                                    description: o.description.clone(),
+                                    current: 0,
+                                    target: o.count,
+                                    completed: false,
+                                })
+                                .collect();
+                            let msg = ServerMessage::QuestAccepted {
+                                quest_id: quest_id.clone(),
+                                quest_name: quest.name.clone(),
+                                objectives,
+                            };
+                            self.send_to_player(player_id, msg).await;
                         }
                     }
 
@@ -1254,10 +1338,19 @@ impl GameRoom {
                         choices,
                     };
                     self.send_to_player(player_id, msg).await;
+                    // Persist dialogue step for proper dialogue flow
+                    if let Some(step) = script_result.new_dialogue_step {
+                        let step_key = format!("{}_dialogue_step", quest_id);
+                        quest_state.set_flag(&step_key, &step.to_string());
+                    }
                 } else {
                     // No follow-up dialogue - tell client to close
                     let msg = ServerMessage::DialogueClosed;
                     self.send_to_player(player_id, msg).await;
+
+                    // Reset dialogue step since conversation ended
+                    let step_key = format!("{}_dialogue_step", quest_id);
+                    quest_state.flags.remove(&step_key);
                 }
 
                 // Handle quest acceptance
@@ -1269,6 +1362,24 @@ impl GameRoom {
                             .collect();
                         quest_state.start_quest(quest_id, &objective_targets);
                         tracing::info!("Player {} accepted quest {}", player_id, quest_id);
+
+                        // Send QuestAccepted to client
+                        let objectives: Vec<QuestObjectiveData> = quest.objectives
+                            .iter()
+                            .map(|o| QuestObjectiveData {
+                                id: o.id.clone(),
+                                description: o.description.clone(),
+                                current: 0,
+                                target: o.count,
+                                completed: false,
+                            })
+                            .collect();
+                        let msg = ServerMessage::QuestAccepted {
+                            quest_id: quest_id.to_string(),
+                            quest_name: quest.name.clone(),
+                            objectives,
+                        };
+                        self.send_to_player(player_id, msg).await;
                     }
                 }
 

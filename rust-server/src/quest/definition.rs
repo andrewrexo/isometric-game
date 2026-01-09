@@ -33,6 +33,9 @@ pub struct RawQuest {
     /// Simple dialogue strings (complex dialogue handled in Lua)
     #[serde(default)]
     pub dialogue: Option<RawQuestDialogue>,
+    /// Whether this quest can be repeated after completion
+    #[serde(default)]
+    pub repeatable: bool,
 }
 
 /// Quest chain configuration
@@ -244,6 +247,8 @@ pub struct Quest {
     pub rewards: Reward,
     /// Simple dialogue (used when no Lua script)
     pub dialogue: QuestDialogue,
+    /// Whether this quest can be repeated after completion
+    pub repeatable: bool,
 }
 
 impl Quest {
@@ -279,6 +284,7 @@ impl Quest {
             dialogue: raw.dialogue.as_ref()
                 .map(QuestDialogue::from_raw)
                 .unwrap_or_default(),
+            repeatable: raw.repeatable,
         })
     }
 

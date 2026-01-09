@@ -158,6 +158,11 @@ pub enum ServerMessage {
         effect: String, // e.g., "heal:30"
     },
     // Quest-related messages
+    QuestAccepted {
+        quest_id: String,
+        quest_name: String,
+        objectives: Vec<QuestObjectiveData>,
+    },
     QuestObjectiveProgress {
         quest_id: String,
         objective_id: String,
@@ -238,6 +243,16 @@ pub struct DialogueChoice {
     pub text: String,
 }
 
+/// Quest objective data for QuestAccepted message
+#[derive(Debug, Clone, Serialize)]
+pub struct QuestObjectiveData {
+    pub id: String,
+    pub description: String,
+    pub current: i32,
+    pub target: i32,
+    pub completed: bool,
+}
+
 impl ServerMessage {
     pub fn msg_type(&self) -> &'static str {
         match self {
@@ -260,6 +275,7 @@ impl ServerMessage {
             ServerMessage::ItemDespawned { .. } => "itemDespawned",
             ServerMessage::InventoryUpdate { .. } => "inventoryUpdate",
             ServerMessage::ItemUsed { .. } => "itemUsed",
+            ServerMessage::QuestAccepted { .. } => "questAccepted",
             ServerMessage::QuestObjectiveProgress { .. } => "questObjectiveProgress",
             ServerMessage::QuestCompleted { .. } => "questCompleted",
             ServerMessage::ShowDialogue { .. } => "showDialogue",
@@ -617,6 +633,24 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("slot".into()), Value::Integer((*slot as i64).into())));
             map.push((Value::String("item_type".into()), Value::Integer((*item_type as i64).into())));
             map.push((Value::String("effect".into()), Value::String(effect.clone().into())));
+            Value::Map(map)
+        }
+        ServerMessage::QuestAccepted { quest_id, quest_name, objectives } => {
+            let mut map = Vec::new();
+            map.push((Value::String("quest_id".into()), Value::String(quest_id.clone().into())));
+            map.push((Value::String("quest_name".into()), Value::String(quest_name.clone().into())));
+
+            let obj_values: Vec<Value> = objectives.iter().map(|obj| {
+                let mut omap = Vec::new();
+                omap.push((Value::String("id".into()), Value::String(obj.id.clone().into())));
+                omap.push((Value::String("description".into()), Value::String(obj.description.clone().into())));
+                omap.push((Value::String("current".into()), Value::Integer((obj.current as i64).into())));
+                omap.push((Value::String("target".into()), Value::Integer((obj.target as i64).into())));
+                omap.push((Value::String("completed".into()), Value::Boolean(obj.completed)));
+                Value::Map(omap)
+            }).collect();
+            map.push((Value::String("objectives".into()), Value::Array(obj_values)));
+
             Value::Map(map)
         }
         ServerMessage::QuestObjectiveProgress { quest_id, objective_id, current, target } => {

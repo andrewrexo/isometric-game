@@ -66,15 +66,15 @@ impl InputHandler {
 
         // Handle dialogue mode - intercept input when dialogue is open
         if let Some(dialogue) = &state.ui_state.active_dialogue {
-            // Escape closes dialogue
-            if is_key_pressed(KeyCode::Escape) {
-                commands.push(InputCommand::CloseDialogue);
-                state.ui_state.active_dialogue = None;
-                return commands;
-            }
-
-            // Number keys (1-4) select dialogue choices
             if !dialogue.choices.is_empty() {
+                // Dialogue with choices - Escape cancels, number keys select
+                if is_key_pressed(KeyCode::Escape) {
+                    commands.push(InputCommand::CloseDialogue);
+                    state.ui_state.active_dialogue = None;
+                    return commands;
+                }
+
+                // Number keys (1-4) select dialogue choices
                 let choice_keys = [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4];
                 for (i, key) in choice_keys.iter().enumerate() {
                     if i < dialogue.choices.len() && is_key_pressed(*key) {
@@ -88,10 +88,14 @@ impl InputHandler {
                     }
                 }
             } else {
-                // No choices - press Enter, Space, or Escape to close
-                // Just close locally like Escape does - no server message needed
-                if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::Space) {
-                    state.ui_state.active_dialogue = None;
+                // No choices - Escape, Enter, or Space to continue/close
+                // Send __continue__ to server so Lua script can resume execution
+                // Don't clear dialogue here - wait for server response (either new dialogue or close)
+                if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::Space) {
+                    commands.push(InputCommand::DialogueChoice {
+                        quest_id: dialogue.quest_id.clone(),
+                        choice_id: "__continue__".to_string(),
+                    });
                     return commands;
                 }
             }
