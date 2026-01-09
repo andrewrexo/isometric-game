@@ -4,6 +4,7 @@ use super::item::{GroundItem, Inventory, RecipeDefinition};
 use super::npc::Npc;
 use super::tilemap::Tilemap;
 use super::chunk::ChunkManager;
+use crate::ui::UiElementId;
 
 pub struct Camera {
     pub x: f32,
@@ -106,6 +107,8 @@ pub struct UiState {
     pub crafting_selected_category: usize,
     pub crafting_selected_recipe: usize,
     pub crafting_npc_id: Option<String>,
+    // Mouse hover state for UI elements
+    pub hovered_element: Option<UiElementId>,
 }
 
 impl Default for UiState {
@@ -123,6 +126,7 @@ impl Default for UiState {
             crafting_selected_category: 0,
             crafting_selected_recipe: 0,
             crafting_npc_id: None,
+            hovered_element: None,
         }
     }
 }

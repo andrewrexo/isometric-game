@@ -176,16 +176,16 @@ async fn main() {
         loop {
             let delta = get_frame_time();
 
-            // Handle input (local only in WASM)
-            let _ = input_handler.process(&mut game_state);
+            // Render and get UI layout
+            clear_background(Color::from_rgba(30, 30, 40, 255));
+            let layout = renderer.render(&game_state);
+
+            // Handle input with UI layout (local only in WASM)
+            let _ = input_handler.process(&mut game_state, &layout);
 
             // Update game state
             let (input_dx, input_dy) = input_handler.get_movement();
             game_state.update(delta, input_dx, input_dy);
-
-            // Render
-            clear_background(Color::from_rgba(30, 30, 40, 255));
-            renderer.render(&game_state);
 
             // Debug info
             if game_state.debug_mode {
@@ -211,8 +211,12 @@ fn run_game_frame(
     // 1. Poll network messages
     network.poll(game_state);
 
-    // 2. Handle input and send commands
-    let commands = input_handler.process(game_state);
+    // 2. Render and get UI layout for hit detection
+    clear_background(Color::from_rgba(30, 30, 40, 255));
+    let layout = renderer.render(game_state);
+
+    // 3. Handle input with UI layout and send commands
+    let commands = input_handler.process(game_state, &layout);
     for cmd in &commands {
         use network::messages::ClientMessage;
         let msg = match cmd {
@@ -247,15 +251,11 @@ fn run_game_frame(
         network.send(&msg);
     }
 
-    // 3. Update game state
+    // 4. Update game state
     let (input_dx, input_dy) = input_handler.get_movement();
     game_state.update(delta, input_dx, input_dy);
 
-    // 4. Render
-    clear_background(Color::from_rgba(30, 30, 40, 255));
-    renderer.render(game_state);
-
-    // 5. Debug info
+    // 5. Debug info (render after game state update to show current frame data)
     if game_state.debug_mode {
         renderer.draw_text_sharp(&format!("FPS: {}", get_fps()), 10.0, 20.0, 16.0, WHITE);
         renderer.draw_text_sharp(&format!("Players: {}", game_state.players.len()), 10.0, 40.0, 16.0, WHITE);

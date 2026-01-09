@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
+use crate::ui::{UiElementId, UiLayout};
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
 use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT};
 use super::font::BitmapFont;
@@ -173,7 +174,7 @@ impl Renderer {
         }
     }
 
-    pub fn render(&self, state: &GameState) {
+    pub fn render(&self, state: &GameState) -> UiLayout {
         // 1. Render ground layer tiles
         self.render_tilemap_layer(state, LayerType::Ground);
 
@@ -256,8 +257,11 @@ impl Renderer {
         // 6. Render floating level up text
         self.render_level_up_events(state);
 
-        // 7. Render UI
+        // 7. Render UI (non-interactive elements)
         self.render_ui(state);
+
+        // 8. Render interactive UI elements and return layout for hit detection
+        self.render_interactive_ui(state)
     }
 
     fn render_level_up_events(&self, state: &GameState) {
@@ -510,19 +514,48 @@ impl Renderer {
         draw_line(left.0, left.1, top.0, top.1, 1.0, outline_color);
     }
 
+    /// Draw a selection highlight around the tile at the given world position
+    fn render_tile_selection(&self, world_x: f32, world_y: f32, camera: &Camera) {
+        // Get the tile the entity is standing on (floor to get tile coords)
+        let tile_x = world_x.floor();
+        let tile_y = world_y.floor();
+
+        // Get the center of that tile in screen space
+        // Offset by half_h to align with where entities visually stand on the tile
+        let (center_x, center_y) = world_to_screen(tile_x + 0.5, tile_y + 0.5, camera);
+        let center_y = center_y - TILE_HEIGHT / 2.0;
+
+        // Tile dimensions (half-sizes for diamond corners)
+        let half_w = TILE_WIDTH / 2.0;
+        let half_h = TILE_HEIGHT / 2.0;
+
+        // Diamond corners (isometric tile shape)
+        let top = (center_x, center_y - half_h);
+        let right = (center_x + half_w, center_y);
+        let bottom = (center_x, center_y + half_h);
+        let left = (center_x - half_w, center_y);
+
+        // Pulsing effect
+        let pulse = (macroquad::time::get_time() * 3.0).sin() as f32 * 0.3 + 0.7;
+        let alpha = (pulse * 255.0) as u8;
+        let color = Color::from_rgba(255, 255, 0, alpha);
+
+        // Draw yellow diamond outline
+        draw_line(top.0, top.1, right.0, right.1, 2.0, color);
+        draw_line(right.0, right.1, bottom.0, bottom.1, 2.0, color);
+        draw_line(bottom.0, bottom.1, left.0, left.1, 2.0, color);
+        draw_line(left.0, left.1, top.0, top.1, 2.0, color);
+    }
+
     fn render_player(&self, player: &Player, is_local: bool, is_selected: bool, camera: &Camera) {
         let (screen_x, screen_y) = world_to_screen(player.x, player.y, camera);
 
         // Dead players are faded
         let alpha = if player.is_dead { 100 } else { 255 };
 
-        // Selection ring (draw first, behind player)
+        // Selection highlight (draw first, behind player)
         if is_selected && !player.is_dead {
-            let ring_radius = 18.0;
-            draw_circle_lines(screen_x, screen_y, ring_radius, 2.0, YELLOW);
-            // Pulsing effect using time
-            let pulse = (macroquad::time::get_time() * 3.0).sin() as f32 * 0.3 + 0.7;
-            draw_circle_lines(screen_x, screen_y, ring_radius + 3.0, 1.0, Color::from_rgba(255, 255, 0, (pulse * 150.0) as u8));
+            self.render_tile_selection(player.x, player.y, camera);
         }
 
         // Draw shadow under player
@@ -631,12 +664,9 @@ impl Renderer {
             return;
         }
 
-        // Selection ring (draw first, behind NPC)
+        // Selection highlight (draw first, behind NPC)
         if is_selected {
-            let ring_radius = 16.0;
-            draw_circle_lines(screen_x, screen_y, ring_radius, 2.0, YELLOW);
-            let pulse = (macroquad::time::get_time() * 3.0).sin() as f32 * 0.3 + 0.7;
-            draw_circle_lines(screen_x, screen_y, ring_radius + 3.0, 1.0, Color::from_rgba(255, 255, 0, (pulse * 150.0) as u8));
+            self.render_tile_selection(npc.x, npc.y, camera);
         }
 
         // NPC body color based on hostility
@@ -776,7 +806,7 @@ impl Renderer {
             }
         }
 
-        // Connection status
+        // Connection status (bottom-right, mirroring controls guide)
         let status_text = match state.connection_status {
             ConnectionStatus::Connected => "Connected",
             ConnectionStatus::Connecting => "Connecting...",
@@ -787,7 +817,8 @@ impl Renderer {
             ConnectionStatus::Connecting => YELLOW,
             ConnectionStatus::Disconnected => RED,
         };
-        self.draw_text_sharp(status_text, screen_width() - 120.0, 24.0, 16.0, status_color);
+        let status_width = self.measure_text_sharp(status_text, 16.0).width;
+        self.draw_text_sharp(status_text, screen_width() - status_width - 16.0, screen_height() - 10.0, 16.0, status_color);
 
         // Chat messages (bottom-left)
         let chat_x = 10.0;
@@ -802,8 +833,8 @@ impl Renderer {
 
         // Local player stats (top-right)
         if let Some(player) = state.get_local_player() {
-            let stats_x = screen_width() - 150.0;
-            let stats_y = 50.0;
+            let stats_x = screen_width() - 200.0;
+            let stats_y = 20.0;
             let bar_width = 120.0;
             let bar_height = 12.0;
 
@@ -819,7 +850,7 @@ impl Renderer {
                 &format!("{}/{}", player.hp, player.max_hp),
                 hp_bar_x + bar_width + 5.0,
                 stats_y + 20.0,
-                12.0,
+                16.0,
                 WHITE,
             );
 
@@ -833,48 +864,13 @@ impl Renderer {
                 &format!("{}/{}", player.exp, player.exp_to_next_level),
                 exp_bar_x + bar_width + 5.0,
                 stats_y + 40.0,
-                12.0,
+                16.0,
                 WHITE,
             );
-
-            // Gold display
-            self.draw_text_sharp(
-                &format!("Gold: {}", state.inventory.gold),
-                stats_x,
-                stats_y + 60.0,
-                14.0,
-                GOLD,
-            );
         }
 
-        // Inventory UI (when open)
-        if state.ui_state.inventory_open {
-            self.render_inventory(state);
-        }
-
-        // Quest Log UI (when open)
-        if state.ui_state.quest_log_open {
-            self.render_quest_log(state);
-        }
-
-        // Crafting UI (when open)
-        if state.ui_state.crafting_open {
-            self.render_crafting(state);
-        }
-
-        // Quick slots (always visible at bottom)
-        self.render_quick_slots(state);
-
-        // Quest objective tracker (top-left)
-        self.render_quest_tracker(state);
-
-        // Quest completion notifications
-        self.render_quest_completed(state);
-
-        // Dialogue box (when active)
-        if let Some(dialogue) = &state.ui_state.active_dialogue {
-            self.render_dialogue(dialogue);
-        }
+        // Note: Interactive UI (inventory, crafting, dialogue, quick slots) is rendered
+        // by render_interactive_ui() which is called by the main render loop
 
         // Chat input box (when open)
         if state.ui_state.chat_open {
@@ -913,7 +909,44 @@ impl Renderer {
         }
     }
 
-    fn render_inventory(&self, state: &GameState) {
+    /// Render all interactive UI elements and return the layout for hit detection
+    fn render_interactive_ui(&self, state: &GameState) -> UiLayout {
+        let mut layout = UiLayout::new();
+        let hovered = &state.ui_state.hovered_element;
+
+        // Inventory UI (when open)
+        if state.ui_state.inventory_open {
+            self.render_inventory(state, hovered, &mut layout);
+        }
+
+        // Quest Log UI (when open)
+        if state.ui_state.quest_log_open {
+            self.render_quest_log(state, hovered, &mut layout);
+        }
+
+        // Crafting UI (when open)
+        if state.ui_state.crafting_open {
+            self.render_crafting(state, hovered, &mut layout);
+        }
+
+        // Quick slots (always visible at bottom)
+        self.render_quick_slots(state, hovered, &mut layout);
+
+        // Quest objective tracker (top-left)
+        self.render_quest_tracker(state);
+
+        // Quest completion notifications
+        self.render_quest_completed(state);
+
+        // Dialogue box (when active)
+        if let Some(dialogue) = &state.ui_state.active_dialogue {
+            self.render_dialogue(dialogue, hovered, &mut layout);
+        }
+
+        layout
+    }
+
+    fn render_inventory(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
         let inv_width = 240.0;
         let inv_height = 320.0;
         let inv_x = (screen_width() - inv_width) / 2.0;
@@ -939,9 +972,24 @@ impl Renderer {
             let x = grid_x + col as f32 * slot_size;
             let y = grid_y + row as f32 * slot_size;
 
-            // Slot background
-            draw_rectangle(x, y, slot_size - 4.0, slot_size - 4.0, Color::from_rgba(50, 50, 60, 255));
-            draw_rectangle_lines(x, y, slot_size - 4.0, slot_size - 4.0, 1.0, GRAY);
+            // Register slot bounds for hit detection
+            let bounds = Rect::new(x, y, slot_size - 4.0, slot_size - 4.0);
+            layout.add(UiElementId::InventorySlot(i), bounds);
+
+            // Check if this slot is hovered
+            let is_hovered = matches!(hovered, Some(UiElementId::InventorySlot(idx)) if *idx == i);
+
+            // Slot background with hover effect
+            let bg_color = if is_hovered {
+                Color::from_rgba(70, 70, 90, 255)
+            } else {
+                Color::from_rgba(50, 50, 60, 255)
+            };
+            draw_rectangle(x, y, slot_size - 4.0, slot_size - 4.0, bg_color);
+
+            // Border with hover effect
+            let border_color = if is_hovered { WHITE } else { GRAY };
+            draw_rectangle_lines(x, y, slot_size - 4.0, slot_size - 4.0, 1.0, border_color);
 
             // Draw item if present
             if let Some(slot) = &state.inventory.slots[i] {
@@ -964,7 +1012,7 @@ impl Renderer {
         self.draw_text_sharp("Press I to close", inv_x + 10.0, inv_y + inv_height - 15.0, 16.0, GRAY);
     }
 
-    fn render_quest_log(&self, state: &GameState) {
+    fn render_quest_log(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
         let panel_width = 350.0;
         let panel_height = 400.0;
         let panel_x = (screen_width() - panel_width) / 2.0;
@@ -991,10 +1039,26 @@ impl Renderer {
             self.draw_text_sharp("No active quests", panel_x + 20.0, y, 16.0, GRAY);
             self.draw_text_sharp("Talk to NPCs with ! above their heads", panel_x + 20.0, y + line_height, 16.0, DARKGRAY);
         } else {
-            for quest in &state.ui_state.active_quests {
+            for (quest_idx, quest) in state.ui_state.active_quests.iter().enumerate() {
+                let quest_start_y = y;
+
+                // Register quest entry bounds for hover detection
+                let entry_height = line_height + 5.0 + (quest.objectives.len() as f32 * line_height);
+                let bounds = Rect::new(panel_x + 10.0, quest_start_y - 5.0, panel_width - 20.0, entry_height);
+                layout.add(UiElementId::QuestLogEntry(quest_idx), bounds);
+
+                // Check if this quest is hovered
+                let is_hovered = matches!(hovered, Some(UiElementId::QuestLogEntry(idx)) if *idx == quest_idx);
+
+                // Draw highlight background if hovered
+                if is_hovered {
+                    draw_rectangle(panel_x + 10.0, quest_start_y - 5.0, panel_width - 20.0, entry_height, Color::from_rgba(50, 50, 70, 100));
+                }
+
                 // Quest name with icon
+                let name_color = if is_hovered { Color::from_rgba(255, 240, 150, 255) } else { WHITE };
                 self.draw_text_sharp("*", panel_x + 15.0, y, 16.0, Color::from_rgba(255, 220, 100, 255));
-                self.draw_text_sharp(&quest.name, panel_x + 30.0, y, 16.0, WHITE);
+                self.draw_text_sharp(&quest.name, panel_x + 30.0, y, 16.0, name_color);
                 y += line_height + 5.0;
 
                 // Objectives
@@ -1029,7 +1093,7 @@ impl Renderer {
         self.draw_text_sharp("Press Q to close", panel_x + 15.0, panel_y + panel_height - 20.0, 16.0, GRAY);
     }
 
-    fn render_quick_slots(&self, state: &GameState) {
+    fn render_quick_slots(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
         let slot_size = 36.0;
         let padding = 4.0;
         let total_width = 5.0 * (slot_size + padding) - padding;
@@ -1040,9 +1104,24 @@ impl Renderer {
             let x = start_x + i as f32 * (slot_size + padding);
             let y = start_y;
 
-            // Slot background
-            draw_rectangle(x, y, slot_size, slot_size, Color::from_rgba(30, 30, 40, 200));
-            draw_rectangle_lines(x, y, slot_size, slot_size, 1.0, GRAY);
+            // Register slot bounds for hit detection
+            let bounds = Rect::new(x, y, slot_size, slot_size);
+            layout.add(UiElementId::QuickSlot(i), bounds);
+
+            // Check if this slot is hovered
+            let is_hovered = matches!(hovered, Some(UiElementId::QuickSlot(idx)) if *idx == i);
+
+            // Slot background with hover effect
+            let bg_color = if is_hovered {
+                Color::from_rgba(50, 50, 70, 255)
+            } else {
+                Color::from_rgba(30, 30, 40, 200)
+            };
+            draw_rectangle(x, y, slot_size, slot_size, bg_color);
+
+            // Border with hover effect
+            let border_color = if is_hovered { WHITE } else { GRAY };
+            draw_rectangle_lines(x, y, slot_size, slot_size, 1.0, border_color);
 
             // Draw item if present
             if let Some(slot) = &state.inventory.slots[i] {
@@ -1061,7 +1140,7 @@ impl Renderer {
     }
 
     /// Render the dialogue box for NPC conversations
-    fn render_dialogue(&self, dialogue: &ActiveDialogue) {
+    fn render_dialogue(&self, dialogue: &ActiveDialogue, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
         // Semi-transparent overlay to focus attention
         draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 100));
 
@@ -1112,10 +1191,19 @@ impl Renderer {
 
         // Choices
         if dialogue.choices.is_empty() {
-            // No choices - show continue hint
-            let hint = "Press [Enter] or [Space] to continue...";
+            // No choices - show continue hint (clickable area)
+            let hint = "Click or press [Enter] to continue...";
             let hint_width = self.measure_text_sharp(hint, 16.0).width;
-            self.draw_text_sharp(hint, box_x + box_width - hint_width - 20.0, box_y + box_height - 20.0, 16.0, GRAY);
+            let hint_x = box_x + box_width - hint_width - 20.0;
+            let hint_y = box_y + box_height - 20.0;
+
+            // Register continue area for click detection
+            let bounds = Rect::new(hint_x - 5.0, hint_y - 16.0, hint_width + 10.0, 22.0);
+            layout.add(UiElementId::DialogueContinue, bounds);
+
+            let is_hovered = matches!(hovered, Some(UiElementId::DialogueContinue));
+            let hint_color = if is_hovered { WHITE } else { GRAY };
+            self.draw_text_sharp(hint, hint_x, hint_y, 16.0, hint_color);
         } else {
             // Render choices
             let choice_start_y = box_y + box_height - 30.0 - (dialogue.choices.len() as f32 * 30.0);
@@ -1124,16 +1212,32 @@ impl Renderer {
                 let choice_y = choice_start_y + (i as f32 * 30.0);
                 let choice_text = format!("[{}] {}", i + 1, choice.text);
 
-                // Choice background on hover (we don't have mouse hover, so just highlight first)
-                let bg_color = Color::from_rgba(50, 50, 70, 200);
+                // Register choice bounds for click detection
+                let bounds = Rect::new(text_x - 5.0, choice_y - 16.0, max_line_width, 26.0);
+                layout.add(UiElementId::DialogueChoice(i), bounds);
+
+                // Check if this choice is hovered
+                let is_hovered = matches!(hovered, Some(UiElementId::DialogueChoice(idx)) if *idx == i);
+
+                // Choice background with hover effect
+                let bg_color = if is_hovered {
+                    Color::from_rgba(70, 70, 100, 255)
+                } else {
+                    Color::from_rgba(50, 50, 70, 200)
+                };
                 draw_rectangle(text_x - 5.0, choice_y - 16.0, max_line_width, 26.0, bg_color);
 
-                // Choice text
-                self.draw_text_sharp(&choice_text, text_x, choice_y, 16.0, Color::from_rgba(200, 200, 255, 255));
+                // Choice text with hover effect
+                let text_color = if is_hovered {
+                    WHITE
+                } else {
+                    Color::from_rgba(200, 200, 255, 255)
+                };
+                self.draw_text_sharp(&choice_text, text_x, choice_y, 16.0, text_color);
             }
 
-            // Hint
-            self.draw_text_sharp("Press [1-4] to select | [Esc] to close", box_x + 20.0, box_y + box_height - 15.0, 16.0, GRAY);
+            // Hint (updated to mention clicking)
+            self.draw_text_sharp("Click or press [1-4] to select | [Esc] to close", box_x + 20.0, box_y + box_height - 15.0, 16.0, GRAY);
         }
     }
 
@@ -1247,7 +1351,7 @@ impl Renderer {
     }
 
     /// Render the crafting panel (shop UI)
-    fn render_crafting(&self, state: &GameState) {
+    fn render_crafting(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
         let panel_width = 650.0;
         let panel_height = 450.0;
         let panel_x = (screen_width() - panel_width) / 2.0;
@@ -1291,16 +1395,27 @@ impl Renderer {
             let is_selected = i == state.ui_state.crafting_selected_category;
             let tab_width = self.measure_text_sharp(category, 16.0).width + 20.0;
 
+            // Register tab bounds for click detection
+            let bounds = Rect::new(tab_x, tab_y, tab_width, tab_height);
+            layout.add(UiElementId::CraftingCategoryTab(i), bounds);
+
+            // Check if this tab is hovered
+            let is_hovered = matches!(hovered, Some(UiElementId::CraftingCategoryTab(idx)) if *idx == i);
+
             let bg_color = if is_selected {
                 Color::from_rgba(70, 70, 100, 255)
+            } else if is_hovered {
+                Color::from_rgba(60, 60, 85, 255)
             } else {
                 Color::from_rgba(50, 50, 70, 255)
             };
-            let text_color = if is_selected { WHITE } else { LIGHTGRAY };
+            let text_color = if is_selected || is_hovered { WHITE } else { LIGHTGRAY };
 
             draw_rectangle(tab_x, tab_y, tab_width, tab_height, bg_color);
             if is_selected {
                 draw_rectangle_lines(tab_x, tab_y, tab_width, tab_height, 1.0, WHITE);
+            } else if is_hovered {
+                draw_rectangle_lines(tab_x, tab_y, tab_width, tab_height, 1.0, LIGHTGRAY);
             }
 
             // Capitalize first letter
@@ -1339,12 +1454,21 @@ impl Renderer {
 
             let is_selected = i == state.ui_state.crafting_selected_recipe;
 
+            // Register recipe item bounds for click detection
+            let bounds = Rect::new(list_x + 2.0, y, list_width - 4.0, line_height - 2.0);
+            layout.add(UiElementId::CraftingRecipeItem(i), bounds);
+
+            // Check if this recipe is hovered
+            let is_hovered = matches!(hovered, Some(UiElementId::CraftingRecipeItem(idx)) if *idx == i);
+
             if is_selected {
                 draw_rectangle(list_x + 2.0, y, list_width - 4.0, line_height - 2.0, Color::from_rgba(60, 80, 120, 255));
+            } else if is_hovered {
+                draw_rectangle(list_x + 2.0, y, list_width - 4.0, line_height - 2.0, Color::from_rgba(50, 65, 100, 255));
             }
 
             let marker = if is_selected { ">" } else { " " };
-            let text_color = if is_selected { WHITE } else { LIGHTGRAY };
+            let text_color = if is_selected || is_hovered { WHITE } else { LIGHTGRAY };
 
             self.draw_text_sharp(&format!("{} {}", marker, recipe.display_name), list_x + 8.0, y + 18.0, 16.0, text_color);
 
@@ -1428,20 +1552,36 @@ impl Renderer {
                 y += 20.0;
             }
 
-            // Craft button hint
+            // Craft button
             let craft_y = content_y + content_height - 25.0;
+            let btn_width = if can_craft { 120.0 } else { 140.0 };
+
+            // Register craft button bounds for click detection (only if can craft)
             if can_craft {
-                draw_rectangle(detail_x, craft_y, 120.0, 24.0, Color::from_rgba(50, 120, 50, 255));
-                draw_rectangle_lines(detail_x, craft_y, 120.0, 24.0, 1.0, GREEN);
-                self.draw_text_sharp("[Enter] Craft", detail_x + 15.0, craft_y + 17.0, 16.0, WHITE);
+                let bounds = Rect::new(detail_x, craft_y, btn_width, 24.0);
+                layout.add(UiElementId::CraftingButton, bounds);
+            }
+
+            // Check if craft button is hovered
+            let is_btn_hovered = can_craft && matches!(hovered, Some(UiElementId::CraftingButton));
+
+            if can_craft {
+                let btn_color = if is_btn_hovered {
+                    Color::from_rgba(70, 160, 70, 255)
+                } else {
+                    Color::from_rgba(50, 120, 50, 255)
+                };
+                draw_rectangle(detail_x, craft_y, btn_width, 24.0, btn_color);
+                draw_rectangle_lines(detail_x, craft_y, btn_width, 24.0, 1.0, GREEN);
+                self.draw_text_sharp("Craft", detail_x + 42.0, craft_y + 17.0, 16.0, WHITE);
             } else {
-                draw_rectangle(detail_x, craft_y, 140.0, 24.0, Color::from_rgba(80, 50, 50, 255));
+                draw_rectangle(detail_x, craft_y, btn_width, 24.0, Color::from_rgba(80, 50, 50, 255));
                 self.draw_text_sharp("Missing Materials", detail_x + 10.0, craft_y + 17.0, 16.0, RED);
             }
         }
 
-        // Navigation hints at bottom
-        self.draw_text_sharp("[A/D] Category   [W/S] Select   [Enter/C] Craft   [E/Esc] Close",
+        // Navigation hints at bottom (updated to mention clicking)
+        self.draw_text_sharp("Click or [A/D] Category   [W/S] Select   Click or [Enter/C] Craft   [E/Esc] Close",
             panel_x + 15.0, panel_y + panel_height - 15.0, 16.0, GRAY);
     }
 }

@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 use crate::game::GameState;
 use crate::render::isometric::screen_to_world;
+use crate::ui::{UiElementId, UiLayout};
 
 /// Input commands that can be sent to the server
 #[derive(Debug, Clone)]
@@ -57,9 +58,24 @@ impl InputHandler {
         }
     }
 
-    pub fn process(&mut self, state: &mut GameState) -> Vec<InputCommand> {
+    pub fn process(&mut self, state: &mut GameState, layout: &UiLayout) -> Vec<InputCommand> {
         let mut commands = Vec::new();
         let current_time = get_time();
+
+        // Get current mouse position
+        let (mx, my) = mouse_position();
+
+        // Update hover state for visual feedback (used by renderer next frame)
+        state.ui_state.hovered_element = layout.hit_test(mx, my).cloned();
+
+        // For click detection, do a fresh hit-test at the moment of click
+        // This ensures we detect what's actually under the mouse when clicked
+        let mouse_clicked = is_mouse_button_pressed(MouseButton::Left);
+        let clicked_element = if mouse_clicked {
+            layout.hit_test(mx, my).cloned()
+        } else {
+            None
+        };
 
         // Toggle debug mode
         if is_key_pressed(KeyCode::F3) {
@@ -68,6 +84,30 @@ impl InputHandler {
 
         // Handle dialogue mode - intercept input when dialogue is open
         if let Some(dialogue) = &state.ui_state.active_dialogue {
+            // Handle mouse clicks on dialogue elements
+            if let Some(ref element) = clicked_element {
+                match element {
+                    UiElementId::DialogueChoice(idx) => {
+                        if *idx < dialogue.choices.len() {
+                            let choice = &dialogue.choices[*idx];
+                            commands.push(InputCommand::DialogueChoice {
+                                quest_id: dialogue.quest_id.clone(),
+                                choice_id: choice.id.clone(),
+                            });
+                            return commands;
+                        }
+                    }
+                    UiElementId::DialogueContinue => {
+                        commands.push(InputCommand::DialogueChoice {
+                            quest_id: dialogue.quest_id.clone(),
+                            choice_id: "__continue__".to_string(),
+                        });
+                        return commands;
+                    }
+                    _ => {}
+                }
+            }
+
             if !dialogue.choices.is_empty() {
                 // Dialogue with choices - Escape cancels, number keys select
                 if is_key_pressed(KeyCode::Escape) {
@@ -108,6 +148,44 @@ impl InputHandler {
 
         // Handle crafting mode
         if state.ui_state.crafting_open {
+            // Handle mouse clicks on crafting elements
+            if let Some(ref element) = clicked_element {
+                match element {
+                    UiElementId::CraftingCategoryTab(idx) => {
+                        if *idx != state.ui_state.crafting_selected_category {
+                            state.ui_state.crafting_selected_category = *idx;
+                            state.ui_state.crafting_selected_recipe = 0;
+                        }
+                        return commands;
+                    }
+                    UiElementId::CraftingRecipeItem(idx) => {
+                        state.ui_state.crafting_selected_recipe = *idx;
+                        return commands;
+                    }
+                    UiElementId::CraftingButton => {
+                        // Get unique categories from recipes
+                        let categories: Vec<&str> = {
+                            let mut cats: Vec<&str> = state.recipe_definitions.iter()
+                                .map(|r| r.category.as_str())
+                                .collect();
+                            cats.sort();
+                            cats.dedup();
+                            cats
+                        };
+                        let current_category = categories.get(state.ui_state.crafting_selected_category).copied().unwrap_or("consumables");
+                        let recipes_in_category: Vec<&crate::game::RecipeDefinition> = state.recipe_definitions.iter()
+                            .filter(|r| r.category == current_category)
+                            .collect();
+                        if let Some(recipe) = recipes_in_category.get(state.ui_state.crafting_selected_recipe) {
+                            log::info!("Crafting (click): {}", recipe.id);
+                            commands.push(InputCommand::Craft { recipe_id: recipe.id.clone() });
+                        }
+                        return commands;
+                    }
+                    _ => {}
+                }
+            }
+
             // Escape or E closes crafting
             if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::E) {
                 state.ui_state.crafting_open = false;
@@ -273,8 +351,25 @@ impl InputHandler {
             }
         }
 
-        // Target selection (left click)
-        if is_mouse_button_pressed(MouseButton::Left) {
+        // Handle mouse clicks on quick slots (always visible)
+        if let Some(ref element) = clicked_element {
+            match element {
+                UiElementId::QuickSlot(idx) => {
+                    commands.push(InputCommand::UseItem { slot_index: *idx as u8 });
+                    // Don't fall through to target selection
+                    return commands;
+                }
+                UiElementId::InventorySlot(_) => {
+                    // Clicking inventory slots doesn't do anything yet
+                    // but should prevent world clicks
+                    return commands;
+                }
+                _ => {}
+            }
+        }
+
+        // Target selection (left click) - only if not clicking on UI
+        if mouse_clicked && clicked_element.is_none() {
             let (mouse_x, mouse_y) = mouse_position();
             let (world_x, world_y) = screen_to_world(mouse_x, mouse_y, &state.camera);
 
