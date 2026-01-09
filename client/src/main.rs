@@ -70,7 +70,9 @@ async fn main() {
     // Native build with auth flow
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let mut app_state = AppState::Login(LoginScreen::new(SERVER_URL, DEV_MODE));
+        let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+        login_screen.load_font().await;
+        let mut app_state = AppState::Login(login_screen);
 
         loop {
             match &mut app_state {
@@ -80,9 +82,9 @@ async fn main() {
 
                     match result {
                         ScreenState::ToCharacterSelect(session) => {
-                            app_state = AppState::CharacterSelect(
-                                CharacterSelectScreen::new(session, SERVER_URL)
-                            );
+                            let mut char_screen = CharacterSelectScreen::new(session, SERVER_URL);
+                            char_screen.load_font().await;
+                            app_state = AppState::CharacterSelect(char_screen);
                         }
                         ScreenState::StartGameDirect { session } => {
                             // Simple model: account = character, go directly to game
@@ -140,7 +142,9 @@ async fn main() {
                             };
                         }
                         ScreenState::ToLogin => {
-                            app_state = AppState::Login(LoginScreen::new(SERVER_URL, DEV_MODE));
+                            let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+                            login_screen.load_font().await;
+                            app_state = AppState::Login(login_screen);
                         }
                         _ => {}
                     }
@@ -185,8 +189,8 @@ async fn main() {
 
             // Debug info
             if game_state.debug_mode {
-                draw_text(&format!("FPS: {}", get_fps()), 10.0, 20.0, 20.0, WHITE);
-                draw_text("WASM Demo (no network)", 10.0, 40.0, 20.0, YELLOW);
+                renderer.draw_text_sharp(&format!("FPS: {}", get_fps()), 10.0, 20.0, 16.0, WHITE);
+                renderer.draw_text_sharp("WASM Demo (no network)", 10.0, 40.0, 16.0, YELLOW);
             }
 
             next_frame().await;
@@ -253,17 +257,17 @@ fn run_game_frame(
 
     // 5. Debug info
     if game_state.debug_mode {
-        draw_text(&format!("FPS: {}", get_fps()), 10.0, 20.0, 20.0, WHITE);
-        draw_text(&format!("Players: {}", game_state.players.len()), 10.0, 40.0, 20.0, WHITE);
-        draw_text(&format!("Connected: {}", network.is_connected()), 10.0, 60.0, 20.0, WHITE);
+        renderer.draw_text_sharp(&format!("FPS: {}", get_fps()), 10.0, 20.0, 16.0, WHITE);
+        renderer.draw_text_sharp(&format!("Players: {}", game_state.players.len()), 10.0, 40.0, 16.0, WHITE);
+        renderer.draw_text_sharp(&format!("Connected: {}", network.is_connected()), 10.0, 60.0, 16.0, WHITE);
 
         // Show position and chunk info
         if let Some(player) = game_state.get_local_player() {
             let chunk_x = (player.x / 32.0).floor() as i32;
             let chunk_y = (player.y / 32.0).floor() as i32;
-            draw_text(&format!("Pos: ({:.1}, {:.1})", player.x, player.y), 10.0, 80.0, 20.0, YELLOW);
-            draw_text(&format!("Chunk: ({}, {})", chunk_x, chunk_y), 10.0, 100.0, 20.0, YELLOW);
-            draw_text(&format!("NPCs: {}", game_state.npcs.len()), 10.0, 120.0, 20.0, WHITE);
+            renderer.draw_text_sharp(&format!("Pos: ({:.1}, {:.1})", player.x, player.y), 10.0, 80.0, 16.0, YELLOW);
+            renderer.draw_text_sharp(&format!("Chunk: ({}, {})", chunk_x, chunk_y), 10.0, 100.0, 16.0, YELLOW);
+            renderer.draw_text_sharp(&format!("NPCs: {}", game_state.npcs.len()), 10.0, 120.0, 16.0, WHITE);
         }
     }
 }

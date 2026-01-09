@@ -4,6 +4,7 @@ use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
 use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT};
+use super::font::BitmapFont;
 
 /// Tileset configuration
 const TILESET_TILE_WIDTH: f32 = 64.0;
@@ -17,6 +18,8 @@ pub struct Renderer {
     tileset: Option<Texture2D>,
     /// Player sprite sheet texture
     player_sprite: Option<Texture2D>,
+    /// Multi-size pixel font for sharp text rendering at various sizes
+    font: BitmapFont,
 }
 
 impl Renderer {
@@ -47,12 +50,73 @@ impl Renderer {
             }
         };
 
+        // Load monogram pixel font at multiple sizes for crisp rendering
+        let font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
+        if font.is_loaded() {
+            log::info!("Loaded monogram bitmap font at multiple sizes");
+        } else {
+            log::warn!("Failed to load monogram font, using default");
+        }
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
             tileset,
             player_sprite,
+            font,
         }
+    }
+
+    /// Draw text with pixel font for sharp rendering
+    /// Uses multi-size bitmap font for crisp text at any size
+    pub fn draw_text_sharp(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color) {
+        self.font.draw_text(text, x, y, font_size, color);
+    }
+
+    /// Measure text with pixel font
+    fn measure_text_sharp(&self, text: &str, font_size: f32) -> TextDimensions {
+        self.font.measure_text(text, font_size)
+    }
+
+    /// Draw text with word wrapping to fit within max_width
+    /// Returns the total height used
+    fn draw_text_wrapped(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color, max_width: f32, line_height: f32) -> f32 {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let mut current_line = String::new();
+        let mut current_y = y;
+        let space_width = self.measure_text_sharp(" ", font_size).width;
+
+        for word in words {
+            let word_width = self.measure_text_sharp(word, font_size).width;
+            let line_width = if current_line.is_empty() {
+                word_width
+            } else {
+                self.measure_text_sharp(&current_line, font_size).width + space_width + word_width
+            };
+
+            if line_width > max_width && !current_line.is_empty() {
+                // Draw current line and start new one
+                self.draw_text_sharp(&current_line, x, current_y, font_size, color);
+                current_y += line_height;
+                current_line = word.to_string();
+            } else {
+                // Add word to current line
+                if current_line.is_empty() {
+                    current_line = word.to_string();
+                } else {
+                    current_line.push(' ');
+                    current_line.push_str(word);
+                }
+            }
+        }
+
+        // Draw remaining line
+        if !current_line.is_empty() {
+            self.draw_text_sharp(&current_line, x, current_y, font_size, color);
+            current_y += line_height;
+        }
+
+        current_y - y
     }
 
     /// Get the UV rect for a tile ID in the tileset
@@ -406,7 +470,7 @@ impl Renderer {
 
     fn draw_isometric_object(&self, screen_x: f32, screen_y: f32, tile_id: u32) {
         // Draw shadow ellipse for objects
-        draw_ellipse(screen_x, screen_y + 4.0, 20.0, 10.0, 0.0, Color::from_rgba(0, 0, 0, 50));
+        draw_ellipse(screen_x, screen_y + 4.0, 24.0, 16.0, 0.0, Color::from_rgba(0, 0, 0, 50));
 
         // Draw object tile sprite (slightly elevated)
         let elevated_y = screen_y - TILE_HEIGHT * 0.25;
@@ -462,7 +526,7 @@ impl Renderer {
         }
 
         // Draw shadow under player
-        draw_ellipse(screen_x, screen_y, 14.0, 7.0, 0.0, Color::from_rgba(0, 0, 0, 60));
+        draw_ellipse(screen_x, screen_y, 16.0, 7.0, 0.0, Color::from_rgba(0, 0, 0, 60));
 
         // Try to render sprite, fall back to colored circle
         if let Some(sprite) = &self.player_sprite {
@@ -524,12 +588,12 @@ impl Renderer {
 
         // Player name
         let name_y_offset = if self.player_sprite.is_some() { SPRITE_HEIGHT - 8.0 } else { 24.0 };
-        let name_width = measure_text(&player.name, None, 14, 1.0).width;
-        draw_text(
+        let name_width = self.measure_text_sharp(&player.name, 16.0).width;
+        self.draw_text_sharp(
             &player.name,
             screen_x - name_width / 2.0,
             screen_y - name_y_offset - 5.0,
-            14.0,
+            16.0,
             WHITE,
         );
 
@@ -563,7 +627,7 @@ impl Renderer {
         if npc.state == NpcState::Dead {
             // Draw faded corpse
             let fade_color = Color::from_rgba(50, 80, 50, 100);
-            draw_circle(screen_x, screen_y - 8.0, 10.0, fade_color);
+            draw_circle(screen_x, screen_y - 8.0, 16.0, fade_color);
             return;
         }
 
@@ -598,7 +662,7 @@ impl Renderer {
         let height_offset = 8.0 + wobble * 2.0;
 
         // Draw shadow
-        draw_ellipse(screen_x, screen_y, 12.0, 6.0, 0.0, Color::from_rgba(0, 0, 0, 60));
+        draw_ellipse(screen_x, screen_y, 16.0, 6.0, 0.0, Color::from_rgba(0, 0, 0, 60));
 
         // Draw NPC body (oval blob) - TODO: use sprites based on entity_type
         draw_ellipse(screen_x, screen_y - height_offset, radius, radius * 0.7, 0.0, base_color);
@@ -610,17 +674,17 @@ impl Renderer {
         if !npc.is_hostile() {
             let pulse = (macroquad::time::get_time() * 2.0).sin() as f32 * 0.2 + 0.8;
             let indicator_y = screen_y - height_offset - radius - 25.0;
-            draw_text("!", screen_x - 3.0, indicator_y, 18.0, Color::from_rgba(255, 220, 50, (pulse * 255.0) as u8));
+            self.draw_text_sharp("!", screen_x - 3.0, indicator_y, 16.0, Color::from_rgba(255, 220, 50, (pulse * 255.0) as u8));
         }
 
         // NPC name with level
         let name = npc.name();
-        let name_width = measure_text(&name, None, 12, 1.0).width;
-        draw_text(
+        let name_width = self.measure_text_sharp(&name, 16.0).width;
+        self.draw_text_sharp(
             &name,
             screen_x - name_width / 2.0,
             screen_y - height_offset - radius - 5.0,
-            12.0,
+            16.0,
             name_color,
         );
 
@@ -662,14 +726,14 @@ impl Renderer {
         let color = item.item_type.color();
 
         // Draw item shape
-        draw_rectangle(screen_x - 6.0, item_y - 6.0, 12.0, 12.0, color);
-        draw_rectangle_lines(screen_x - 6.0, item_y - 6.0, 12.0, 12.0, 1.0, WHITE);
+        draw_rectangle(screen_x - 6.0, item_y - 6.0, 16.0, 12.0, color);
+        draw_rectangle_lines(screen_x - 6.0, item_y - 6.0, 16.0, 12.0, 1.0, WHITE);
 
         // Draw quantity if > 1
         if item.quantity > 1 {
             let qty_text = format!("x{}", item.quantity);
-            let text_width = measure_text(&qty_text, None, 10, 1.0).width;
-            draw_text(&qty_text, screen_x - text_width / 2.0, item_y + 14.0, 10.0, WHITE);
+            let text_width = self.measure_text_sharp(&qty_text, 16.0).width;
+            self.draw_text_sharp(&qty_text, screen_x - text_width / 2.0, item_y + 14.0, 16.0, WHITE);
         }
     }
 
@@ -683,25 +747,25 @@ impl Renderer {
                 // "YOU DIED" text
                 let text = "YOU DIED";
                 let font_size = 64.0;
-                let text_dims = measure_text(text, None, font_size as u16, 1.0);
+                let text_dims = self.measure_text_sharp(text, font_size);
                 let text_x = (screen_width() - text_dims.width) / 2.0;
                 let text_y = screen_height() / 2.0 - 20.0;
 
                 // Red text with outline
                 for ox in [-2.0, 2.0] {
                     for oy in [-2.0, 2.0] {
-                        draw_text(text, text_x + ox, text_y + oy, font_size, BLACK);
+                        self.draw_text_sharp(text, text_x + ox, text_y + oy, font_size, BLACK);
                     }
                 }
-                draw_text(text, text_x, text_y, font_size, RED);
+                self.draw_text_sharp(text, text_x, text_y, font_size, RED);
 
                 // Respawn countdown (5 seconds)
                 let time_since_death = macroquad::time::get_time() - player.death_time;
                 let respawn_time = 5.0 - time_since_death;
                 if respawn_time > 0.0 {
                     let countdown_text = format!("Respawning in {:.1}s", respawn_time);
-                    let countdown_dims = measure_text(&countdown_text, None, 24, 1.0);
-                    draw_text(
+                    let countdown_dims = self.measure_text_sharp(&countdown_text, 16.0);
+                    self.draw_text_sharp(
                         &countdown_text,
                         (screen_width() - countdown_dims.width) / 2.0,
                         text_y + 50.0,
@@ -723,7 +787,7 @@ impl Renderer {
             ConnectionStatus::Connecting => YELLOW,
             ConnectionStatus::Disconnected => RED,
         };
-        draw_text(status_text, screen_width() - 120.0, 20.0, 16.0, status_color);
+        self.draw_text_sharp(status_text, screen_width() - 120.0, 24.0, 16.0, status_color);
 
         // Chat messages (bottom-left)
         let chat_x = 10.0;
@@ -733,7 +797,7 @@ impl Renderer {
         for (i, msg) in state.ui_state.chat_messages.iter().rev().take(5).enumerate() {
             let y = chat_y - (i as f32 * line_height);
             let text = format!("{}: {}", msg.sender_name, msg.text);
-            draw_text(&text, chat_x, y, 14.0, WHITE);
+            self.draw_text_sharp(&text, chat_x, y, 16.0, WHITE);
         }
 
         // Local player stats (top-right)
@@ -743,15 +807,15 @@ impl Renderer {
             let bar_width = 120.0;
             let bar_height = 12.0;
 
-            draw_text(&format!("Level: {}", player.level), stats_x, stats_y, 16.0, WHITE);
+            self.draw_text_sharp(&format!("Level: {}", player.level), stats_x, stats_y, 16.0, WHITE);
 
             // HP Bar
-            draw_text("HP:", stats_x, stats_y + 20.0, 14.0, WHITE);
+            self.draw_text_sharp("HP:", stats_x, stats_y + 20.0, 16.0, WHITE);
             let hp_bar_x = stats_x + 30.0;
             let hp_ratio = player.hp as f32 / player.max_hp.max(1) as f32;
             draw_rectangle(hp_bar_x, stats_y + 10.0, bar_width, bar_height, DARKGRAY);
             draw_rectangle(hp_bar_x, stats_y + 10.0, bar_width * hp_ratio, bar_height, GREEN);
-            draw_text(
+            self.draw_text_sharp(
                 &format!("{}/{}", player.hp, player.max_hp),
                 hp_bar_x + bar_width + 5.0,
                 stats_y + 20.0,
@@ -760,12 +824,12 @@ impl Renderer {
             );
 
             // EXP Bar
-            draw_text("EXP:", stats_x, stats_y + 40.0, 14.0, WHITE);
+            self.draw_text_sharp("EXP:", stats_x, stats_y + 40.0, 16.0, WHITE);
             let exp_bar_x = stats_x + 30.0;
             let exp_ratio = player.exp as f32 / player.exp_to_next_level.max(1) as f32;
             draw_rectangle(exp_bar_x, stats_y + 30.0, bar_width, bar_height, DARKGRAY);
             draw_rectangle(exp_bar_x, stats_y + 30.0, bar_width * exp_ratio, bar_height, Color::from_rgba(100, 100, 255, 255));
-            draw_text(
+            self.draw_text_sharp(
                 &format!("{}/{}", player.exp, player.exp_to_next_level),
                 exp_bar_x + bar_width + 5.0,
                 stats_y + 40.0,
@@ -774,7 +838,7 @@ impl Renderer {
             );
 
             // Gold display
-            draw_text(
+            self.draw_text_sharp(
                 &format!("Gold: {}", state.inventory.gold),
                 stats_x,
                 stats_y + 60.0,
@@ -825,12 +889,12 @@ impl Renderer {
 
             // Text
             let display_text = format!("{}", state.ui_state.chat_input);
-            draw_text(&display_text, input_x + 5.0, input_y + 17.0, 16.0, WHITE);
+            self.draw_text_sharp(&display_text, input_x + 5.0, input_y + 17.0, 16.0, WHITE);
 
             // Blinking cursor
             let cursor_blink = (macroquad::time::get_time() * 2.0) as i32 % 2 == 0;
             if cursor_blink {
-                let text_width = measure_text(&display_text, None, 16, 1.0).width;
+                let text_width = self.measure_text_sharp(&display_text, 16.0).width;
                 draw_line(
                     input_x + 5.0 + text_width + 2.0,
                     input_y + 4.0,
@@ -842,10 +906,10 @@ impl Renderer {
             }
 
             // Hint
-            draw_text("Press Enter to send, Escape to cancel", input_x, input_y + input_height + 12.0, 12.0, GRAY);
+            self.draw_text_sharp("Press Enter to send, Escape to cancel", input_x, input_y + input_height + 12.0, 16.0, GRAY);
         } else {
             // Controls hint (only show when chat is closed)
-            draw_text("WASD: Move | Space: Attack | I: Inventory | E: Interact | Q: Quests | F: Pickup | F3: Debug", 10.0, screen_height() - 10.0, 12.0, GRAY);
+            self.draw_text_sharp("WASD: Move | Space: Attack | I: Inventory | E: Interact | Q: Quests | F: Pickup | F3: Debug", 16.0, screen_height() - 10.0, 16.0, GRAY);
         }
     }
 
@@ -862,8 +926,8 @@ impl Renderer {
         draw_rectangle_lines(inv_x, inv_y, inv_width, inv_height, 2.0, WHITE);
 
         // Title
-        draw_text("Inventory", inv_x + 10.0, inv_y + 25.0, 20.0, WHITE);
-        draw_text(&format!("Gold: {}", state.inventory.gold), inv_x + inv_width - 100.0, inv_y + 25.0, 16.0, GOLD);
+        self.draw_text_sharp("Inventory", inv_x + 10.0, inv_y + 25.0, 16.0, WHITE);
+        self.draw_text_sharp(&format!("Gold: {}", state.inventory.gold), inv_x + inv_width - 100.0, inv_y + 25.0, 16.0, GOLD);
 
         // Slots
         let grid_x = inv_x + 20.0;
@@ -886,18 +950,18 @@ impl Renderer {
 
                 // Quantity
                 if slot.quantity > 1 {
-                    draw_text(&slot.quantity.to_string(), x + 2.0, y + slot_size - 8.0, 12.0, WHITE);
+                    self.draw_text_sharp(&slot.quantity.to_string(), x + 2.0, y + slot_size - 8.0, 16.0, WHITE);
                 }
             }
 
             // Show slot number for first 5 (quick slots)
             if i < 5 {
-                draw_text(&(i + 1).to_string(), x + slot_size - 14.0, y + 12.0, 10.0, GRAY);
+                self.draw_text_sharp(&(i + 1).to_string(), x + slot_size - 14.0, y + 12.0, 16.0, GRAY);
             }
         }
 
         // Close hint
-        draw_text("Press I to close", inv_x + 10.0, inv_y + inv_height - 15.0, 12.0, GRAY);
+        self.draw_text_sharp("Press I to close", inv_x + 10.0, inv_y + inv_height - 15.0, 16.0, GRAY);
     }
 
     fn render_quest_log(&self, state: &GameState) {
@@ -915,7 +979,7 @@ impl Renderer {
 
         // Title
         let title = "Quest Log";
-        draw_text(title, panel_x + 15.0, panel_y + 28.0, 22.0, Color::from_rgba(255, 220, 100, 255));
+        self.draw_text_sharp(title, panel_x + 15.0, panel_y + 28.0, 16.0, Color::from_rgba(255, 220, 100, 255));
 
         // Separator line
         draw_line(panel_x + 10.0, panel_y + 40.0, panel_x + panel_width - 10.0, panel_y + 40.0, 1.0, GRAY);
@@ -924,13 +988,13 @@ impl Renderer {
         let line_height = 20.0;
 
         if state.ui_state.active_quests.is_empty() {
-            draw_text("No active quests", panel_x + 20.0, y, 14.0, GRAY);
-            draw_text("Talk to NPCs with ! above their heads", panel_x + 20.0, y + line_height, 12.0, DARKGRAY);
+            self.draw_text_sharp("No active quests", panel_x + 20.0, y, 16.0, GRAY);
+            self.draw_text_sharp("Talk to NPCs with ! above their heads", panel_x + 20.0, y + line_height, 16.0, DARKGRAY);
         } else {
             for quest in &state.ui_state.active_quests {
                 // Quest name with icon
-                draw_text("*", panel_x + 15.0, y, 16.0, Color::from_rgba(255, 220, 100, 255));
-                draw_text(&quest.name, panel_x + 30.0, y, 16.0, WHITE);
+                self.draw_text_sharp("*", panel_x + 15.0, y, 16.0, Color::from_rgba(255, 220, 100, 255));
+                self.draw_text_sharp(&quest.name, panel_x + 30.0, y, 16.0, WHITE);
                 y += line_height + 5.0;
 
                 // Objectives
@@ -941,10 +1005,10 @@ impl Renderer {
                         ("o", Color::from_rgba(180, 180, 180, 255))
                     };
 
-                    draw_text(check_char, panel_x + 25.0, y, 12.0, status_color);
+                    self.draw_text_sharp(check_char, panel_x + 25.0, y, 16.0, status_color);
 
                     let obj_text = format!("{} ({}/{})", obj.description, obj.current, obj.target);
-                    draw_text(&obj_text, panel_x + 40.0, y, 13.0, status_color);
+                    self.draw_text_sharp(&obj_text, panel_x + 40.0, y, 16.0, status_color);
                     y += line_height;
                 }
 
@@ -954,7 +1018,7 @@ impl Renderer {
                 if y > panel_y + panel_height - 50.0 {
                     let remaining = state.ui_state.active_quests.len().saturating_sub(1);
                     if remaining > 0 {
-                        draw_text(&format!("...and {} more quests", remaining), panel_x + 20.0, y, 12.0, GRAY);
+                        self.draw_text_sharp(&format!("...and {} more quests", remaining), panel_x + 20.0, y, 16.0, GRAY);
                     }
                     break;
                 }
@@ -962,7 +1026,7 @@ impl Renderer {
         }
 
         // Close hint at bottom
-        draw_text("Press Q to close", panel_x + 15.0, panel_y + panel_height - 20.0, 12.0, GRAY);
+        self.draw_text_sharp("Press Q to close", panel_x + 15.0, panel_y + panel_height - 20.0, 16.0, GRAY);
     }
 
     fn render_quick_slots(&self, state: &GameState) {
@@ -987,12 +1051,12 @@ impl Renderer {
 
                 // Quantity
                 if slot.quantity > 1 {
-                    draw_text(&slot.quantity.to_string(), x + 2.0, y + slot_size - 4.0, 10.0, WHITE);
+                    self.draw_text_sharp(&slot.quantity.to_string(), x + 2.0, y + slot_size - 4.0, 16.0, WHITE);
                 }
             }
 
             // Slot number
-            draw_text(&(i + 1).to_string(), x + slot_size - 10.0, y + 12.0, 12.0, WHITE);
+            self.draw_text_sharp(&(i + 1).to_string(), x + slot_size - 10.0, y + 12.0, 16.0, WHITE);
         }
     }
 
@@ -1011,10 +1075,10 @@ impl Renderer {
         draw_rectangle_lines(box_x, box_y, box_width, box_height, 2.0, Color::from_rgba(100, 100, 120, 255));
 
         // Speaker name with highlight
-        let speaker_box_width = measure_text(&dialogue.speaker, None, 18, 1.0).width + 20.0;
+        let speaker_box_width = self.measure_text_sharp(&dialogue.speaker, 16.0).width + 20.0;
         draw_rectangle(box_x + 15.0, box_y - 12.0, speaker_box_width, 24.0, Color::from_rgba(60, 60, 80, 255));
         draw_rectangle_lines(box_x + 15.0, box_y - 12.0, speaker_box_width, 24.0, 1.0, Color::from_rgba(100, 100, 120, 255));
-        draw_text(&dialogue.speaker, box_x + 25.0, box_y + 5.0, 18.0, Color::from_rgba(255, 220, 100, 255));
+        self.draw_text_sharp(&dialogue.speaker, box_x + 25.0, box_y + 5.0, 16.0, Color::from_rgba(255, 220, 100, 255));
 
         // Dialogue text with word wrap
         let text_x = box_x + 20.0;
@@ -1033,9 +1097,9 @@ impl Renderer {
                 format!("{} {}", current_line, word)
             };
 
-            let line_width = measure_text(&test_line, None, 16, 1.0).width;
+            let line_width = self.measure_text_sharp(&test_line, 16.0).width;
             if line_width > max_line_width && !current_line.is_empty() {
-                draw_text(&current_line, text_x, line_y, 16.0, WHITE);
+                self.draw_text_sharp(&current_line, text_x, line_y, 16.0, WHITE);
                 line_y += 22.0;
                 current_line = word.to_string();
             } else {
@@ -1043,15 +1107,15 @@ impl Renderer {
             }
         }
         if !current_line.is_empty() {
-            draw_text(&current_line, text_x, line_y, 16.0, WHITE);
+            self.draw_text_sharp(&current_line, text_x, line_y, 16.0, WHITE);
         }
 
         // Choices
         if dialogue.choices.is_empty() {
             // No choices - show continue hint
             let hint = "Press [Enter] or [Space] to continue...";
-            let hint_width = measure_text(hint, None, 14, 1.0).width;
-            draw_text(hint, box_x + box_width - hint_width - 20.0, box_y + box_height - 20.0, 14.0, GRAY);
+            let hint_width = self.measure_text_sharp(hint, 16.0).width;
+            self.draw_text_sharp(hint, box_x + box_width - hint_width - 20.0, box_y + box_height - 20.0, 16.0, GRAY);
         } else {
             // Render choices
             let choice_start_y = box_y + box_height - 30.0 - (dialogue.choices.len() as f32 * 30.0);
@@ -1065,11 +1129,11 @@ impl Renderer {
                 draw_rectangle(text_x - 5.0, choice_y - 16.0, max_line_width, 26.0, bg_color);
 
                 // Choice text
-                draw_text(&choice_text, text_x, choice_y, 16.0, Color::from_rgba(200, 200, 255, 255));
+                self.draw_text_sharp(&choice_text, text_x, choice_y, 16.0, Color::from_rgba(200, 200, 255, 255));
             }
 
             // Hint
-            draw_text("Press [1-4] to select | [Esc] to close", box_x + 20.0, box_y + box_height - 15.0, 12.0, GRAY);
+            self.draw_text_sharp("Press [1-4] to select | [Esc] to close", box_x + 20.0, box_y + box_height - 15.0, 16.0, GRAY);
         }
     }
 
@@ -1087,13 +1151,13 @@ impl Renderer {
         let mut y = tracker_y;
 
         // Header
-        draw_text("QUESTS", tracker_x, y, 14.0, Color::from_rgba(255, 220, 100, 255));
+        self.draw_text_sharp("QUESTS", tracker_x, y, 16.0, Color::from_rgba(255, 220, 100, 255));
         y += line_height + 5.0;
 
         // Only show first 2 active quests to avoid cluttering the screen
         for quest in state.ui_state.active_quests.iter().take(2) {
             // Quest name
-            draw_text(&quest.name, tracker_x, y, 13.0, WHITE);
+            self.draw_text_sharp(&quest.name, tracker_x, y, 16.0, WHITE);
             y += line_height;
 
             // Objectives
@@ -1106,7 +1170,7 @@ impl Renderer {
 
                 let check = if obj.completed { "[x]" } else { "[ ]" };
                 let obj_text = format!("{} {} ({}/{})", check, obj.description, obj.current, obj.target);
-                draw_text(&obj_text, tracker_x + 10.0, y, 12.0, status_color);
+                self.draw_text_sharp(&obj_text, tracker_x + 10.0, y, 16.0, status_color);
                 y += line_height - 2.0;
             }
 
@@ -1116,7 +1180,7 @@ impl Renderer {
         // Show more quests hint if there are more
         if state.ui_state.active_quests.len() > 2 {
             let more = format!("...and {} more (Q to view)", state.ui_state.active_quests.len() - 2);
-            draw_text(&more, tracker_x, y, 11.0, GRAY);
+            self.draw_text_sharp(&more, tracker_x, y, 16.0, GRAY);
         }
     }
 
@@ -1145,38 +1209,38 @@ impl Renderer {
 
             // "QUEST COMPLETE!" banner
             let title = "QUEST COMPLETE!";
-            let title_width = measure_text(title, None, 28, 1.0).width;
+            let title_width = self.measure_text_sharp(title, 32.0).width;
             let x = (screen_width() - title_width) / 2.0;
 
             // Outline
             let outline_color = Color::from_rgba(0, 0, 0, alpha);
             for ox in [-2.0, 2.0] {
                 for oy in [-2.0, 2.0] {
-                    draw_text(title, x + ox, y + oy, 28.0, outline_color);
+                    self.draw_text_sharp(title, x + ox, y + oy, 32.0, outline_color);
                 }
             }
 
             // Main text (gold)
-            draw_text(title, x, y, 28.0, Color::from_rgba(255, 215, 0, alpha));
+            self.draw_text_sharp(title, x, y, 32.0, Color::from_rgba(255, 215, 0, alpha));
 
             // Quest name
-            let name_width = measure_text(&event.quest_name, None, 18, 1.0).width;
-            draw_text(
+            let name_width = self.measure_text_sharp(&event.quest_name, 16.0).width;
+            self.draw_text_sharp(
                 &event.quest_name,
                 (screen_width() - name_width) / 2.0,
                 y + 25.0,
-                18.0,
+                16.0,
                 Color::from_rgba(255, 255, 255, alpha),
             );
 
             // Rewards
             let rewards = format!("+{} EXP  +{} Gold", event.exp_reward, event.gold_reward);
-            let rewards_width = measure_text(&rewards, None, 14, 1.0).width;
-            draw_text(
+            let rewards_width = self.measure_text_sharp(&rewards, 16.0).width;
+            self.draw_text_sharp(
                 &rewards,
                 (screen_width() - rewards_width) / 2.0,
                 y + 45.0,
-                14.0,
+                16.0,
                 Color::from_rgba(100, 255, 100, alpha),
             );
         }
@@ -1197,8 +1261,8 @@ impl Renderer {
         draw_rectangle_lines(panel_x, panel_y, panel_width, panel_height, 2.0, Color::from_rgba(100, 100, 140, 255));
 
         // Title
-        draw_text("CRAFTING", panel_x + 15.0, panel_y + 28.0, 22.0, Color::from_rgba(255, 220, 100, 255));
-        draw_text("[E] Close", panel_x + panel_width - 80.0, panel_y + 25.0, 14.0, GRAY);
+        self.draw_text_sharp("CRAFTING", panel_x + 15.0, panel_y + 28.0, 16.0, Color::from_rgba(255, 220, 100, 255));
+        self.draw_text_sharp("[E] Close", panel_x + panel_width - 80.0, panel_y + 25.0, 16.0, GRAY);
 
         // Separator
         draw_line(panel_x + 10.0, panel_y + 40.0, panel_x + panel_width - 10.0, panel_y + 40.0, 1.0, GRAY);
@@ -1214,7 +1278,7 @@ impl Renderer {
         };
 
         if categories.is_empty() {
-            draw_text("No recipes available", panel_x + 20.0, panel_y + 80.0, 16.0, GRAY);
+            self.draw_text_sharp("No recipes available", panel_x + 20.0, panel_y + 80.0, 16.0, GRAY);
             return;
         }
 
@@ -1225,7 +1289,7 @@ impl Renderer {
 
         for (i, category) in categories.iter().enumerate() {
             let is_selected = i == state.ui_state.crafting_selected_category;
-            let tab_width = measure_text(category, None, 14, 1.0).width + 20.0;
+            let tab_width = self.measure_text_sharp(category, 16.0).width + 20.0;
 
             let bg_color = if is_selected {
                 Color::from_rgba(70, 70, 100, 255)
@@ -1243,7 +1307,7 @@ impl Renderer {
             let display_name: String = category.chars().enumerate()
                 .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
                 .collect();
-            draw_text(&display_name, tab_x + 10.0, tab_y + 19.0, 14.0, text_color);
+            self.draw_text_sharp(&display_name, tab_x + 10.0, tab_y + 19.0, 16.0, text_color);
 
             tab_x += tab_width + 5.0;
         }
@@ -1282,13 +1346,13 @@ impl Renderer {
             let marker = if is_selected { ">" } else { " " };
             let text_color = if is_selected { WHITE } else { LIGHTGRAY };
 
-            draw_text(&format!("{} {}", marker, recipe.display_name), list_x + 8.0, y + 18.0, 14.0, text_color);
+            self.draw_text_sharp(&format!("{} {}", marker, recipe.display_name), list_x + 8.0, y + 18.0, 16.0, text_color);
 
             // Level indicator
             if recipe.level_required > 1 {
                 let level_text = format!("Lv{}", recipe.level_required);
-                let level_width = measure_text(&level_text, None, 10, 1.0).width;
-                draw_text(&level_text, list_x + list_width - level_width - 10.0, y + 16.0, 10.0, GRAY);
+                let level_width = self.measure_text_sharp(&level_text, 16.0).width;
+                self.draw_text_sharp(&level_text, list_x + list_width - level_width - 10.0, y + 16.0, 16.0, GRAY);
             }
 
             y += line_height;
@@ -1300,10 +1364,21 @@ impl Renderer {
 
         if let Some(recipe) = recipes.get(state.ui_state.crafting_selected_recipe) {
             // Recipe name
-            draw_text(&recipe.display_name, detail_x, content_y + 22.0, 20.0, WHITE);
+            self.draw_text_sharp(&recipe.display_name, detail_x, content_y + 22.0, 16.0, WHITE);
 
-            // Description
-            draw_text(&recipe.description, detail_x, content_y + 45.0, 12.0, LIGHTGRAY);
+            // Description (wrapped to fit detail panel width)
+            let desc_height = self.draw_text_wrapped(
+                &recipe.description,
+                detail_x,
+                content_y + 45.0,
+                16.0,
+                LIGHTGRAY,
+                detail_width - 10.0,  // Leave some padding
+                20.0,  // Line height
+            );
+
+            // Track vertical offset after description
+            let mut section_y = content_y + 45.0 + desc_height + 5.0;
 
             // Level requirement
             if recipe.level_required > 1 {
@@ -1312,14 +1387,14 @@ impl Renderer {
                 } else {
                     GRAY
                 };
-                draw_text(&format!("Requires Level {}", recipe.level_required), detail_x, content_y + 65.0, 12.0, level_color);
+                self.draw_text_sharp(&format!("Requires Level {}", recipe.level_required), detail_x, section_y, 16.0, level_color);
+                section_y += 25.0;
             }
 
             // Ingredients section
-            let ing_y = content_y + 90.0;
-            draw_text("Ingredients:", detail_x, ing_y, 14.0, Color::from_rgba(200, 200, 200, 255));
+            self.draw_text_sharp("Ingredients:", detail_x, section_y, 16.0, Color::from_rgba(200, 200, 200, 255));
 
-            let mut y = ing_y + 20.0;
+            let mut y = section_y + 20.0;
             let mut can_craft = true;
 
             for ingredient in &recipe.ingredients {
@@ -1338,18 +1413,18 @@ impl Renderer {
                 };
 
                 let text = format!("{} {} ({}/{})", marker, ingredient.item_name, have_count, need_count);
-                draw_text(&text, detail_x + 10.0, y, 13.0, color);
+                self.draw_text_sharp(&text, detail_x + 10.0, y, 16.0, color);
                 y += 20.0;
             }
 
             // Results section
             y += 10.0;
-            draw_text("Creates:", detail_x, y, 14.0, Color::from_rgba(200, 200, 200, 255));
+            self.draw_text_sharp("Creates:", detail_x, y, 16.0, Color::from_rgba(200, 200, 200, 255));
             y += 20.0;
 
             for result in &recipe.results {
                 let text = format!("  {} x{}", result.item_name, result.count);
-                draw_text(&text, detail_x + 10.0, y, 13.0, Color::from_rgba(150, 200, 255, 255));
+                self.draw_text_sharp(&text, detail_x + 10.0, y, 16.0, Color::from_rgba(150, 200, 255, 255));
                 y += 20.0;
             }
 
@@ -1358,15 +1433,15 @@ impl Renderer {
             if can_craft {
                 draw_rectangle(detail_x, craft_y, 120.0, 24.0, Color::from_rgba(50, 120, 50, 255));
                 draw_rectangle_lines(detail_x, craft_y, 120.0, 24.0, 1.0, GREEN);
-                draw_text("[Enter] Craft", detail_x + 15.0, craft_y + 17.0, 14.0, WHITE);
+                self.draw_text_sharp("[Enter] Craft", detail_x + 15.0, craft_y + 17.0, 16.0, WHITE);
             } else {
                 draw_rectangle(detail_x, craft_y, 140.0, 24.0, Color::from_rgba(80, 50, 50, 255));
-                draw_text("Missing Materials", detail_x + 10.0, craft_y + 17.0, 14.0, RED);
+                self.draw_text_sharp("Missing Materials", detail_x + 10.0, craft_y + 17.0, 16.0, RED);
             }
         }
 
         // Navigation hints at bottom
-        draw_text("[A/D] Category   [W/S] Select   [Enter/C] Craft   [E/Esc] Close",
-            panel_x + 15.0, panel_y + panel_height - 15.0, 11.0, GRAY);
+        self.draw_text_sharp("[A/D] Category   [W/S] Select   [Enter/C] Craft   [E/Esc] Close",
+            panel_x + 15.0, panel_y + panel_height - 15.0, 16.0, GRAY);
     }
 }

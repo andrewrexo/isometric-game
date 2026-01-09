@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::auth::{AuthClient, AuthSession, CharacterInfo};
+use crate::render::BitmapFont;
 
 /// Result of screen update - tells main loop what to do next
 pub enum ScreenState {
@@ -46,6 +47,7 @@ pub struct LoginScreen {
     #[cfg(not(target_arch = "wasm32"))]
     auth_client: AuthClient,
     dev_mode: bool,
+    font: BitmapFont,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -71,7 +73,22 @@ impl LoginScreen {
             #[cfg(not(target_arch = "wasm32"))]
             auth_client: AuthClient::new(server_url),
             dev_mode,
+            font: BitmapFont::default(),
         }
+    }
+
+    /// Load font asynchronously - call this after creating the screen
+    pub async fn load_font(&mut self) {
+        self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
+    }
+
+    /// Draw text with pixel font for sharp rendering
+    fn draw_text_sharp(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color) {
+        self.font.draw_text(text, x, y, font_size, color);
+    }
+
+    fn measure_text_sharp(&self, text: &str, font_size: f32) -> TextDimensions {
+        self.font.measure_text(text, font_size)
     }
 
     fn handle_text_input(&mut self) {
@@ -185,24 +202,24 @@ impl Screen for LoginScreen {
 
         // Title
         let title = "NEW AEVEN";
-        let title_size = 48.0;
-        let title_width = measure_text(title, None, title_size as u16, 1.0).width;
-        draw_text(title, (sw - title_width) / 2.0, sh * 0.2, title_size, WHITE);
+        let title_size = 32.0;
+        let title_width = self.measure_text_sharp(title, title_size).width;
+        self.draw_text_sharp(title, (sw - title_width) / 2.0, sh * 0.18, title_size, WHITE);
 
         // Subtitle
         let subtitle = match self.mode {
             LoginMode::Login => "Login to start playing",
             LoginMode::Register => "Create new account",
         };
-        let sub_size = 24.0;
-        let sub_width = measure_text(subtitle, None, sub_size as u16, 1.0).width;
-        draw_text(subtitle, (sw - sub_width) / 2.0, sh * 0.2 + 40.0, sub_size, GRAY);
+        let sub_size = 16.0;
+        let sub_width = self.measure_text_sharp(subtitle, sub_size).width;
+        self.draw_text_sharp(subtitle, (sw - sub_width) / 2.0, sh * 0.18 + 40.0, sub_size, GRAY);
 
         // Input box dimensions
-        let box_width = 300.0;
-        let box_height = 40.0;
+        let box_width = 350.0;
+        let box_height = 50.0;
         let box_x = (sw - box_width) / 2.0;
-        let start_y = sh * 0.4;
+        let start_y = sh * 0.38;
 
         // Username field
         let username_active = self.active_field == LoginField::Username;
@@ -210,7 +227,7 @@ impl Screen for LoginScreen {
         draw_rectangle(box_x, start_y, box_width, box_height, username_color);
         draw_rectangle_lines(box_x, start_y, box_width, box_height, 2.0, if username_active { WHITE } else { GRAY });
 
-        draw_text("Username", box_x, start_y - 8.0, 18.0, LIGHTGRAY);
+        self.draw_text_sharp("Username", box_x, start_y - 8.0, 16.0, LIGHTGRAY);
         let username_display = if self.username.is_empty() && !username_active {
             "Enter username...".to_string()
         } else {
@@ -218,16 +235,16 @@ impl Screen for LoginScreen {
             format!("{}{}", self.username, cursor)
         };
         let text_color = if self.username.is_empty() && !username_active { DARKGRAY } else { WHITE };
-        draw_text(&username_display, box_x + 10.0, start_y + 27.0, 22.0, text_color);
+        self.draw_text_sharp(&username_display, box_x + 12.0, start_y + 32.0, 20.0, text_color);
 
         // Password field
-        let password_y = start_y + 70.0;
+        let password_y = start_y + 85.0;
         let password_active = self.active_field == LoginField::Password;
         let password_color = if password_active { Color::from_rgba(80, 120, 180, 255) } else { Color::from_rgba(60, 60, 80, 255) };
         draw_rectangle(box_x, password_y, box_width, box_height, password_color);
         draw_rectangle_lines(box_x, password_y, box_width, box_height, 2.0, if password_active { WHITE } else { GRAY });
 
-        draw_text("Password", box_x, password_y - 8.0, 18.0, LIGHTGRAY);
+        self.draw_text_sharp("Password", box_x, password_y - 8.0, 16.0, LIGHTGRAY);
         let password_display = if self.password.is_empty() && !password_active {
             "Enter password...".to_string()
         } else {
@@ -236,39 +253,39 @@ impl Screen for LoginScreen {
             format!("{}{}", masked, cursor)
         };
         let text_color = if self.password.is_empty() && !password_active { DARKGRAY } else { WHITE };
-        draw_text(&password_display, box_x + 10.0, password_y + 27.0, 22.0, text_color);
+        self.draw_text_sharp(&password_display, box_x + 12.0, password_y + 32.0, 20.0, text_color);
 
         // Error message
         if let Some(ref error) = self.error_message {
-            let error_y = password_y + 60.0;
-            let error_width = measure_text(error, None, 18, 1.0).width;
-            draw_text(error, (sw - error_width) / 2.0, error_y, 18.0, RED);
+            let error_y = password_y + 70.0;
+            let error_width = self.measure_text_sharp(error, 16.0).width;
+            self.draw_text_sharp(error, (sw - error_width) / 2.0, error_y, 16.0, RED);
         }
 
         // Instructions
-        let inst_y = sh * 0.75;
+        let inst_y = sh * 0.72;
         let inst_size = 16.0;
 
         let enter_text = match self.mode {
             LoginMode::Login => "[Enter] Login",
             LoginMode::Register => "[Enter] Register",
         };
-        draw_text(enter_text, box_x, inst_y, inst_size, GREEN);
+        self.draw_text_sharp(enter_text, box_x, inst_y, inst_size, GREEN);
 
         let toggle_text = match self.mode {
             LoginMode::Login => "[F1] Switch to Register",
             LoginMode::Register => "[F1] Switch to Login",
         };
-        draw_text(toggle_text, box_x, inst_y + 22.0, inst_size, YELLOW);
+        self.draw_text_sharp(toggle_text, box_x, inst_y + 24.0, inst_size, YELLOW);
 
-        draw_text("[Tab] Switch fields", box_x, inst_y + 44.0, inst_size, LIGHTGRAY);
+        self.draw_text_sharp("[Tab] Switch fields", box_x, inst_y + 48.0, inst_size, LIGHTGRAY);
 
         if self.dev_mode {
-            draw_text("[F2] Guest Login (Dev Mode)", box_x, inst_y + 66.0, inst_size, ORANGE);
+            self.draw_text_sharp("[F2] Guest Login (Dev Mode)", box_x, inst_y + 72.0, inst_size, ORANGE);
         }
 
         // Version
-        draw_text("v0.1.0", sw - 60.0, sh - 20.0, 14.0, DARKGRAY);
+        self.draw_text_sharp("v0.1.0", sw - 60.0, sh - 20.0, 12.0, DARKGRAY);
     }
 }
 
@@ -286,6 +303,7 @@ pub struct CharacterSelectScreen {
     error_message: Option<String>,
     auth_client: AuthClient,
     loading: bool,
+    font: BitmapFont,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -305,7 +323,22 @@ impl CharacterSelectScreen {
             error_message: None,
             auth_client,
             loading: false,
+            font: BitmapFont::default(),
         }
+    }
+
+    /// Load font asynchronously - call this after creating the screen
+    pub async fn load_font(&mut self) {
+        self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
+    }
+
+    /// Draw text with pixel font for sharp rendering
+    fn draw_text_sharp(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color) {
+        self.font.draw_text(text, x, y, font_size, color);
+    }
+
+    fn measure_text_sharp(&self, text: &str, font_size: f32) -> TextDimensions {
+        self.font.measure_text(text, font_size)
     }
 
     fn refresh_characters(&mut self) {
@@ -447,13 +480,13 @@ impl Screen for CharacterSelectScreen {
 
         // Title
         let title = "SELECT CHARACTER";
-        let title_size = 36.0;
-        let title_width = measure_text(title, None, title_size as u16, 1.0).width;
-        draw_text(title, (sw - title_width) / 2.0, 60.0, title_size, WHITE);
+        let title_size = 24.0;
+        let title_width = self.measure_text_sharp(title, title_size).width;
+        self.draw_text_sharp(title, (sw - title_width) / 2.0, 50.0, title_size, WHITE);
 
         // Account info
         let account_text = format!("Logged in as: {}", self.session.username);
-        draw_text(&account_text, 20.0, 30.0, 18.0, LIGHTGRAY);
+        self.draw_text_sharp(&account_text, 20.0, 24.0, 10.0, LIGHTGRAY);
 
         // Character creation overlay
         if self.creating_new {
@@ -469,25 +502,27 @@ impl Screen for CharacterSelectScreen {
             draw_rectangle(box_x, box_y, box_w, box_h, Color::from_rgba(40, 40, 60, 255));
             draw_rectangle_lines(box_x, box_y, box_w, box_h, 2.0, WHITE);
 
-            draw_text("CREATE NEW CHARACTER", box_x + 80.0, box_y + 40.0, 24.0, WHITE);
+            let create_title = "CREATE NEW CHARACTER";
+            let create_title_width = self.measure_text_sharp(create_title, 16.0).width;
+            self.draw_text_sharp(create_title, box_x + (box_w - create_title_width) / 2.0, box_y + 36.0, 16.0, WHITE);
 
             // Name input
             let input_x = box_x + 50.0;
-            let input_y = box_y + 80.0;
-            draw_rectangle(input_x, input_y, 300.0, 40.0, Color::from_rgba(60, 60, 80, 255));
-            draw_rectangle_lines(input_x, input_y, 300.0, 40.0, 2.0, WHITE);
+            let input_y = box_y + 70.0;
+            draw_rectangle(input_x, input_y, 300.0, 36.0, Color::from_rgba(60, 60, 80, 255));
+            draw_rectangle_lines(input_x, input_y, 300.0, 36.0, 2.0, WHITE);
 
             let cursor = if (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
             let name_display = format!("{}{}", self.new_char_name, cursor);
-            draw_text(&name_display, input_x + 10.0, input_y + 27.0, 22.0, WHITE);
+            self.draw_text_sharp(&name_display, input_x + 10.0, input_y + 24.0, 16.0, WHITE);
 
             // Error
             if let Some(ref error) = self.error_message {
-                draw_text(error, input_x, input_y + 55.0, 16.0, RED);
+                self.draw_text_sharp(error, input_x, input_y + 50.0, 12.0, RED);
             }
 
             // Instructions
-            draw_text("[Enter] Create    [Escape] Cancel", box_x + 80.0, box_y + 170.0, 16.0, LIGHTGRAY);
+            self.draw_text_sharp("[Enter] Create    [Escape] Cancel", box_x + 90.0, box_y + 160.0, 12.0, LIGHTGRAY);
 
             return;
         }
@@ -498,8 +533,8 @@ impl Screen for CharacterSelectScreen {
         let item_height = 80.0;
 
         if self.characters.is_empty() {
-            draw_text("No characters yet!", list_x, list_y + 40.0, 24.0, GRAY);
-            draw_text("Press [N] to create your first character", list_x, list_y + 80.0, 18.0, LIGHTGRAY);
+            self.draw_text_sharp("No characters yet!", list_x, list_y + 40.0, 20.0, GRAY);
+            self.draw_text_sharp("Press [N] to create your first character", list_x, list_y + 70.0, 12.0, LIGHTGRAY);
         } else {
             for (i, character) in self.characters.iter().enumerate() {
                 let y = list_y + i as f32 * item_height;
@@ -518,12 +553,12 @@ impl Screen for CharacterSelectScreen {
                 }
 
                 // Character info
-                draw_text(&character.name, list_x + 20.0, y + 30.0, 28.0, WHITE);
-                draw_text(
+                self.draw_text_sharp(&character.name, list_x + 20.0, y + 28.0, 20.0, WHITE);
+                self.draw_text_sharp(
                     &format!("Level {}", character.level),
                     list_x + 20.0,
-                    y + 55.0,
-                    18.0,
+                    y + 50.0,
+                    12.0,
                     LIGHTGRAY,
                 );
 
@@ -535,25 +570,25 @@ impl Screen for CharacterSelectScreen {
                 } else {
                     format!("{}m played", minutes)
                 };
-                draw_text(&time_str, list_x + 350.0, y + 40.0, 16.0, DARKGRAY);
+                self.draw_text_sharp(&time_str, list_x + 360.0, y + 38.0, 10.0, DARKGRAY);
             }
         }
 
         // Error message
         if let Some(ref error) = self.error_message {
             let error_y = sh - 120.0;
-            draw_text(error, list_x, error_y, 18.0, RED);
+            self.draw_text_sharp(error, list_x, error_y, 12.0, RED);
         }
 
         // Instructions at bottom
-        let inst_y = sh - 80.0;
-        draw_text("[Enter] Play", list_x, inst_y, 16.0, GREEN);
+        let inst_y = sh - 70.0;
+        self.draw_text_sharp("[Enter] Play", list_x, inst_y, 12.0, GREEN);
         if self.characters.len() < 5 {
-            draw_text("[N] New Character", list_x + 120.0, inst_y, 16.0, YELLOW);
+            self.draw_text_sharp("[N] New Character", list_x + 100.0, inst_y, 12.0, YELLOW);
         }
-        draw_text("[X] Delete", list_x + 280.0, inst_y, 16.0, RED);
-        draw_text("[Escape] Logout", list_x + 380.0, inst_y, 16.0, LIGHTGRAY);
+        self.draw_text_sharp("[X] Delete", list_x + 240.0, inst_y, 12.0, RED);
+        self.draw_text_sharp("[Escape] Logout", list_x + 330.0, inst_y, 12.0, LIGHTGRAY);
 
-        draw_text("[W/S or Up/Down] Navigate", list_x, inst_y + 22.0, 14.0, DARKGRAY);
+        self.draw_text_sharp("[W/S or Up/Down] Navigate", list_x, inst_y + 18.0, 10.0, DARKGRAY);
     }
 }
