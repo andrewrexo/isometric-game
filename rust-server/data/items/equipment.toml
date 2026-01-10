@@ -1,0 +1,97 @@
+# Equipment items - armor, boots, weapons
+
+[peasant_boots]
+display_name = "Peasant Boots"
+sprite = "peasant_boots"
+description = "Simple leather boots."
+category = "equipment"
+max_stack = 1
+base_price = 15
+# No equipment stats yet (future: feet slot)
+
+[peasant_suit]
+display_name = "Peasant Suit"
+sprite = "peasant_suit"
+description = "Basic commoner clothing. Provides minor protection."
+category = "equipment"
+max_stack = 1
+base_price = 25
+[peasant_suit.equipment]
+slot_type = "body"
+level_required = 1
+damage_bonus = 0
+defense_bonus = 2
+
+[goblin_spear]
+display_name = "Goblin Spear"
+sprite = "goblin_spear"
+description = "A crude but effective weapon."
+category = "equipment"
+max_stack = 1
+base_price = 40
+# No equipment stats yet (future: weapon slot)
+
+[leather_armor]
+display_name = "Leather Armor"
+sprite = "leather_armor"
+description = "Sturdy leather protection for adventurers."
+category = "equipment"
+max_stack = 1
+base_price = 100
+[leather_armor.equipment]
+slot_type = "body"
+level_required = 3
+damage_bonus = 1
+defense_bonus = 5
+
+[archery_armor]
+display_name = "Archery Armor"
+sprite = "archery_armor"
+description = "Lightweight armor favored by archers and rangers."
+category = "equipment"
+max_stack = 1
+base_price = 180
+[archery_armor.equipment]
+slot_type = "body"
+level_required = 5
+damage_bonus = 3
+defense_bonus = 4
+
+[rogue_garb]
+display_name = "Rogue Garb"
+sprite = "rogue_garb"
+description = "Dark clothing suited for those who prefer stealth."
+category = "equipment"
+max_stack = 1
+base_price = 200
+[rogue_garb.equipment]
+slot_type = "body"
+level_required = 6
+damage_bonus = 4
+defense_bonus = 3
+
+[commander_armor]
+display_name = "Commander Armor"
+sprite = "commander_armor"
+description = "Battle-worn armor of a seasoned military commander."
+category = "equipment"
+max_stack = 1
+base_price = 350
+[commander_armor.equipment]
+slot_type = "body"
+level_required = 8
+damage_bonus = 2
+defense_bonus = 10
+
+[crusader_armor]
+display_name = "Crusader Armor"
+sprite = "crusader_armor"
+description = "Holy armor blessed for righteous combat."
+category = "equipment"
+max_stack = 1
+base_price = 500
+[crusader_armor.equipment]
+slot_type = "body"
+level_required = 10
+damage_bonus = 5
+defense_bonus = 12
