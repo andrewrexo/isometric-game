@@ -204,7 +204,7 @@ impl Database {
             inventory_json: r.get("inventory_json"),
             gender: r.try_get("gender").unwrap_or_else(|_| "male".to_string()),
             skin: r.try_get("skin").unwrap_or_else(|_| "tan".to_string()),
-            equipped_body: r.try_get("equipped_body").ok(),
+            equipped_body: r.try_get::<String, _>("equipped_body").ok().filter(|s| !s.is_empty()),
         }))
     }
 

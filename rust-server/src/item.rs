@@ -120,11 +120,13 @@ impl Inventory {
             .iter()
             .enumerate()
             .filter_map(|(i, slot)| {
-                slot.as_ref().map(|s| InventorySlotUpdate {
-                    slot: i as u8,
-                    item_id: s.item_id.clone(),
-                    quantity: s.quantity,
-                })
+                slot.as_ref()
+                    .filter(|s| s.quantity > 0 && !s.item_id.is_empty())
+                    .map(|s| InventorySlotUpdate {
+                        slot: i as u8,
+                        item_id: s.item_id.clone(),
+                        quantity: s.quantity,
+                    })
             })
             .collect()
     }

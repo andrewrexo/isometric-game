@@ -339,8 +339,8 @@ impl NetworkClient {
                     // Appearance
                     let gender = extract_string(value, "gender").unwrap_or_else(|| "male".to_string());
                     let skin = extract_string(value, "skin").unwrap_or_else(|| "tan".to_string());
-                    // Equipment
-                    let equipped_body = extract_string(value, "equipped_body");
+                    // Equipment (filter empty strings to None)
+                    let equipped_body = extract_string(value, "equipped_body").filter(|s| !s.is_empty());
 
                     log::info!("Player joined: {} at ({}, {}) [{}/{}]", name, x, y, gender, skin);
                     let mut player = Player::new(id.clone(), name, x, y, gender, skin);
@@ -381,7 +381,7 @@ impl NetworkClient {
                             let exp = extract_i32(player_value, "exp");
                             let exp_to_next_level = extract_i32(player_value, "expToNextLevel");
                             let gold = extract_i32(player_value, "gold");
-                            let equipped_body = extract_string(player_value, "equipped_body");
+                            let equipped_body = extract_string(player_value, "equipped_body").filter(|s| !s.is_empty());
 
                             if let Some(player) = state.players.get_mut(&id) {
                                 // Read velocity for client-side prediction
@@ -702,7 +702,7 @@ impl NetworkClient {
                             let item_id = extract_string(slot_value, "item_id").unwrap_or_default();
                             let quantity = extract_i32(slot_value, "quantity").unwrap_or(0);
 
-                            if slot_idx < state.inventory.slots.len() && !item_id.is_empty() {
+                            if slot_idx < state.inventory.slots.len() && !item_id.is_empty() && quantity > 0 {
                                 state.inventory.slots[slot_idx] = Some(InventorySlot::new(item_id, quantity));
                             }
                         }
@@ -1025,7 +1025,7 @@ impl NetworkClient {
             "equipmentUpdate" => {
                 if let Some(value) = data {
                     let player_id = extract_string(value, "player_id").unwrap_or_default();
-                    let equipped_body = extract_string(value, "equipped_body");
+                    let equipped_body = extract_string(value, "equipped_body").filter(|s| !s.is_empty());
 
                     if let Some(player) = state.players.get_mut(&player_id) {
                         player.equipped_body = equipped_body.clone();

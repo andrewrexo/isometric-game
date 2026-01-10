@@ -444,17 +444,18 @@ impl GameRoom {
         player.equipped_body = equipped_body;
 
         // Restore inventory from JSON - support both old (u8) and new (String) formats
+        // Skip invalid slots (empty item_id or quantity <= 0) to prevent ghost items
         if let Ok(slots) = serde_json::from_str::<Vec<(usize, String, i32)>>(inventory_json) {
             // New format: (slot_idx, item_id, quantity)
             for (slot_idx, item_id, quantity) in slots {
-                if slot_idx < player.inventory.slots.len() {
+                if slot_idx < player.inventory.slots.len() && !item_id.is_empty() && quantity > 0 {
                     player.inventory.slots[slot_idx] = Some(item::InventorySlot::new(item_id, quantity));
                 }
             }
         } else if let Ok(slots) = serde_json::from_str::<Vec<(usize, u8, i32)>>(inventory_json) {
             // Legacy format: (slot_idx, item_type_u8, quantity) - migrate to string IDs
             for (slot_idx, item_type_u8, quantity) in slots {
-                if slot_idx < player.inventory.slots.len() {
+                if slot_idx < player.inventory.slots.len() && quantity > 0 {
                     let item_id = match item_type_u8 {
                         0 => "health_potion",
                         1 => "mana_potion",
@@ -495,11 +496,14 @@ impl GameRoom {
         let players = self.players.read().await;
         players.get(player_id).map(|p| {
             // Serialize inventory to JSON - new format with string item IDs
+            // Filter out empty/invalid slots to prevent ghost items
             let inventory_slots: Vec<(usize, String, i32)> = p.inventory.slots
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, slot)| {
-                    slot.as_ref().map(|s| (idx, s.item_id.clone(), s.quantity))
+                    slot.as_ref()
+                        .filter(|s| s.quantity > 0 && !s.item_id.is_empty())
+                        .map(|s| (idx, s.item_id.clone(), s.quantity))
                 })
                 .collect();
             let inventory_json = serde_json::to_string(&inventory_slots).unwrap_or_else(|_| "[]".to_string());
