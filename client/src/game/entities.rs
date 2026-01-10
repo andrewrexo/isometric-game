@@ -121,6 +121,7 @@ pub struct Player {
 
     // Equipment
     pub equipped_body: Option<String>, // Item ID of equipped body armor
+    pub equipped_feet: Option<String>, // Item ID of equipped boots
 
     // Animation
     pub animation: PlayerAnimation,
@@ -153,6 +154,7 @@ impl Player {
             gender,
             skin,
             equipped_body: None,
+            equipped_feet: None,
             animation: PlayerAnimation::new(),
         }
     }

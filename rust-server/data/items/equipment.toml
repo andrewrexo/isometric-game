@@ -3,11 +3,15 @@
 [peasant_boots]
 display_name = "Peasant Boots"
 sprite = "peasant_boots"
-description = "Simple leather boots."
+description = "Simple leather boots. Provides minor protection."
 category = "equipment"
 max_stack = 1
 base_price = 15
-# No equipment stats yet (future: feet slot)
+[peasant_boots.equipment]
+slot_type = "feet"
+level_required = 1
+damage_bonus = 0
+defense_bonus = 1
 
 [peasant_suit]
 display_name = "Peasant Suit"

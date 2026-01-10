@@ -447,6 +447,7 @@ async fn login_account(
                 player.gold,
                 &player.inventory_json,
                 player.equipped_body.as_deref(),
+                player.equipped_feet.as_deref(),
             ).await;
 
             info!("Player logged in: {} from {}", req.username, client_ip);
@@ -616,6 +617,7 @@ async fn matchmake_join_or_create(
             &data.gender,
             &data.skin,
             data.equipped_body.clone(),
+            data.equipped_feet.clone(),
         ).await;
     } else {
         // New player with defaults (shouldn't happen - auth creates player)
@@ -917,6 +919,7 @@ async fn handle_socket(
                 save_data.gold,
                 &save_data.inventory_json,
                 save_data.equipped_body.as_deref(),
+                save_data.equipped_feet.as_deref(),
             ).await {
                 error!("Failed to save player {} on disconnect: {}", username, e);
             } else {
@@ -1084,6 +1087,7 @@ async fn main() {
                             save_data.gold,
                             &save_data.inventory_json,
                             save_data.equipped_body.as_deref(),
+                            save_data.equipped_feet.as_deref(),
                         ).await {
                             warn!("Auto-save failed for player {}: {}", username, e);
                         } else {

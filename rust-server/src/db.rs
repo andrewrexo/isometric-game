@@ -25,6 +25,7 @@ pub struct PlayerData {
     pub gender: String,         // "male" or "female"
     pub skin: String,           // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
     pub equipped_body: Option<String>, // Item ID of equipped body armor
+    pub equipped_feet: Option<String>, // Item ID of equipped boots
 }
 
 // Available appearance options
@@ -85,6 +86,8 @@ impl Database {
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN skin TEXT DEFAULT 'tan'")
             .execute(pool).await;
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_body TEXT")
+            .execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_feet TEXT")
             .execute(pool).await;
 
         // Quest system tables
@@ -183,7 +186,7 @@ impl Database {
 
     pub async fn get_player_by_username(&self, username: &str) -> Result<Option<PlayerData>, sqlx::Error> {
         let row = sqlx::query(
-            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin, equipped_body FROM players WHERE username = ?",
+            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin, equipped_body, equipped_feet FROM players WHERE username = ?",
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -205,6 +208,7 @@ impl Database {
             gender: r.try_get("gender").unwrap_or_else(|_| "male".to_string()),
             skin: r.try_get("skin").unwrap_or_else(|_| "tan".to_string()),
             equipped_body: r.try_get::<String, _>("equipped_body").ok().filter(|s| !s.is_empty()),
+            equipped_feet: r.try_get::<String, _>("equipped_feet").ok().filter(|s| !s.is_empty()),
         }))
     }
 
@@ -221,12 +225,13 @@ impl Database {
         gold: i32,
         inventory_json: &str,
         equipped_body: Option<&str>,
+        equipped_feet: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"UPDATE players SET
                 x = ?, y = ?, hp = ?, max_hp = ?, level = ?, exp = ?,
                 exp_to_next_level = ?, gold = ?, inventory_json = ?,
-                equipped_body = ?,
+                equipped_body = ?, equipped_feet = ?,
                 last_login = CURRENT_TIMESTAMP
             WHERE username = ?"#,
         )
@@ -240,6 +245,7 @@ impl Database {
         .bind(gold)
         .bind(inventory_json)
         .bind(equipped_body)
+        .bind(equipped_feet)
         .bind(username)
         .execute(&self.pool)
         .await?;

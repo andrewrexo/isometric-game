@@ -148,7 +148,9 @@ impl InputHandler {
                             if menu.is_equipment {
                                 // Equipment slot context menu - only unequip option
                                 if *option_idx == 0 {
-                                    commands.push(InputCommand::Unequip { slot_type: "body".to_string() });
+                                    if let Some(ref slot_type) = menu.equipment_slot {
+                                        commands.push(InputCommand::Unequip { slot_type: slot_type.clone() });
+                                    }
                                 }
                             } else {
                                 // Inventory slot context menu
@@ -484,6 +486,7 @@ impl InputHandler {
                                 x: mx,
                                 y: my,
                                 is_equipment: false,
+                                equipment_slot: None,
                             });
                         }
                     }
@@ -498,20 +501,29 @@ impl InputHandler {
                                 x: mx,
                                 y: my,
                                 is_equipment: false,
+                                equipment_slot: None,
                             });
                         }
                     }
                     return commands;
                 }
-                UiElementId::EquipmentSlot(_slot_type) => {
+                UiElementId::EquipmentSlot(slot_type) => {
                     if mouse_right_clicked {
-                        // Right-click on equipment slot opens context menu
-                        state.ui_state.context_menu = Some(ContextMenu {
-                            slot_index: 0, // Not used for equipment
-                            x: mx,
-                            y: my,
-                            is_equipment: true,
-                        });
+                        // Right-click on equipment slot opens context menu (if something is equipped)
+                        let has_item = match slot_type.as_str() {
+                            "body" => state.get_local_player().and_then(|p| p.equipped_body.as_ref()).is_some(),
+                            "feet" => state.get_local_player().and_then(|p| p.equipped_feet.as_ref()).is_some(),
+                            _ => false,
+                        };
+                        if has_item {
+                            state.ui_state.context_menu = Some(ContextMenu {
+                                slot_index: 0, // Not used for equipment
+                                x: mx,
+                                y: my,
+                                is_equipment: true,
+                                equipment_slot: Some(slot_type.clone()),
+                            });
+                        }
                     }
                     return commands;
                 }

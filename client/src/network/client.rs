@@ -341,10 +341,12 @@ impl NetworkClient {
                     let skin = extract_string(value, "skin").unwrap_or_else(|| "tan".to_string());
                     // Equipment (filter empty strings to None)
                     let equipped_body = extract_string(value, "equipped_body").filter(|s| !s.is_empty());
+                    let equipped_feet = extract_string(value, "equipped_feet").filter(|s| !s.is_empty());
 
                     log::info!("Player joined: {} at ({}, {}) [{}/{}]", name, x, y, gender, skin);
                     let mut player = Player::new(id.clone(), name, x, y, gender, skin);
                     player.equipped_body = equipped_body;
+                    player.equipped_feet = equipped_feet;
                     state.players.insert(id, player);
                 }
             }
@@ -382,6 +384,7 @@ impl NetworkClient {
                             let exp_to_next_level = extract_i32(player_value, "expToNextLevel");
                             let gold = extract_i32(player_value, "gold");
                             let equipped_body = extract_string(player_value, "equipped_body").filter(|s| !s.is_empty());
+                            let equipped_feet = extract_string(player_value, "equipped_feet").filter(|s| !s.is_empty());
 
                             if let Some(player) = state.players.get_mut(&id) {
                                 // Read velocity for client-side prediction
@@ -412,6 +415,7 @@ impl NetworkClient {
                                 }
                                 // Update equipment
                                 player.equipped_body = equipped_body.clone();
+                                player.equipped_feet = equipped_feet.clone();
                             }
 
                             // Update inventory gold for local player
@@ -1026,10 +1030,12 @@ impl NetworkClient {
                 if let Some(value) = data {
                     let player_id = extract_string(value, "player_id").unwrap_or_default();
                     let equipped_body = extract_string(value, "equipped_body").filter(|s| !s.is_empty());
+                    let equipped_feet = extract_string(value, "equipped_feet").filter(|s| !s.is_empty());
 
                     if let Some(player) = state.players.get_mut(&player_id) {
                         player.equipped_body = equipped_body.clone();
-                        log::info!("Player {} equipment updated: body={:?}", player_id, equipped_body);
+                        player.equipped_feet = equipped_feet.clone();
+                        log::info!("Player {} equipment updated: body={:?}, feet={:?}", player_id, equipped_body, equipped_feet);
                     }
                 }
             }

@@ -100,6 +100,7 @@ pub struct ContextMenu {
     pub x: f32,
     pub y: f32,
     pub is_equipment: bool, // true if this is an equipment slot, not inventory
+    pub equipment_slot: Option<String>, // "body", "feet", etc. when is_equipment is true
 }
 
 /// Drag state for inventory slot rearrangement

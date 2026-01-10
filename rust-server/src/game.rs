@@ -49,6 +49,7 @@ pub struct PlayerSaveData {
     pub gender: String,
     pub skin: String,
     pub equipped_body: Option<String>,
+    pub equipped_feet: Option<String>,
 }
 
 // ============================================================================
@@ -125,6 +126,7 @@ pub struct Player {
     pub skin: String,   // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
     // Equipment
     pub equipped_body: Option<String>, // Item ID of equipped body armor
+    pub equipped_feet: Option<String>, // Item ID of equipped boots
 }
 
 const PLAYER_RESPAWN_TIME_MS: u64 = 5000; // 5 seconds to respawn
@@ -162,13 +164,23 @@ impl Player {
             gender: gender.to_string(),
             skin: skin.to_string(),
             equipped_body: None,
+            equipped_feet: None,
         }
     }
 
     /// Calculate total damage bonus from equipped items
     pub fn damage_bonus(&self, item_registry: &ItemRegistry) -> i32 {
         let mut bonus = 0;
+        // Check body equipment
         if let Some(ref item_id) = self.equipped_body {
+            if let Some(def) = item_registry.get(item_id) {
+                if let Some(ref equip) = def.equipment {
+                    bonus += equip.damage_bonus;
+                }
+            }
+        }
+        // Check feet equipment
+        if let Some(ref item_id) = self.equipped_feet {
             if let Some(def) = item_registry.get(item_id) {
                 if let Some(ref equip) = def.equipment {
                     bonus += equip.damage_bonus;
@@ -181,7 +193,16 @@ impl Player {
     /// Calculate total defense bonus from equipped items
     pub fn defense_bonus(&self, item_registry: &ItemRegistry) -> i32 {
         let mut bonus = 0;
+        // Check body equipment
         if let Some(ref item_id) = self.equipped_body {
+            if let Some(def) = item_registry.get(item_id) {
+                if let Some(ref equip) = def.equipment {
+                    bonus += equip.defense_bonus;
+                }
+            }
+        }
+        // Check feet equipment
+        if let Some(ref item_id) = self.equipped_feet {
             if let Some(def) = item_registry.get(item_id) {
                 if let Some(ref equip) = def.equipment {
                     bonus += equip.defense_bonus;
@@ -258,6 +279,7 @@ pub struct PlayerUpdate {
     pub skin: String,
     // Equipment
     pub equipped_body: Option<String>,
+    pub equipped_feet: Option<String>,
 }
 
 // ============================================================================
@@ -430,6 +452,7 @@ impl GameRoom {
         gender: &str,
         skin: &str,
         equipped_body: Option<String>,
+        equipped_feet: Option<String>,
     ) {
         let mut players = self.players.write().await;
         let mut player = Player::new(player_id, name, x, y, gender, skin);
@@ -442,6 +465,7 @@ impl GameRoom {
         player.exp_to_next_level = exp_to_next_level;
         player.inventory.gold = gold;
         player.equipped_body = equipped_body;
+        player.equipped_feet = equipped_feet;
 
         // Restore inventory from JSON - support both old (u8) and new (String) formats
         // Skip invalid slots (empty item_id or quantity <= 0) to prevent ghost items
@@ -521,6 +545,7 @@ impl GameRoom {
                 gender: p.gender.clone(),
                 skin: p.skin.clone(),
                 equipped_body: p.equipped_body.clone(),
+                equipped_feet: p.equipped_feet.clone(),
             }
         })
     }
@@ -1870,6 +1895,8 @@ impl GameRoom {
 
     /// Handle equipping an item from inventory
     pub async fn handle_equip(&self, player_id: &str, slot_index: u8) {
+        use crate::data::item_def::EquipmentSlot;
+
         let slot_idx = slot_index as usize;
 
         // Get item info from inventory slot
@@ -1881,17 +1908,22 @@ impl GameRoom {
             };
 
             match player.inventory.slots.get(slot_idx) {
-                Some(Some(slot)) => Some((slot.item_id.clone(), player.level, player.equipped_body.clone())),
+                Some(Some(slot)) => Some((
+                    slot.item_id.clone(),
+                    player.level,
+                    player.equipped_body.clone(),
+                    player.equipped_feet.clone(),
+                )),
                 _ => None,
             }
         };
 
-        let (item_id, player_level, currently_equipped) = match item_info {
+        let (item_id, player_level, equipped_body, equipped_feet) = match item_info {
             Some(info) => info,
             None => {
                 self.send_to_player(player_id, ServerMessage::EquipResult {
                     success: false,
-                    slot_type: "body".to_string(),
+                    slot_type: "unknown".to_string(),
                     item_id: None,
                     error: Some("No item in that slot".to_string()),
                 }).await;
@@ -1899,13 +1931,13 @@ impl GameRoom {
             }
         };
 
-        // Check if item is body equipment
+        // Get item definition
         let item_def = match self.item_registry.get(&item_id) {
             Some(def) => def,
             None => {
                 self.send_to_player(player_id, ServerMessage::EquipResult {
                     success: false,
-                    slot_type: "body".to_string(),
+                    slot_type: "unknown".to_string(),
                     item_id: None,
                     error: Some("Item not found".to_string()),
                 }).await;
@@ -1913,12 +1945,13 @@ impl GameRoom {
             }
         };
 
-        let equip_stats = match &item_def.equipment {
-            Some(stats) if item_def.is_body_equipment() => stats,
+        // Check if item is equippable and get its slot type
+        let (equip_stats, equip_slot) = match &item_def.equipment {
+            Some(stats) if stats.slot_type != EquipmentSlot::None => (stats, stats.slot_type),
             _ => {
                 self.send_to_player(player_id, ServerMessage::EquipResult {
                     success: false,
-                    slot_type: "body".to_string(),
+                    slot_type: "unknown".to_string(),
                     item_id: None,
                     error: Some("Item cannot be equipped".to_string()),
                 }).await;
@@ -1926,48 +1959,62 @@ impl GameRoom {
             }
         };
 
+        let slot_type_str = equip_slot.as_str().to_string();
+
         // Check level requirement
         if player_level < equip_stats.level_required {
             self.send_to_player(player_id, ServerMessage::EquipResult {
                 success: false,
-                slot_type: "body".to_string(),
+                slot_type: slot_type_str,
                 item_id: None,
                 error: Some(format!("Requires level {}", equip_stats.level_required)),
             }).await;
             return;
         }
 
+        // Get currently equipped item for this slot
+        let currently_equipped = match equip_slot {
+            EquipmentSlot::Body => equipped_body,
+            EquipmentSlot::Feet => equipped_feet,
+            EquipmentSlot::None => None,
+        };
+
         // Perform the equip operation
-        let (inventory_update, gold) = {
+        let (inventory_update, gold, new_equipped_body, new_equipped_feet) = {
             let mut players = self.players.write().await;
             let player = match players.get_mut(player_id) {
                 Some(p) => p,
                 None => return,
             };
 
-            // If something is equipped, we need to swap it to the inventory slot
+            // If something is equipped in this slot, swap it to the inventory slot
             if let Some(ref old_item_id) = currently_equipped {
-                // Remove item from inventory slot
-                player.inventory.slots[slot_idx] = None;
-                // Put old equipped item in that slot
                 player.inventory.slots[slot_idx] = Some(item::InventorySlot::new(old_item_id.clone(), 1));
             } else {
-                // Just remove item from inventory
                 player.inventory.slots[slot_idx] = None;
             }
 
-            // Equip the new item
-            player.equipped_body = Some(item_id.clone());
+            // Equip the new item to the appropriate slot
+            match equip_slot {
+                EquipmentSlot::Body => player.equipped_body = Some(item_id.clone()),
+                EquipmentSlot::Feet => player.equipped_feet = Some(item_id.clone()),
+                EquipmentSlot::None => {}
+            }
 
-            (player.inventory.to_update(), player.inventory.gold)
+            (
+                player.inventory.to_update(),
+                player.inventory.gold,
+                player.equipped_body.clone(),
+                player.equipped_feet.clone(),
+            )
         };
 
-        tracing::info!("Player {} equipped {}", player_id, item_id);
+        tracing::info!("Player {} equipped {} to {} slot", player_id, item_id, slot_type_str);
 
         // Send success result
         self.send_to_player(player_id, ServerMessage::EquipResult {
             success: true,
-            slot_type: "body".to_string(),
+            slot_type: slot_type_str,
             item_id: Some(item_id.clone()),
             error: None,
         }).await;
@@ -1982,14 +2029,15 @@ impl GameRoom {
         // Broadcast equipment update to all players
         self.broadcast(ServerMessage::EquipmentUpdate {
             player_id: player_id.to_string(),
-            equipped_body: Some(item_id),
+            equipped_body: new_equipped_body,
+            equipped_feet: new_equipped_feet,
         }).await;
     }
 
     /// Handle unequipping an item
     pub async fn handle_unequip(&self, player_id: &str, slot_type: &str) {
-        // Only body slot for now
-        if slot_type != "body" {
+        // Validate slot type
+        if slot_type != "body" && slot_type != "feet" {
             self.send_to_player(player_id, ServerMessage::EquipResult {
                 success: false,
                 slot_type: slot_type.to_string(),
@@ -2007,13 +2055,19 @@ impl GameRoom {
                 _ => return,
             };
 
-            match &player.equipped_body {
+            let equipped_ref = match slot_type {
+                "body" => &player.equipped_body,
+                "feet" => &player.equipped_feet,
+                _ => return,
+            };
+
+            match equipped_ref {
                 Some(item_id) => {
                     // Check if inventory has space
                     if !player.inventory.has_space_for(item_id, 1, &self.item_registry) {
                         self.send_to_player(player_id, ServerMessage::EquipResult {
                             success: false,
-                            slot_type: "body".to_string(),
+                            slot_type: slot_type.to_string(),
                             item_id: None,
                             error: Some("Inventory full".to_string()),
                         }).await;
@@ -2024,7 +2078,7 @@ impl GameRoom {
                 None => {
                     self.send_to_player(player_id, ServerMessage::EquipResult {
                         success: false,
-                        slot_type: "body".to_string(),
+                        slot_type: slot_type.to_string(),
                         item_id: None,
                         error: Some("Nothing equipped".to_string()),
                     }).await;
@@ -2039,28 +2093,37 @@ impl GameRoom {
         };
 
         // Perform the unequip operation
-        let (inventory_update, gold) = {
+        let (inventory_update, gold, new_equipped_body, new_equipped_feet) = {
             let mut players = self.players.write().await;
             let player = match players.get_mut(player_id) {
                 Some(p) => p,
                 None => return,
             };
 
-            // Clear equipped item
-            player.equipped_body = None;
+            // Clear equipped item from appropriate slot
+            match slot_type {
+                "body" => player.equipped_body = None,
+                "feet" => player.equipped_feet = None,
+                _ => {}
+            }
 
             // Add to inventory
             player.inventory.add_item(&item_id, 1, &self.item_registry);
 
-            (player.inventory.to_update(), player.inventory.gold)
+            (
+                player.inventory.to_update(),
+                player.inventory.gold,
+                player.equipped_body.clone(),
+                player.equipped_feet.clone(),
+            )
         };
 
-        tracing::info!("Player {} unequipped {}", player_id, item_id);
+        tracing::info!("Player {} unequipped {} from {} slot", player_id, item_id, slot_type);
 
         // Send success result
         self.send_to_player(player_id, ServerMessage::EquipResult {
             success: true,
-            slot_type: "body".to_string(),
+            slot_type: slot_type.to_string(),
             item_id: Some(item_id),
             error: None,
         }).await;
@@ -2075,7 +2138,8 @@ impl GameRoom {
         // Broadcast equipment update to all players
         self.broadcast(ServerMessage::EquipmentUpdate {
             player_id: player_id.to_string(),
-            equipped_body: None,
+            equipped_body: new_equipped_body,
+            equipped_feet: new_equipped_feet,
         }).await;
     }
 
@@ -2292,6 +2356,7 @@ impl GameRoom {
                     gender: player.gender.clone(),
                     skin: player.skin.clone(),
                     equipped_body: player.equipped_body.clone(),
+                    equipped_feet: player.equipped_feet.clone(),
                 });
             }
         }

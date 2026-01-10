@@ -29,7 +29,8 @@ pub enum EquipmentSlot {
     #[default]
     None,
     Body,
-    // Future slots: Head, Hands, Feet, Weapon, Offhand, etc.
+    Feet,
+    // Future slots: Head, Hands, Weapon, Offhand, etc.
 }
 
 impl EquipmentSlot {
@@ -37,6 +38,7 @@ impl EquipmentSlot {
         match self {
             EquipmentSlot::None => "none",
             EquipmentSlot::Body => "body",
+            EquipmentSlot::Feet => "feet",
         }
     }
 }
@@ -155,6 +157,13 @@ impl ItemDefinition {
     pub fn is_body_equipment(&self) -> bool {
         self.equipment.as_ref()
             .map(|e| e.slot_type == EquipmentSlot::Body)
+            .unwrap_or(false)
+    }
+
+    /// Check if this is feet equipment
+    pub fn is_feet_equipment(&self) -> bool {
+        self.equipment.as_ref()
+            .map(|e| e.slot_type == EquipmentSlot::Feet)
             .unwrap_or(false)
     }
 

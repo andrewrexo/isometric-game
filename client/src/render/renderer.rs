@@ -681,9 +681,24 @@ impl Renderer {
                             ..Default::default()
                         },
                     );
-                } else {
-                    // Equipment sprite not found - log once per session would be ideal
-                    // but for debugging, this helps identify the issue
+                }
+            }
+
+            // Draw equipment overlay (boots)
+            if let Some(ref feet_item_id) = player.equipped_feet {
+                if let Some(equip_sprite) = self.equipment_sprites.get(feet_item_id) {
+                    draw_texture_ex(
+                        equip_sprite,
+                        draw_x,
+                        draw_y,
+                        tint, // Same tint as player
+                        DrawTextureParams {
+                            source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                            dest_size: Some(Vec2::new(SPRITE_WIDTH, SPRITE_HEIGHT)),
+                            flip_x: coords.flip_h,
+                            ..Default::default()
+                        },
+                    );
                 }
             }
         } else {
@@ -1248,6 +1263,43 @@ impl Renderer {
 
         // Slot label below
         self.draw_text_sharp("Body", body_slot_x + 10.0, body_slot_y + equip_slot_size + 12.0, 16.0, GRAY);
+
+        // Feet equipment slot (below body slot)
+        let feet_slot_x = equip_x;
+        let feet_slot_y = body_slot_y + equip_slot_size + 30.0;
+
+        // Register feet equipment slot bounds
+        let feet_bounds = Rect::new(feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size);
+        layout.add(UiElementId::EquipmentSlot("feet".to_string()), feet_bounds);
+
+        // Check if feet slot is hovered
+        let feet_hovered = matches!(hovered, Some(UiElementId::EquipmentSlot(slot)) if slot == "feet");
+
+        // Feet slot background
+        let feet_bg_color = if feet_hovered {
+            Color::from_rgba(70, 70, 100, 255)
+        } else {
+            Color::from_rgba(40, 40, 60, 255)
+        };
+        draw_rectangle(feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, feet_bg_color);
+
+        // Feet slot border
+        let feet_border_color = if feet_hovered { WHITE } else { Color::from_rgba(80, 80, 120, 255) };
+        draw_rectangle_lines(feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, 2.0, feet_border_color);
+
+        // Draw equipped feet item or placeholder
+        if let Some(local_player) = state.get_local_player() {
+            if let Some(ref feet_item_id) = local_player.equipped_feet {
+                // Draw equipped item sprite
+                self.draw_item_icon(feet_item_id, feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, state);
+            } else {
+                // Empty slot indicator
+                self.draw_text_sharp("Feet", feet_slot_x + 8.0, feet_slot_y + 32.0, 16.0, DARKGRAY);
+            }
+        }
+
+        // Slot label below
+        self.draw_text_sharp("Feet", feet_slot_x + 12.0, feet_slot_y + equip_slot_size + 12.0, 16.0, GRAY);
 
         // Close hint
         self.draw_text_sharp("Press I to close", inv_x + 10.0, inv_y + inv_height - 15.0, 16.0, GRAY);

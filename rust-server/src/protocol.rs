@@ -247,6 +247,7 @@ pub enum ServerMessage {
     EquipmentUpdate {
         player_id: String,
         equipped_body: Option<String>,
+        equipped_feet: Option<String>,
     },
     /// Result of equip/unequip action sent to the acting player
     EquipResult {
@@ -447,6 +448,13 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     pmap.push((
                         Value::String("equipped_body".into()),
                         match &p.equipped_body {
+                            Some(item_id) => Value::String(item_id.clone().into()),
+                            None => Value::Nil,
+                        },
+                    ));
+                    pmap.push((
+                        Value::String("equipped_feet".into()),
+                        match &p.equipped_feet {
                             Some(item_id) => Value::String(item_id.clone().into()),
                             None => Value::Nil,
                         },
@@ -971,12 +979,19 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("npc_id".into()), Value::String(npc_id.clone().into())));
             Value::Map(map)
         }
-        ServerMessage::EquipmentUpdate { player_id, equipped_body } => {
+        ServerMessage::EquipmentUpdate { player_id, equipped_body, equipped_feet } => {
             let mut map = Vec::new();
             map.push((Value::String("player_id".into()), Value::String(player_id.clone().into())));
             map.push((
                 Value::String("equipped_body".into()),
                 match equipped_body {
+                    Some(item_id) => Value::String(item_id.clone().into()),
+                    None => Value::Nil,
+                },
+            ));
+            map.push((
+                Value::String("equipped_feet".into()),
+                match equipped_feet {
                     Some(item_id) => Value::String(item_id.clone().into()),
                     None => Value::Nil,
                 },
