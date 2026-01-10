@@ -1007,6 +1007,9 @@ async fn handle_client_message(
         ClientMessage::Unequip { slot_type } => {
             room.handle_unequip(player_id, &slot_type).await;
         }
+        ClientMessage::DropItem { slot_index, quantity } => {
+            room.handle_drop_item(player_id, slot_index, quantity).await;
+        }
         // Auth and Register are handled via HTTP endpoints, not WebSocket
         ClientMessage::Auth { .. } | ClientMessage::Register { .. } => {}
     }

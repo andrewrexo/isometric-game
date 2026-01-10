@@ -2075,6 +2075,92 @@ impl GameRoom {
         }).await;
     }
 
+    /// Handle dropping an item from inventory to the ground
+    pub async fn handle_drop_item(&self, player_id: &str, slot_index: u8, quantity: u32) {
+        let slot_idx = slot_index as usize;
+
+        // Get player position and item info
+        let drop_info: Option<(i32, i32, String, i32)> = {
+            let players = self.players.read().await;
+            let player = match players.get(player_id) {
+                Some(p) if p.active && !p.is_dead => p,
+                _ => return,
+            };
+
+            match player.inventory.slots.get(slot_idx) {
+                Some(Some(slot)) => {
+                    let qty_to_drop = (quantity as i32).min(slot.quantity);
+                    if qty_to_drop <= 0 {
+                        return;
+                    }
+                    Some((player.x, player.y, slot.item_id.clone(), qty_to_drop))
+                }
+                _ => None,
+            }
+        };
+
+        let (player_x, player_y, item_id, qty_to_drop) = match drop_info {
+            Some(info) => info,
+            None => return,
+        };
+
+        // Remove item from inventory (manipulate slot directly)
+        let (inventory_update, gold) = {
+            let mut players = self.players.write().await;
+            if let Some(player) = players.get_mut(player_id) {
+                if let Some(slot) = &mut player.inventory.slots[slot_idx] {
+                    slot.quantity -= qty_to_drop;
+                    if slot.quantity <= 0 {
+                        player.inventory.slots[slot_idx] = None;
+                    }
+                }
+                (player.inventory.to_update(), player.inventory.gold)
+            } else {
+                return;
+            }
+        };
+
+        // Create ground item with owner protection
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let ground_item = GroundItem::new(
+            &uuid::Uuid::new_v4().to_string(),
+            &item_id,
+            player_x as f32,
+            player_y as f32,
+            qty_to_drop,
+            Some(player_id.to_string()),
+            current_time,
+        );
+
+        tracing::info!("Player {} dropped {}x {} (protected for 10s)", player_id, qty_to_drop, item_id);
+
+        // Broadcast item drop
+        self.broadcast(ServerMessage::ItemDropped {
+            id: ground_item.id.clone(),
+            item_id: item_id.clone(),
+            x: player_x as f32,
+            y: player_y as f32,
+            quantity: qty_to_drop,
+        }).await;
+
+        // Store in ground_items
+        {
+            let mut items = self.ground_items.write().await;
+            items.insert(ground_item.id.clone(), ground_item);
+        }
+
+        // Send inventory update to dropping player
+        self.send_to_player(player_id, ServerMessage::InventoryUpdate {
+            player_id: player_id.to_string(),
+            slots: inventory_update,
+            gold,
+        }).await;
+    }
+
     pub async fn tick(&self) {
         let delta_time = 1.0 / TICK_RATE;
         let current_time = std::time::SystemTime::now()

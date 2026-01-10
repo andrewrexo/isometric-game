@@ -93,6 +93,15 @@ pub struct QuestCompletedEvent {
     pub time: f64,
 }
 
+/// Context menu for right-clicking items
+#[derive(Debug, Clone)]
+pub struct ContextMenu {
+    pub slot_index: usize,
+    pub x: f32,
+    pub y: f32,
+    pub is_equipment: bool, // true if this is an equipment slot, not inventory
+}
+
 pub struct UiState {
     pub chat_open: bool,
     pub chat_input: String,
@@ -110,6 +119,8 @@ pub struct UiState {
     pub crafting_npc_id: Option<String>,
     // Mouse hover state for UI elements
     pub hovered_element: Option<UiElementId>,
+    // Context menu state
+    pub context_menu: Option<ContextMenu>,
 }
 
 impl Default for UiState {
@@ -128,6 +139,7 @@ impl Default for UiState {
             crafting_selected_recipe: 0,
             crafting_npc_id: None,
             hovered_element: None,
+            context_menu: None,
         }
     }
 }

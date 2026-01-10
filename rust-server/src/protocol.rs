@@ -64,6 +64,10 @@ pub enum ClientMessage {
     /// Unequip item from equipment slot
     #[serde(rename = "unequip")]
     Unequip { slot_type: String },
+
+    /// Drop item from inventory slot
+    #[serde(rename = "dropItem")]
+    DropItem { slot_index: u8, quantity: u32 },
 }
 
 // ============================================================================
@@ -877,6 +881,19 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     imap.push((Value::String("category".into()), Value::String(i.category.clone().into())));
                     imap.push((Value::String("maxStack".into()), Value::Integer((i.max_stack as i64).into())));
                     imap.push((Value::String("description".into()), Value::String(i.description.clone().into())));
+                    // Add equipment fields if present
+                    if let Some(ref slot) = i.equipment_slot {
+                        imap.push((Value::String("equipment_slot".into()), Value::String(slot.clone().into())));
+                    }
+                    if let Some(level) = i.level_required {
+                        imap.push((Value::String("level_required".into()), Value::Integer((level as i64).into())));
+                    }
+                    if let Some(dmg) = i.damage_bonus {
+                        imap.push((Value::String("damage_bonus".into()), Value::Integer((dmg as i64).into())));
+                    }
+                    if let Some(def) = i.defense_bonus {
+                        imap.push((Value::String("defense_bonus".into()), Value::Integer((def as i64).into())));
+                    }
                     Value::Map(imap)
                 })
                 .collect();
@@ -1106,6 +1123,17 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
         "unequip" => {
             let slot_type = extract_string(msg_data, "slot_type").unwrap_or_default();
             Ok(ClientMessage::Unequip { slot_type })
+        }
+        "dropItem" => {
+            let slot_index = msg_data.as_map()
+                .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("slot_index")))
+                .and_then(|(_, v)| v.as_u64().map(|u| u as u8))
+                .unwrap_or(0);
+            let quantity = msg_data.as_map()
+                .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("quantity")))
+                .and_then(|(_, v)| v.as_u64().map(|u| u as u32))
+                .unwrap_or(1);
+            Ok(ClientMessage::DropItem { slot_index, quantity })
         }
         _ => Err(format!("Unknown message type: {}", msg_type)),
     }

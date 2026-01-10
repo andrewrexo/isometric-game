@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use std::collections::HashMap;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition, ContextMenu};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use crate::ui::{UiElementId, UiLayout};
@@ -849,14 +849,32 @@ impl Renderer {
         // Draw shadow
         draw_ellipse(screen_x, screen_y, 8.0, 4.0, 0.0, Color::from_rgba(0, 0, 0, 40));
 
-        // Draw item (colored rectangle based on category from registry)
-        let item_y = screen_y - 8.0 - bob;
         let item_def = state.item_registry.get_or_placeholder(&item.item_id);
-        let color = item_def.category_color();
+        let item_y = screen_y - 8.0 - bob;
 
-        // Draw item shape
-        draw_rectangle(screen_x - 6.0, item_y - 6.0, 16.0, 12.0, color);
-        draw_rectangle_lines(screen_x - 6.0, item_y - 6.0, 16.0, 12.0, 1.0, WHITE);
+        // Try to use item sprite, fall back to colored rectangle
+        if let Some(texture) = self.item_sprites.get(&item.item_id) {
+            // Use inventory sprite - extract icon portion at 44x32, centered in 64x32 tile
+            let icon_width = 44.0;
+            let icon_height = 32.0;
+            let src_rect = Rect::new(0.0, 0.0, icon_width, icon_height);
+
+            draw_texture_ex(
+                texture,
+                screen_x - icon_width / 2.0,
+                item_y - icon_height,
+                WHITE,
+                DrawTextureParams {
+                    source: Some(src_rect),
+                    ..Default::default()
+                },
+            );
+        } else {
+            // Fallback to colored rectangle
+            let color = item_def.category_color();
+            draw_rectangle(screen_x - 6.0, item_y - 6.0, 16.0, 12.0, color);
+            draw_rectangle_lines(screen_x - 6.0, item_y - 6.0, 16.0, 12.0, 1.0, WHITE);
+        }
 
         // Draw quantity if > 1
         if item.quantity > 1 {
@@ -1045,14 +1063,19 @@ impl Renderer {
         // Render item tooltip last so it appears on top of everything
         self.render_item_tooltip(state);
 
+        // Render context menu on top of everything
+        if let Some(ref context_menu) = state.ui_state.context_menu {
+            self.render_context_menu(context_menu, state, &mut layout);
+        }
+
         layout
     }
 
     fn render_inventory(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let slot_size = 70.0; // Sized to fit ~64px item icons
+        let slot_size = 50.0; // Sized to fit 44x32 item icons
         let slots_per_row = 5;
-        let inv_width = 500.0; // Widened to accommodate larger slots + equipment panel
-        let inv_height = 380.0;
+        let inv_width = 380.0; // Adjusted for smaller slots + equipment panel
+        let inv_height = 300.0;
         let inv_x = (screen_width() - inv_width) / 2.0;
         let inv_y = (screen_height() - inv_height) / 2.0;
 
@@ -1110,9 +1133,9 @@ impl Renderer {
         }
 
         // Equipment Section (right side)
-        let equip_x = inv_x + 380.0; // Adjusted for larger inventory grid
+        let equip_x = inv_x + 280.0; // Adjusted for inventory grid
         let equip_y = inv_y + 40.0;
-        let equip_slot_size = 70.0; // Match inventory slot size
+        let equip_slot_size = 50.0; // Match inventory slot size
 
         // Equipment section label
         self.draw_text_sharp("Equipment", equip_x, equip_y, 16.0, WHITE);
@@ -1241,7 +1264,7 @@ impl Renderer {
     }
 
     fn render_quick_slots(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let slot_size = 70.0; // Match inventory slot size for ~64px icons
+        let slot_size = 50.0; // Match inventory slot size for 44x32 icons
         let padding = 4.0;
         let total_width = 5.0 * (slot_size + padding) - padding;
         let start_x = (screen_width() - total_width) / 2.0;
@@ -1291,8 +1314,8 @@ impl Renderer {
         // Try to get the item sprite
         if let Some(texture) = self.item_sprites.get(item_id) {
             // The sprite sheet layout: left half is the inventory icon
-            // Use 64x32 (tile-sized) from the left half
-            let icon_width = 64.0;
+            // Use 44x32 from the left half
+            let icon_width = 44.0;
             let icon_height = 32.0;
 
             // Center the icon in the slot
@@ -1306,15 +1329,15 @@ impl Renderer {
                 WHITE,
                 DrawTextureParams {
                     source: Some(Rect::new(0.0, 0.0, icon_width, icon_height)),
-                    // No dest_size - draw at natural 64x32 size
+                    // No dest_size - draw at natural 44x32 size
                     ..Default::default()
                 },
             );
         } else {
-            // Fallback: colored rectangle based on category (64x32 centered)
+            // Fallback: colored rectangle based on category (44x32 centered)
             let item_def = state.item_registry.get_or_placeholder(item_id);
             let color = item_def.category_color();
-            let icon_width = 64.0;
+            let icon_width = 44.0;
             let icon_height = 32.0;
             let offset_x = (slot_width - icon_width) / 2.0;
             let offset_y = (slot_height - icon_height) / 2.0;
@@ -1454,6 +1477,71 @@ impl Renderer {
         if slot.quantity > 1 {
             let qty_text = format!("Quantity: {}", slot.quantity);
             self.draw_text_sharp(&qty_text, tooltip_x + padding, y, 16.0, WHITE);
+        }
+    }
+
+    /// Render the right-click context menu for items
+    fn render_context_menu(&self, menu: &ContextMenu, state: &GameState, layout: &mut UiLayout) {
+        let padding = 8.0;
+        let option_height = 28.0;
+        let menu_width = 120.0;
+
+        // Determine which options to show
+        let mut options: Vec<(&str, UiElementId)> = Vec::new();
+
+        if menu.is_equipment {
+            // Equipment slot - only unequip option
+            options.push(("Unequip", UiElementId::ContextMenuOption(0)));
+        } else {
+            // Inventory slot - check if item is equippable
+            if let Some(slot) = state.inventory.slots.get(menu.slot_index).and_then(|s| s.as_ref()) {
+                let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                if item_def.equipment.is_some() {
+                    options.push(("Equip", UiElementId::ContextMenuOption(0)));
+                }
+            }
+            options.push(("Drop", UiElementId::ContextMenuOption(options.len())));
+        }
+
+        let menu_height = padding * 2.0 + options.len() as f32 * option_height;
+
+        // Position menu at cursor, but keep on screen
+        let mut menu_x = menu.x;
+        let mut menu_y = menu.y;
+
+        if menu_x + menu_width > screen_width() {
+            menu_x = screen_width() - menu_width - 5.0;
+        }
+        if menu_y + menu_height > screen_height() {
+            menu_y = screen_height() - menu_height - 5.0;
+        }
+
+        // Background
+        draw_rectangle(menu_x, menu_y, menu_width, menu_height, Color::from_rgba(30, 30, 40, 245));
+        draw_rectangle_lines(menu_x, menu_y, menu_width, menu_height, 1.0, Color::from_rgba(100, 100, 120, 255));
+
+        // Draw options
+        let (mouse_x, mouse_y) = mouse_position();
+        let mut y = menu_y + padding;
+
+        for (i, (label, element_id)) in options.iter().enumerate() {
+            let option_bounds = Rect::new(menu_x + 2.0, y, menu_width - 4.0, option_height - 2.0);
+            layout.add(element_id.clone(), option_bounds);
+
+            // Check hover
+            let is_hovered = mouse_x >= option_bounds.x && mouse_x <= option_bounds.x + option_bounds.w
+                && mouse_y >= option_bounds.y && mouse_y <= option_bounds.y + option_bounds.h;
+
+            // Hover highlight
+            if is_hovered {
+                draw_rectangle(option_bounds.x, option_bounds.y, option_bounds.w, option_bounds.h, Color::from_rgba(60, 60, 80, 255));
+            }
+
+            // Label
+            let text_color = if is_hovered { WHITE } else { LIGHTGRAY };
+            self.draw_text_sharp(label, menu_x + padding, y + 18.0, 16.0, text_color);
+
+            y += option_height;
         }
     }
 

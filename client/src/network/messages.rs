@@ -57,6 +57,9 @@ pub enum ClientMessage {
 
     #[serde(rename = "unequip")]
     Unequip { slot_type: String },
+
+    #[serde(rename = "dropItem")]
+    DropItem { slot_index: u8, quantity: u32 },
 }
 
 impl ClientMessage {
@@ -137,6 +140,11 @@ impl ClientMessage {
             ClientMessage::Unequip { slot_type } => {
                 data.insert("slot_type".into(), Value::String(slot_type.clone().into()));
                 "unequip"
+            }
+            ClientMessage::DropItem { slot_index, quantity } => {
+                data.insert("slot_index".into(), Value::Integer((*slot_index as i64).into()));
+                data.insert("quantity".into(), Value::Integer((*quantity as i64).into()));
+                "dropItem"
             }
         };
 

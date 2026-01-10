@@ -904,10 +904,10 @@ impl NetworkClient {
                     if let Some(items_arr) = extract_array(value, "items") {
                         for item_value in items_arr {
                             let id = extract_string(item_value, "id").unwrap_or_default();
-                            let display_name = extract_string(item_value, "display_name").unwrap_or_default();
+                            let display_name = extract_string(item_value, "displayName").unwrap_or_default();
                             let sprite = extract_string(item_value, "sprite").unwrap_or_default();
                             let category = extract_string(item_value, "category").unwrap_or_else(|| "material".to_string());
-                            let max_stack = extract_i32(item_value, "max_stack").unwrap_or(99);
+                            let max_stack = extract_i32(item_value, "maxStack").unwrap_or(99);
                             let description = extract_string(item_value, "description").unwrap_or_default();
 
                             // Parse equipment stats if present

@@ -6,7 +6,7 @@ pub mod item;
 pub mod item_registry;
 pub mod chunk;
 
-pub use state::{GameState, Camera, ConnectionStatus, ChatMessage, UiState, DamageEvent, LevelUpEvent, DialogueChoice, ActiveDialogue, QuestObjective, ActiveQuest, QuestCompletedEvent};
+pub use state::{GameState, Camera, ConnectionStatus, ChatMessage, UiState, DamageEvent, LevelUpEvent, DialogueChoice, ActiveDialogue, QuestObjective, ActiveQuest, QuestCompletedEvent, ContextMenu};
 pub use entities::{Player, Direction};
 pub use tilemap::{Tilemap, TilemapLayer, LayerType};
 pub use npc::{Npc, NpcType, NpcState};

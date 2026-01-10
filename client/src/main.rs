@@ -308,6 +308,8 @@ fn run_game_frame(
             // Equipment commands
             InputCommand::Equip { slot_index } => ClientMessage::Equip { slot_index: *slot_index },
             InputCommand::Unequip { slot_type } => ClientMessage::Unequip { slot_type: slot_type.clone() },
+            // Inventory commands
+            InputCommand::DropItem { slot_index, quantity } => ClientMessage::DropItem { slot_index: *slot_index, quantity: *quantity },
         };
         network.send(&msg);
     }

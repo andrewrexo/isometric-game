@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use crate::game::GameState;
+use crate::game::{GameState, ContextMenu};
 use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
 
@@ -22,6 +22,8 @@ pub enum InputCommand {
     // Equipment commands
     Equip { slot_index: u8 },
     Unequip { slot_type: String },
+    // Inventory commands
+    DropItem { slot_index: u8, quantity: u32 },
 }
 
 /// Cardinal directions for isometric movement (no diagonals)
@@ -84,6 +86,71 @@ impl InputHandler {
         // Toggle debug mode
         if is_key_pressed(KeyCode::F3) {
             // Debug toggle handled in main loop
+        }
+
+        // Handle context menu interactions first
+        if state.ui_state.context_menu.is_some() {
+            if let Some(ref element) = clicked_element {
+                if mouse_clicked {
+                    match element {
+                        UiElementId::ContextMenuOption(option_idx) => {
+                            // Get menu info before clearing it
+                            let menu = state.ui_state.context_menu.take().unwrap();
+
+                            if menu.is_equipment {
+                                // Equipment slot context menu - only unequip option
+                                if *option_idx == 0 {
+                                    commands.push(InputCommand::Unequip { slot_type: "body".to_string() });
+                                }
+                            } else {
+                                // Inventory slot context menu
+                                // Check if item is equippable to determine option indices
+                                let is_equippable = state.inventory.slots.get(menu.slot_index)
+                                    .and_then(|s| s.as_ref())
+                                    .map(|slot| {
+                                        let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                                        item_def.equipment.is_some()
+                                    })
+                                    .unwrap_or(false);
+
+                                if is_equippable {
+                                    // Options: Equip (0), Drop (1)
+                                    match option_idx {
+                                        0 => commands.push(InputCommand::Equip { slot_index: menu.slot_index as u8 }),
+                                        1 => {
+                                            if let Some(slot) = state.inventory.slots.get(menu.slot_index).and_then(|s| s.as_ref()) {
+                                                commands.push(InputCommand::DropItem { slot_index: menu.slot_index as u8, quantity: slot.quantity as u32 });
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                } else {
+                                    // Options: Drop (0) only
+                                    if *option_idx == 0 {
+                                        if let Some(slot) = state.inventory.slots.get(menu.slot_index).and_then(|s| s.as_ref()) {
+                                            commands.push(InputCommand::DropItem { slot_index: menu.slot_index as u8, quantity: slot.quantity as u32 });
+                                        }
+                                    }
+                                }
+                            }
+                            return commands;
+                        }
+                        _ => {
+                            // Clicked somewhere else, close menu
+                            state.ui_state.context_menu = None;
+                        }
+                    }
+                }
+            } else if mouse_clicked || mouse_right_clicked {
+                // Clicked outside any element, close menu
+                state.ui_state.context_menu = None;
+            }
+
+            // Escape closes context menu
+            if is_key_pressed(KeyCode::Escape) {
+                state.ui_state.context_menu = None;
+                return commands;
+            }
         }
 
         // Handle dialogue mode - intercept input when dialogue is open
@@ -362,23 +429,41 @@ impl InputHandler {
                     if mouse_clicked {
                         commands.push(InputCommand::UseItem { slot_index: *idx as u8 });
                     } else if mouse_right_clicked {
-                        // Right-click on quick slot to equip
-                        commands.push(InputCommand::Equip { slot_index: *idx as u8 });
+                        // Right-click on quick slot opens context menu (if item exists)
+                        if state.inventory.slots.get(*idx).and_then(|s| s.as_ref()).is_some() {
+                            state.ui_state.context_menu = Some(ContextMenu {
+                                slot_index: *idx,
+                                x: mx,
+                                y: my,
+                                is_equipment: false,
+                            });
+                        }
                     }
                     return commands;
                 }
                 UiElementId::InventorySlot(idx) => {
                     if mouse_right_clicked {
-                        // Right-click to equip item from inventory
-                        commands.push(InputCommand::Equip { slot_index: *idx as u8 });
+                        // Right-click opens context menu (if item exists)
+                        if state.inventory.slots.get(*idx).and_then(|s| s.as_ref()).is_some() {
+                            state.ui_state.context_menu = Some(ContextMenu {
+                                slot_index: *idx,
+                                x: mx,
+                                y: my,
+                                is_equipment: false,
+                            });
+                        }
                     }
-                    // Left-click doesn't do anything for inventory slots yet
                     return commands;
                 }
-                UiElementId::EquipmentSlot(slot_type) => {
-                    if mouse_right_clicked || mouse_clicked {
-                        // Click on equipment slot to unequip
-                        commands.push(InputCommand::Unequip { slot_type: slot_type.clone() });
+                UiElementId::EquipmentSlot(_slot_type) => {
+                    if mouse_right_clicked {
+                        // Right-click on equipment slot opens context menu
+                        state.ui_state.context_menu = Some(ContextMenu {
+                            slot_index: 0, // Not used for equipment
+                            x: mx,
+                            y: my,
+                            is_equipment: true,
+                        });
                     }
                     return commands;
                 }

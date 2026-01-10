@@ -21,6 +21,9 @@ pub enum UiElementId {
 
     // Quest Log
     QuestLogEntry(usize),
+
+    // Context Menu
+    ContextMenuOption(usize),
 }
 
 /// A single interactive UI element with its bounds
