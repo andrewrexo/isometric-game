@@ -446,6 +446,7 @@ async fn login_account(
                 player.exp_to_next_level,
                 player.gold,
                 &player.inventory_json,
+                player.equipped_body.as_deref(),
             ).await;
 
             info!("Player logged in: {} from {}", req.username, client_ip);
@@ -614,6 +615,7 @@ async fn matchmake_join_or_create(
             &data.inventory_json,
             &data.gender,
             &data.skin,
+            data.equipped_body.clone(),
         ).await;
     } else {
         // New player with defaults (shouldn't happen - auth creates player)
@@ -914,6 +916,7 @@ async fn handle_socket(
                 save_data.exp_to_next_level,
                 save_data.gold,
                 &save_data.inventory_json,
+                save_data.equipped_body.as_deref(),
             ).await {
                 error!("Failed to save player {} on disconnect: {}", username, e);
             } else {
@@ -998,6 +1001,12 @@ async fn handle_client_message(
         ClientMessage::Craft { recipe_id } => {
             room.handle_craft(player_id, &recipe_id).await;
         }
+        ClientMessage::Equip { slot_index } => {
+            room.handle_equip(player_id, slot_index).await;
+        }
+        ClientMessage::Unequip { slot_type } => {
+            room.handle_unequip(player_id, &slot_type).await;
+        }
         // Auth and Register are handled via HTTP endpoints, not WebSocket
         ClientMessage::Auth { .. } | ClientMessage::Register { .. } => {}
     }
@@ -1068,6 +1077,7 @@ async fn main() {
                             save_data.exp_to_next_level,
                             save_data.gold,
                             &save_data.inventory_json,
+                            save_data.equipped_body.as_deref(),
                         ).await {
                             warn!("Auto-save failed for player {}: {}", username, e);
                         } else {

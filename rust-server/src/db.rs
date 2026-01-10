@@ -24,6 +24,7 @@ pub struct PlayerData {
     pub inventory_json: String, // JSON serialized inventory
     pub gender: String,         // "male" or "female"
     pub skin: String,           // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
+    pub equipped_body: Option<String>, // Item ID of equipped body armor
 }
 
 // Available appearance options
@@ -82,6 +83,8 @@ impl Database {
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN gender TEXT DEFAULT 'male'")
             .execute(pool).await;
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN skin TEXT DEFAULT 'tan'")
+            .execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_body TEXT")
             .execute(pool).await;
 
         // Quest system tables
@@ -180,7 +183,7 @@ impl Database {
 
     pub async fn get_player_by_username(&self, username: &str) -> Result<Option<PlayerData>, sqlx::Error> {
         let row = sqlx::query(
-            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin FROM players WHERE username = ?",
+            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin, equipped_body FROM players WHERE username = ?",
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -201,6 +204,7 @@ impl Database {
             inventory_json: r.get("inventory_json"),
             gender: r.try_get("gender").unwrap_or_else(|_| "male".to_string()),
             skin: r.try_get("skin").unwrap_or_else(|_| "tan".to_string()),
+            equipped_body: r.try_get("equipped_body").ok(),
         }))
     }
 
@@ -216,11 +220,13 @@ impl Database {
         exp_to_next_level: i32,
         gold: i32,
         inventory_json: &str,
+        equipped_body: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"UPDATE players SET
                 x = ?, y = ?, hp = ?, max_hp = ?, level = ?, exp = ?,
                 exp_to_next_level = ?, gold = ?, inventory_json = ?,
+                equipped_body = ?,
                 last_login = CURRENT_TIMESTAMP
             WHERE username = ?"#,
         )
@@ -233,6 +239,7 @@ impl Database {
         .bind(exp_to_next_level)
         .bind(gold)
         .bind(inventory_json)
+        .bind(equipped_body)
         .bind(username)
         .execute(&self.pool)
         .await?;

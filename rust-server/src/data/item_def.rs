@@ -20,6 +20,44 @@ impl Default for ItemCategory {
 }
 
 // ============================================================================
+// Equipment Slots
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EquipmentSlot {
+    #[default]
+    None,
+    Body,
+    // Future slots: Head, Hands, Feet, Weapon, Offhand, etc.
+}
+
+impl EquipmentSlot {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EquipmentSlot::None => "none",
+            EquipmentSlot::Body => "body",
+        }
+    }
+}
+
+// ============================================================================
+// Equipment Stats
+// ============================================================================
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct EquipmentStats {
+    #[serde(default)]
+    pub slot_type: EquipmentSlot,
+    #[serde(default)]
+    pub level_required: i32,
+    #[serde(default)]
+    pub damage_bonus: i32,
+    #[serde(default)]
+    pub defense_bonus: i32,
+}
+
+// ============================================================================
 // Use Effects
 // ============================================================================
 
@@ -52,6 +90,8 @@ pub struct RawItemDefinition {
     #[serde(default = "default_true")]
     pub sellable: bool,
     pub use_effect: Option<UseEffect>,
+    /// Equipment-specific stats (only for equipment items)
+    pub equipment: Option<EquipmentStats>,
 }
 
 fn default_true() -> bool { true }
@@ -71,6 +111,8 @@ pub struct ItemDefinition {
     pub base_price: i32,
     pub sellable: bool,
     pub use_effect: Option<UseEffect>,
+    /// Equipment-specific stats (only for equipment items)
+    pub equipment: Option<EquipmentStats>,
 }
 
 impl ItemDefinition {
@@ -88,6 +130,7 @@ impl ItemDefinition {
             base_price: raw.base_price.unwrap_or(1),
             sellable: raw.sellable,
             use_effect: raw.use_effect.clone(),
+            equipment: raw.equipment.clone(),
         }
     }
 
@@ -99,5 +142,24 @@ impl ItemDefinition {
     /// Check if this is a consumable
     pub fn is_consumable(&self) -> bool {
         self.category == ItemCategory::Consumable
+    }
+
+    /// Check if this is equippable (has equipment stats with a valid slot)
+    pub fn is_equippable(&self) -> bool {
+        self.equipment.as_ref()
+            .map(|e| e.slot_type != EquipmentSlot::None)
+            .unwrap_or(false)
+    }
+
+    /// Check if this is body equipment
+    pub fn is_body_equipment(&self) -> bool {
+        self.equipment.as_ref()
+            .map(|e| e.slot_type == EquipmentSlot::Body)
+            .unwrap_or(false)
+    }
+
+    /// Get equipment slot type if equippable
+    pub fn equipment_slot(&self) -> Option<EquipmentSlot> {
+        self.equipment.as_ref().map(|e| e.slot_type)
     }
 }

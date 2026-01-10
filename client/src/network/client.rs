@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats};
 use crate::game::npc::{Npc, NpcType, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -339,9 +339,12 @@ impl NetworkClient {
                     // Appearance
                     let gender = extract_string(value, "gender").unwrap_or_else(|| "male".to_string());
                     let skin = extract_string(value, "skin").unwrap_or_else(|| "tan".to_string());
+                    // Equipment
+                    let equipped_body = extract_string(value, "equipped_body");
 
                     log::info!("Player joined: {} at ({}, {}) [{}/{}]", name, x, y, gender, skin);
-                    let player = Player::new(id.clone(), name, x, y, gender, skin);
+                    let mut player = Player::new(id.clone(), name, x, y, gender, skin);
+                    player.equipped_body = equipped_body;
                     state.players.insert(id, player);
                 }
             }
@@ -378,6 +381,7 @@ impl NetworkClient {
                             let exp = extract_i32(player_value, "exp");
                             let exp_to_next_level = extract_i32(player_value, "expToNextLevel");
                             let gold = extract_i32(player_value, "gold");
+                            let equipped_body = extract_string(player_value, "equipped_body");
 
                             if let Some(player) = state.players.get_mut(&id) {
                                 // Read velocity for client-side prediction
@@ -406,6 +410,8 @@ impl NetworkClient {
                                 if let Some(exp_to_next_level) = exp_to_next_level {
                                     player.exp_to_next_level = exp_to_next_level;
                                 }
+                                // Update equipment
+                                player.equipped_body = equipped_body.clone();
                             }
 
                             // Update inventory gold for local player
@@ -904,6 +910,17 @@ impl NetworkClient {
                             let max_stack = extract_i32(item_value, "max_stack").unwrap_or(99);
                             let description = extract_string(item_value, "description").unwrap_or_default();
 
+                            // Parse equipment stats if present
+                            let equipment = extract_string(item_value, "equipment_slot")
+                                .map(|slot_type| {
+                                    EquipmentStats {
+                                        slot_type,
+                                        level_required: extract_i32(item_value, "level_required").unwrap_or(1),
+                                        damage_bonus: extract_i32(item_value, "damage_bonus").unwrap_or(0),
+                                        defense_bonus: extract_i32(item_value, "defense_bonus").unwrap_or(0),
+                                    }
+                                });
+
                             items.push(ItemDefinition {
                                 id,
                                 display_name,
@@ -911,6 +928,7 @@ impl NetworkClient {
                                 category,
                                 max_stack,
                                 description,
+                                equipment,
                             });
                         }
                     }
@@ -997,6 +1015,39 @@ impl NetworkClient {
                         // Inventory update will come separately
                     } else {
                         log::warn!("Crafting failed: {} - {:?}", recipe_id, error);
+                        // TODO: Show error message in UI
+                    }
+                }
+            }
+
+            // ========== Equipment Messages ==========
+
+            "equipmentUpdate" => {
+                if let Some(value) = data {
+                    let player_id = extract_string(value, "player_id").unwrap_or_default();
+                    let equipped_body = extract_string(value, "equipped_body");
+
+                    if let Some(player) = state.players.get_mut(&player_id) {
+                        player.equipped_body = equipped_body.clone();
+                        log::info!("Player {} equipment updated: body={:?}", player_id, equipped_body);
+                    }
+                }
+            }
+
+            "equipResult" => {
+                if let Some(value) = data {
+                    let success = value.as_map()
+                        .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("success")))
+                        .and_then(|(_, v)| v.as_bool())
+                        .unwrap_or(false);
+                    let slot_type = extract_string(value, "slot_type").unwrap_or_default();
+                    let item_id = extract_string(value, "item_id");
+                    let error = extract_string(value, "error");
+
+                    if success {
+                        log::info!("Equipment {} success: {:?}", slot_type, item_id);
+                    } else {
+                        log::warn!("Equipment {} failed: {:?}", slot_type, error);
                         // TODO: Show error message in UI
                     }
                 }

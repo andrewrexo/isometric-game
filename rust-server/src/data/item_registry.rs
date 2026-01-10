@@ -89,16 +89,40 @@ impl ItemRegistry {
     /// Generate item definitions message for client sync
     pub fn to_client_definitions(&self) -> crate::protocol::ServerMessage {
         use crate::protocol::ClientItemDef;
+        use super::item_def::EquipmentSlot;
 
         let items: Vec<ClientItemDef> = self.items
             .values()
-            .map(|item| ClientItemDef {
-                id: item.id.clone(),
-                display_name: item.display_name.clone(),
-                sprite: item.sprite.clone(),
-                category: format!("{:?}", item.category).to_lowercase(),
-                max_stack: item.max_stack,
-                description: item.description.clone(),
+            .map(|item| {
+                // Extract equipment stats if present and has valid slot
+                let (equipment_slot, level_required, damage_bonus, defense_bonus) =
+                    if let Some(ref equip) = item.equipment {
+                        if equip.slot_type != EquipmentSlot::None {
+                            (
+                                Some(equip.slot_type.as_str().to_string()),
+                                Some(equip.level_required),
+                                Some(equip.damage_bonus),
+                                Some(equip.defense_bonus),
+                            )
+                        } else {
+                            (None, None, None, None)
+                        }
+                    } else {
+                        (None, None, None, None)
+                    };
+
+                ClientItemDef {
+                    id: item.id.clone(),
+                    display_name: item.display_name.clone(),
+                    sprite: item.sprite.clone(),
+                    category: format!("{:?}", item.category).to_lowercase(),
+                    max_stack: item.max_stack,
+                    description: item.description.clone(),
+                    equipment_slot,
+                    level_required,
+                    damage_bonus,
+                    defense_bonus,
+                }
             })
             .collect();
 

@@ -56,6 +56,14 @@ pub enum ClientMessage {
     /// Player requests to craft an item
     #[serde(rename = "craft")]
     Craft { recipe_id: String },
+
+    /// Equip item from inventory slot
+    #[serde(rename = "equip")]
+    Equip { slot_index: u8 },
+
+    /// Unequip item from equipment slot
+    #[serde(rename = "unequip")]
+    Unequip { slot_type: String },
 }
 
 // ============================================================================
@@ -227,6 +235,18 @@ pub enum ServerMessage {
     ShopOpen {
         npc_id: String,
     },
+    /// Broadcast equipment change to all players
+    EquipmentUpdate {
+        player_id: String,
+        equipped_body: Option<String>,
+    },
+    /// Result of equip/unequip action sent to the acting player
+    EquipResult {
+        success: bool,
+        slot_type: String,
+        item_id: Option<String>,
+        error: Option<String>,
+    },
 }
 
 /// Layer data for chunk transmission
@@ -255,6 +275,11 @@ pub struct ClientItemDef {
     pub category: String, // "consumable", "material", "equipment", "quest"
     pub max_stack: i32,
     pub description: String,
+    // Equipment-specific fields (None for non-equipment items)
+    pub equipment_slot: Option<String>,
+    pub level_required: Option<i32>,
+    pub damage_bonus: Option<i32>,
+    pub defense_bonus: Option<i32>,
 }
 
 /// A dialogue choice for branching dialogue
@@ -337,6 +362,8 @@ impl ServerMessage {
             ServerMessage::RecipeDefinitions { .. } => "recipeDefinitions",
             ServerMessage::CraftResult { .. } => "craftResult",
             ServerMessage::ShopOpen { .. } => "shopOpen",
+            ServerMessage::EquipmentUpdate { .. } => "equipmentUpdate",
+            ServerMessage::EquipResult { .. } => "equipResult",
         }
     }
 }
@@ -409,6 +436,13 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     pmap.push((Value::String("gold".into()), Value::Integer((p.gold as i64).into())));
                     pmap.push((Value::String("gender".into()), Value::String(p.gender.clone().into())));
                     pmap.push((Value::String("skin".into()), Value::String(p.skin.clone().into())));
+                    pmap.push((
+                        Value::String("equipped_body".into()),
+                        match &p.equipped_body {
+                            Some(item_id) => Value::String(item_id.clone().into()),
+                            None => Value::Nil,
+                        },
+                    ));
                     Value::Map(pmap)
                 })
                 .collect();
@@ -916,6 +950,38 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("npc_id".into()), Value::String(npc_id.clone().into())));
             Value::Map(map)
         }
+        ServerMessage::EquipmentUpdate { player_id, equipped_body } => {
+            let mut map = Vec::new();
+            map.push((Value::String("player_id".into()), Value::String(player_id.clone().into())));
+            map.push((
+                Value::String("equipped_body".into()),
+                match equipped_body {
+                    Some(item_id) => Value::String(item_id.clone().into()),
+                    None => Value::Nil,
+                },
+            ));
+            Value::Map(map)
+        }
+        ServerMessage::EquipResult { success, slot_type, item_id, error } => {
+            let mut map = Vec::new();
+            map.push((Value::String("success".into()), Value::Boolean(*success)));
+            map.push((Value::String("slot_type".into()), Value::String(slot_type.clone().into())));
+            map.push((
+                Value::String("item_id".into()),
+                match item_id {
+                    Some(id) => Value::String(id.clone().into()),
+                    None => Value::Nil,
+                },
+            ));
+            map.push((
+                Value::String("error".into()),
+                match error {
+                    Some(e) => Value::String(e.clone().into()),
+                    None => Value::Nil,
+                },
+            ));
+            Value::Map(map)
+        }
     };
 
     // Encode as [13, "msg_type", data] - matching Colyseus ROOM_DATA format
@@ -1029,6 +1095,17 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
         "craft" => {
             let recipe_id = extract_string(msg_data, "recipe_id").unwrap_or_default();
             Ok(ClientMessage::Craft { recipe_id })
+        }
+        "equip" => {
+            let slot_index = msg_data.as_map()
+                .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("slot_index")))
+                .and_then(|(_, v)| v.as_u64().map(|u| u as u8))
+                .unwrap_or(0);
+            Ok(ClientMessage::Equip { slot_index })
+        }
+        "unequip" => {
+            let slot_type = extract_string(msg_data, "slot_type").unwrap_or_default();
+            Ok(ClientMessage::Unequip { slot_type })
         }
         _ => Err(format!("Unknown message type: {}", msg_type)),
     }

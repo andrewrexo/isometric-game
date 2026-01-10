@@ -1,6 +1,15 @@
 use std::collections::HashMap;
 use macroquad::prelude::*;
 
+/// Equipment stats for equippable items
+#[derive(Debug, Clone)]
+pub struct EquipmentStats {
+    pub slot_type: String,
+    pub level_required: i32,
+    pub damage_bonus: i32,
+    pub defense_bonus: i32,
+}
+
 /// Item definition received from server
 #[derive(Debug, Clone)]
 pub struct ItemDefinition {
@@ -10,6 +19,8 @@ pub struct ItemDefinition {
     pub category: String,
     pub max_stack: i32,
     pub description: String,
+    /// Equipment stats (only for equippable items)
+    pub equipment: Option<EquipmentStats>,
 }
 
 impl ItemDefinition {
@@ -60,6 +71,7 @@ impl ItemRegistry {
             category: "material".to_string(),
             max_stack: 99,
             description: "Unknown item".to_string(),
+            equipment: None,
         })
     }
 

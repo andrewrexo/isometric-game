@@ -305,6 +305,9 @@ fn run_game_frame(
             },
             // Crafting command
             InputCommand::Craft { recipe_id } => ClientMessage::Craft { recipe_id: recipe_id.clone() },
+            // Equipment commands
+            InputCommand::Equip { slot_index } => ClientMessage::Equip { slot_index: *slot_index },
+            InputCommand::Unequip { slot_type } => ClientMessage::Unequip { slot_type: slot_type.clone() },
         };
         network.send(&msg);
     }

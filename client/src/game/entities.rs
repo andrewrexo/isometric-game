@@ -119,6 +119,9 @@ pub struct Player {
     pub gender: String, // "male" or "female"
     pub skin: String,   // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
 
+    // Equipment
+    pub equipped_body: Option<String>, // Item ID of equipped body armor
+
     // Animation
     pub animation: PlayerAnimation,
 }
@@ -149,6 +152,7 @@ impl Player {
             death_time: 0.0,
             gender,
             skin,
+            equipped_body: None,
             animation: PlayerAnimation::new(),
         }
     }

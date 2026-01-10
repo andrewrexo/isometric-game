@@ -51,6 +51,12 @@ pub enum ClientMessage {
 
     #[serde(rename = "craft")]
     Craft { recipe_id: String },
+
+    #[serde(rename = "equip")]
+    Equip { slot_index: u8 },
+
+    #[serde(rename = "unequip")]
+    Unequip { slot_type: String },
 }
 
 impl ClientMessage {
@@ -123,6 +129,14 @@ impl ClientMessage {
             ClientMessage::Craft { recipe_id } => {
                 data.insert("recipe_id".into(), Value::String(recipe_id.clone().into()));
                 "craft"
+            }
+            ClientMessage::Equip { slot_index } => {
+                data.insert("slot_index".into(), Value::Integer((*slot_index as i64).into()));
+                "equip"
+            }
+            ClientMessage::Unequip { slot_type } => {
+                data.insert("slot_type".into(), Value::String(slot_type.clone().into()));
+                "unequip"
             }
         };
 

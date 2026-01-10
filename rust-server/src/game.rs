@@ -48,6 +48,7 @@ pub struct PlayerSaveData {
     pub inventory_json: String,
     pub gender: String,
     pub skin: String,
+    pub equipped_body: Option<String>,
 }
 
 // ============================================================================
@@ -122,6 +123,8 @@ pub struct Player {
     // Character appearance
     pub gender: String, // "male" or "female"
     pub skin: String,   // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
+    // Equipment
+    pub equipped_body: Option<String>, // Item ID of equipped body armor
 }
 
 const PLAYER_RESPAWN_TIME_MS: u64 = 5000; // 5 seconds to respawn
@@ -158,7 +161,34 @@ impl Player {
             inventory: Inventory::new(),
             gender: gender.to_string(),
             skin: skin.to_string(),
+            equipped_body: None,
         }
+    }
+
+    /// Calculate total damage bonus from equipped items
+    pub fn damage_bonus(&self, item_registry: &ItemRegistry) -> i32 {
+        let mut bonus = 0;
+        if let Some(ref item_id) = self.equipped_body {
+            if let Some(def) = item_registry.get(item_id) {
+                if let Some(ref equip) = def.equipment {
+                    bonus += equip.damage_bonus;
+                }
+            }
+        }
+        bonus
+    }
+
+    /// Calculate total defense bonus from equipped items
+    pub fn defense_bonus(&self, item_registry: &ItemRegistry) -> i32 {
+        let mut bonus = 0;
+        if let Some(ref item_id) = self.equipped_body {
+            if let Some(def) = item_registry.get(item_id) {
+                if let Some(ref equip) = def.equipment {
+                    bonus += equip.defense_bonus;
+                }
+            }
+        }
+        bonus
     }
 
     /// Award EXP and handle level up. Returns true if leveled up.
@@ -226,6 +256,8 @@ pub struct PlayerUpdate {
     // Character appearance
     pub gender: String,
     pub skin: String,
+    // Equipment
+    pub equipped_body: Option<String>,
 }
 
 // ============================================================================
@@ -397,6 +429,7 @@ impl GameRoom {
         inventory_json: &str,
         gender: &str,
         skin: &str,
+        equipped_body: Option<String>,
     ) {
         let mut players = self.players.write().await;
         let mut player = Player::new(player_id, name, x, y, gender, skin);
@@ -408,6 +441,7 @@ impl GameRoom {
         player.exp = exp;
         player.exp_to_next_level = exp_to_next_level;
         player.inventory.gold = gold;
+        player.equipped_body = equipped_body;
 
         // Restore inventory from JSON - support both old (u8) and new (String) formats
         if let Ok(slots) = serde_json::from_str::<Vec<(usize, String, i32)>>(inventory_json) {
@@ -482,6 +516,7 @@ impl GameRoom {
                 inventory_json,
                 gender: p.gender.clone(),
                 skin: p.skin.clone(),
+                equipped_body: p.equipped_body.clone(),
             }
         })
     }
@@ -602,23 +637,110 @@ impl GameRoom {
     }
 
     pub async fn handle_chat(&self, player_id: &str, text: &str) {
+        let sanitized = text.trim().chars().take(200).collect::<String>();
+        if sanitized.is_empty() {
+            return;
+        }
+
+        // Check for commands (messages starting with /)
+        if sanitized.starts_with('/') {
+            self.handle_chat_command(player_id, &sanitized).await;
+            return;
+        }
+
+        // Regular chat message
         let players = self.players.read().await;
         if let Some(player) = players.get(player_id) {
-            let sanitized = text.trim().chars().take(200).collect::<String>();
-            if !sanitized.is_empty() {
-                let msg = ServerMessage::ChatMessage {
-                    sender_id: player_id.to_string(),
-                    sender_name: player.name.clone(),
-                    text: sanitized,
-                    timestamp: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64,
+            let msg = ServerMessage::ChatMessage {
+                sender_id: player_id.to_string(),
+                sender_name: player.name.clone(),
+                text: sanitized,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+            };
+            drop(players); // Release lock before broadcast
+            self.broadcast(msg).await;
+        }
+    }
+
+    /// Handle chat commands (messages starting with /)
+    async fn handle_chat_command(&self, player_id: &str, text: &str) {
+        let parts: Vec<&str> = text.split_whitespace().collect();
+        let command = parts.first().map(|s| s.to_lowercase()).unwrap_or_default();
+
+        match command.as_str() {
+            "/give" => {
+                // /give item_id [quantity]
+                if parts.len() < 2 {
+                    self.send_system_message(player_id, "Usage: /give <item_id> [quantity]").await;
+                    return;
+                }
+
+                let item_id = parts[1];
+                let quantity = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(1);
+
+                // Validate item exists
+                if self.item_registry.get(item_id).is_none() {
+                    self.send_system_message(player_id, &format!("Unknown item: {}", item_id)).await;
+                    return;
+                }
+
+                // Add item to player's inventory
+                // add_item returns the quantity that DIDN'T fit (0 = all added successfully)
+                let (leftover, inventory_update, gold) = {
+                    let mut players = self.players.write().await;
+                    if let Some(player) = players.get_mut(player_id) {
+                        let leftover = player.inventory.add_item(item_id, quantity, &self.item_registry);
+                        (leftover, player.inventory.to_update(), player.inventory.gold)
+                    } else {
+                        (quantity, vec![], 0)
+                    }
                 };
-                drop(players); // Release lock before broadcast
-                self.broadcast(msg).await;
+
+                let added = quantity - leftover;
+                if added > 0 {
+                    tracing::info!("Player {} spawned {}x {}", player_id, added, item_id);
+                    self.send_system_message(player_id, &format!("Gave {}x {}", added, item_id)).await;
+
+                    // Send inventory update
+                    self.send_to_player(player_id, ServerMessage::InventoryUpdate {
+                        player_id: player_id.to_string(),
+                        slots: inventory_update,
+                        gold,
+                    }).await;
+                } else {
+                    self.send_system_message(player_id, "Inventory full").await;
+                }
+            }
+            "/help" => {
+                self.send_system_message(player_id, "Commands: /give <item_id> [qty], /items, /help").await;
+            }
+            "/items" => {
+                // List available items
+                let items: Vec<&String> = self.item_registry.ids().collect();
+                let list = items.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                self.send_system_message(player_id, &format!("Items: {}", list)).await;
+            }
+            _ => {
+                self.send_system_message(player_id, &format!("Unknown command: {}. Try /help", command)).await;
             }
         }
+    }
+
+    /// Send a system message to a specific player
+    async fn send_system_message(&self, player_id: &str, text: &str) {
+        let msg = ServerMessage::ChatMessage {
+            sender_id: "system".to_string(),
+            sender_name: "[System]".to_string(),
+            text: text.to_string(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        };
+        self.send_to_player(player_id, msg).await;
     }
 
     pub async fn handle_attack(&self, player_id: &str) {
@@ -627,8 +749,8 @@ impl GameRoom {
             .unwrap()
             .as_millis() as u64;
 
-        // Get attacker info
-        let (attacker_name, attacker_x, attacker_y, attacker_dir, last_attack) = {
+        // Get attacker info including damage bonus from equipment
+        let (attacker_name, attacker_x, attacker_y, attacker_dir, last_attack, damage_bonus) = {
             let players = self.players.read().await;
             let player = match players.get(player_id) {
                 Some(p) => p,
@@ -643,8 +765,12 @@ impl GameRoom {
                 return;
             }
 
-            (player.name.clone(), player.x, player.y, player.direction, player.last_attack_time)
+            let dmg_bonus = player.damage_bonus(&self.item_registry);
+            (player.name.clone(), player.x, player.y, player.direction, player.last_attack_time, dmg_bonus)
         };
+
+        // Calculate base damage with equipment bonus
+        let base_attack_damage = BASE_DAMAGE + damage_bonus;
 
         // Check cooldown
         if current_time - last_attack < ATTACK_COOLDOWN_MS {
@@ -713,36 +839,41 @@ impl GameRoom {
         }
 
         // Apply damage to target
-        let (target_hp, target_name, target_died) = if is_npc {
+        let (target_hp, target_name, target_died, actual_damage) = if is_npc {
+            // NPCs don't have defense from equipment
             let mut npcs = self.npcs.write().await;
             if let Some(npc) = npcs.get_mut(&target_id) {
-                let died = npc.take_damage(BASE_DAMAGE, current_time);
+                let died = npc.take_damage(base_attack_damage, current_time);
                 let name = npc.name();
                 tracing::info!(
                     "{} deals {} damage to {} (HP: {})",
-                    attacker_name, BASE_DAMAGE, name, npc.hp
+                    attacker_name, base_attack_damage, name, npc.hp
                 );
-                (npc.hp, name, died)
+                (npc.hp, name, died, base_attack_damage)
             } else {
                 return;
             }
         } else {
+            // Players can have defense from equipment
             let mut players = self.players.write().await;
             if let Some(target) = players.get_mut(&target_id) {
                 if target.is_dead {
                     return; // Already dead
                 }
-                target.hp = (target.hp - BASE_DAMAGE).max(0);
+                // Calculate actual damage after defense (minimum 1 damage)
+                let defense = target.defense_bonus(&self.item_registry);
+                let actual_dmg = (base_attack_damage - defense).max(1);
+                target.hp = (target.hp - actual_dmg).max(0);
                 let name = target.name.clone();
                 let died = target.hp <= 0;
                 if died {
                     target.die(current_time);
                 }
                 tracing::info!(
-                    "{} deals {} damage to {} (HP: {})",
-                    attacker_name, BASE_DAMAGE, name, target.hp
+                    "{} deals {} damage to {} (HP: {}) [base: {}, defense: {}]",
+                    attacker_name, actual_dmg, name, target.hp, base_attack_damage, defense
                 );
-                (target.hp, name, died)
+                (target.hp, name, died, actual_dmg)
             } else {
                 return;
             }
@@ -756,7 +887,7 @@ impl GameRoom {
         let damage_msg = ServerMessage::DamageEvent {
             source_id: player_id.to_string(),
             target_id: target_id.clone(),
-            damage: BASE_DAMAGE,
+            damage: actual_damage,
             target_hp,
             target_x,
             target_y,
@@ -1695,6 +1826,217 @@ impl GameRoom {
         .await;
     }
 
+    /// Handle equipping an item from inventory
+    pub async fn handle_equip(&self, player_id: &str, slot_index: u8) {
+        let slot_idx = slot_index as usize;
+
+        // Get item info from inventory slot
+        let item_info = {
+            let players = self.players.read().await;
+            let player = match players.get(player_id) {
+                Some(p) if p.active && !p.is_dead => p,
+                _ => return,
+            };
+
+            match player.inventory.slots.get(slot_idx) {
+                Some(Some(slot)) => Some((slot.item_id.clone(), player.level, player.equipped_body.clone())),
+                _ => None,
+            }
+        };
+
+        let (item_id, player_level, currently_equipped) = match item_info {
+            Some(info) => info,
+            None => {
+                self.send_to_player(player_id, ServerMessage::EquipResult {
+                    success: false,
+                    slot_type: "body".to_string(),
+                    item_id: None,
+                    error: Some("No item in that slot".to_string()),
+                }).await;
+                return;
+            }
+        };
+
+        // Check if item is body equipment
+        let item_def = match self.item_registry.get(&item_id) {
+            Some(def) => def,
+            None => {
+                self.send_to_player(player_id, ServerMessage::EquipResult {
+                    success: false,
+                    slot_type: "body".to_string(),
+                    item_id: None,
+                    error: Some("Item not found".to_string()),
+                }).await;
+                return;
+            }
+        };
+
+        let equip_stats = match &item_def.equipment {
+            Some(stats) if item_def.is_body_equipment() => stats,
+            _ => {
+                self.send_to_player(player_id, ServerMessage::EquipResult {
+                    success: false,
+                    slot_type: "body".to_string(),
+                    item_id: None,
+                    error: Some("Item cannot be equipped".to_string()),
+                }).await;
+                return;
+            }
+        };
+
+        // Check level requirement
+        if player_level < equip_stats.level_required {
+            self.send_to_player(player_id, ServerMessage::EquipResult {
+                success: false,
+                slot_type: "body".to_string(),
+                item_id: None,
+                error: Some(format!("Requires level {}", equip_stats.level_required)),
+            }).await;
+            return;
+        }
+
+        // Perform the equip operation
+        let (inventory_update, gold) = {
+            let mut players = self.players.write().await;
+            let player = match players.get_mut(player_id) {
+                Some(p) => p,
+                None => return,
+            };
+
+            // If something is equipped, we need to swap it to the inventory slot
+            if let Some(ref old_item_id) = currently_equipped {
+                // Remove item from inventory slot
+                player.inventory.slots[slot_idx] = None;
+                // Put old equipped item in that slot
+                player.inventory.slots[slot_idx] = Some(item::InventorySlot::new(old_item_id.clone(), 1));
+            } else {
+                // Just remove item from inventory
+                player.inventory.slots[slot_idx] = None;
+            }
+
+            // Equip the new item
+            player.equipped_body = Some(item_id.clone());
+
+            (player.inventory.to_update(), player.inventory.gold)
+        };
+
+        tracing::info!("Player {} equipped {}", player_id, item_id);
+
+        // Send success result
+        self.send_to_player(player_id, ServerMessage::EquipResult {
+            success: true,
+            slot_type: "body".to_string(),
+            item_id: Some(item_id.clone()),
+            error: None,
+        }).await;
+
+        // Send inventory update
+        self.send_to_player(player_id, ServerMessage::InventoryUpdate {
+            player_id: player_id.to_string(),
+            slots: inventory_update,
+            gold,
+        }).await;
+
+        // Broadcast equipment update to all players
+        self.broadcast(ServerMessage::EquipmentUpdate {
+            player_id: player_id.to_string(),
+            equipped_body: Some(item_id),
+        }).await;
+    }
+
+    /// Handle unequipping an item
+    pub async fn handle_unequip(&self, player_id: &str, slot_type: &str) {
+        // Only body slot for now
+        if slot_type != "body" {
+            self.send_to_player(player_id, ServerMessage::EquipResult {
+                success: false,
+                slot_type: slot_type.to_string(),
+                item_id: None,
+                error: Some("Unknown equipment slot".to_string()),
+            }).await;
+            return;
+        }
+
+        // Check if something is equipped and if inventory has space
+        let equipped_item = {
+            let players = self.players.read().await;
+            let player = match players.get(player_id) {
+                Some(p) if p.active && !p.is_dead => p,
+                _ => return,
+            };
+
+            match &player.equipped_body {
+                Some(item_id) => {
+                    // Check if inventory has space
+                    if !player.inventory.has_space_for(item_id, 1, &self.item_registry) {
+                        self.send_to_player(player_id, ServerMessage::EquipResult {
+                            success: false,
+                            slot_type: "body".to_string(),
+                            item_id: None,
+                            error: Some("Inventory full".to_string()),
+                        }).await;
+                        return;
+                    }
+                    Some(item_id.clone())
+                }
+                None => {
+                    self.send_to_player(player_id, ServerMessage::EquipResult {
+                        success: false,
+                        slot_type: "body".to_string(),
+                        item_id: None,
+                        error: Some("Nothing equipped".to_string()),
+                    }).await;
+                    return;
+                }
+            }
+        };
+
+        let item_id = match equipped_item {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Perform the unequip operation
+        let (inventory_update, gold) = {
+            let mut players = self.players.write().await;
+            let player = match players.get_mut(player_id) {
+                Some(p) => p,
+                None => return,
+            };
+
+            // Clear equipped item
+            player.equipped_body = None;
+
+            // Add to inventory
+            player.inventory.add_item(&item_id, 1, &self.item_registry);
+
+            (player.inventory.to_update(), player.inventory.gold)
+        };
+
+        tracing::info!("Player {} unequipped {}", player_id, item_id);
+
+        // Send success result
+        self.send_to_player(player_id, ServerMessage::EquipResult {
+            success: true,
+            slot_type: "body".to_string(),
+            item_id: Some(item_id),
+            error: None,
+        }).await;
+
+        // Send inventory update
+        self.send_to_player(player_id, ServerMessage::InventoryUpdate {
+            player_id: player_id.to_string(),
+            slots: inventory_update,
+            gold,
+        }).await;
+
+        // Broadcast equipment update to all players
+        self.broadcast(ServerMessage::EquipmentUpdate {
+            player_id: player_id.to_string(),
+            equipped_body: None,
+        }).await;
+    }
+
     pub async fn tick(&self) {
         let delta_time = 1.0 / TICK_RATE;
         let current_time = std::time::SystemTime::now()
@@ -1787,6 +2129,7 @@ impl GameRoom {
                     gold: player.inventory.gold,
                     gender: player.gender.clone(),
                     skin: player.skin.clone(),
+                    equipped_body: player.equipped_body.clone(),
                 });
             }
         }

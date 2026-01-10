@@ -24,6 +24,10 @@ pub struct Renderer {
     tileset: Option<Texture2D>,
     /// Player sprite sheets by appearance key (e.g., "male_tan")
     player_sprites: HashMap<String, Texture2D>,
+    /// Equipment sprite sheets by item ID (e.g., "peasant_suit")
+    equipment_sprites: HashMap<String, Texture2D>,
+    /// Item inventory sprites by item ID (sprite sheets with icon on left half)
+    item_sprites: HashMap<String, Texture2D>,
     /// Multi-size pixel font for sharp text rendering at various sizes
     font: BitmapFont,
 }
@@ -63,6 +67,47 @@ impl Renderer {
         }
         log::info!("Loaded {} player sprite variants", player_sprites.len());
 
+        // Load equipment sprites from assets/sprites/equipment/
+        let mut equipment_sprites = HashMap::new();
+        let equipment_items = ["peasant_suit", "leather_armor"]; // Known equipment items
+        for item_id in equipment_items {
+            let path = format!("assets/sprites/equipment/{}.png", item_id);
+            match load_texture(&path).await {
+                Ok(tex) => {
+                    tex.set_filter(FilterMode::Nearest);
+                    log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
+                    equipment_sprites.insert(item_id.to_string(), tex);
+                }
+                Err(e) => {
+                    log::warn!("Failed to load equipment sprite {}: {}", path, e);
+                }
+            }
+        }
+        log::info!("Loaded {} equipment sprite variants", equipment_sprites.len());
+
+        // Load item inventory sprites from assets/sprites/inventory/
+        let mut item_sprites = HashMap::new();
+        let inventory_items = [
+            "peasant_suit", "peasant_boots", "peasant_dress",
+            "goblin_spear", "archery_armor", "commander_armor", "crusader_armor",
+            "health_potion", "mana_potion", "leather_armor",
+            "goblin_ear", "slime_core", "slime_jelly", "wolf_pelt", "wolf_fang",
+        ];
+        for item_id in inventory_items {
+            let path = format!("assets/sprites/inventory/{}.png", item_id);
+            match load_texture(&path).await {
+                Ok(tex) => {
+                    tex.set_filter(FilterMode::Nearest);
+                    log::info!("Loaded item sprite: {} ({}x{})", item_id, tex.width(), tex.height());
+                    item_sprites.insert(item_id.to_string(), tex);
+                }
+                Err(_) => {
+                    // Not all items have sprites yet, that's ok
+                }
+            }
+        }
+        log::info!("Loaded {} item sprite variants", item_sprites.len());
+
         // Load monogram pixel font at multiple sizes for crisp rendering
         let font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
         if font.is_loaded() {
@@ -76,6 +121,8 @@ impl Renderer {
             local_player_color: Color::from_rgba(100, 255, 150, 255),
             tileset,
             player_sprites,
+            equipment_sprites,
+            item_sprites,
             font,
         }
     }
@@ -609,6 +656,27 @@ impl Renderer {
                     ..Default::default()
                 },
             );
+
+            // Draw equipment overlay (body armor)
+            if let Some(ref body_item_id) = player.equipped_body {
+                if let Some(equip_sprite) = self.equipment_sprites.get(body_item_id) {
+                    draw_texture_ex(
+                        equip_sprite,
+                        draw_x,
+                        draw_y,
+                        tint, // Same tint as player
+                        DrawTextureParams {
+                            source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                            dest_size: Some(Vec2::new(SPRITE_WIDTH, SPRITE_HEIGHT)),
+                            flip_x: coords.flip_h,
+                            ..Default::default()
+                        },
+                    );
+                } else {
+                    // Equipment sprite not found - log once per session would be ideal
+                    // but for debugging, this helps identify the issue
+                }
+            }
         } else {
             // Fallback: colored circle
             let base_color = if is_local {
@@ -972,7 +1040,7 @@ impl Renderer {
     }
 
     fn render_inventory(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let inv_width = 240.0;
+        let inv_width = 320.0; // Widened to accommodate equipment panel
         let inv_height = 320.0;
         let inv_x = (screen_width() - inv_width) / 2.0;
         let inv_y = (screen_height() - inv_height) / 2.0;
@@ -987,7 +1055,7 @@ impl Renderer {
         self.draw_text_sharp("Inventory", inv_x + 10.0, inv_y + 25.0, 16.0, WHITE);
         self.draw_text_sharp(&format!("Gold: {}", state.inventory.gold), inv_x + inv_width - 100.0, inv_y + 25.0, 16.0, GOLD);
 
-        // Slots
+        // Inventory Slots (left side)
         let grid_x = inv_x + 20.0;
         let grid_y = inv_y + 40.0;
 
@@ -1018,9 +1086,7 @@ impl Renderer {
 
             // Draw item if present
             if let Some(slot) = &state.inventory.slots[i] {
-                let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
-                let color = item_def.category_color();
-                draw_rectangle(x + 4.0, y + 4.0, slot_size - 12.0, slot_size - 12.0, color);
+                self.draw_item_icon(&slot.item_id, x + 2.0, y + 2.0, slot_size - 8.0, state);
 
                 // Quantity
                 if slot.quantity > 1 {
@@ -1034,8 +1100,54 @@ impl Renderer {
             }
         }
 
+        // Equipment Section (right side)
+        let equip_x = inv_x + 230.0;
+        let equip_y = inv_y + 40.0;
+        let equip_slot_size = 50.0;
+
+        // Equipment section label
+        self.draw_text_sharp("Equipment", equip_x, equip_y, 16.0, WHITE);
+
+        // Body equipment slot
+        let body_slot_x = equip_x;
+        let body_slot_y = equip_y + 20.0;
+
+        // Register equipment slot bounds
+        let body_bounds = Rect::new(body_slot_x, body_slot_y, equip_slot_size, equip_slot_size);
+        layout.add(UiElementId::EquipmentSlot("body".to_string()), body_bounds);
+
+        // Check if body slot is hovered
+        let body_hovered = matches!(hovered, Some(UiElementId::EquipmentSlot(slot)) if slot == "body");
+
+        // Body slot background
+        let body_bg_color = if body_hovered {
+            Color::from_rgba(70, 70, 100, 255)
+        } else {
+            Color::from_rgba(40, 40, 60, 255)
+        };
+        draw_rectangle(body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, body_bg_color);
+
+        // Body slot border
+        let body_border_color = if body_hovered { WHITE } else { Color::from_rgba(80, 80, 120, 255) };
+        draw_rectangle_lines(body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, 2.0, body_border_color);
+
+        // Draw equipped body item or placeholder
+        if let Some(local_player) = state.get_local_player() {
+            if let Some(ref body_item_id) = local_player.equipped_body {
+                // Draw equipped item sprite
+                self.draw_item_icon(body_item_id, body_slot_x + 5.0, body_slot_y + 5.0, equip_slot_size - 10.0, state);
+            } else {
+                // Empty slot indicator
+                self.draw_text_sharp("Body", body_slot_x + 8.0, body_slot_y + 32.0, 16.0, DARKGRAY);
+            }
+        }
+
+        // Slot label below
+        self.draw_text_sharp("Body", body_slot_x + 10.0, body_slot_y + equip_slot_size + 12.0, 16.0, GRAY);
+
         // Close hint
         self.draw_text_sharp("Press I to close", inv_x + 10.0, inv_y + inv_height - 15.0, 16.0, GRAY);
+        self.draw_text_sharp("Right-click to equip", inv_x + 10.0, inv_y + inv_height - 30.0, 16.0, DARKGRAY);
     }
 
     fn render_quest_log(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
@@ -1151,9 +1263,7 @@ impl Renderer {
 
             // Draw item if present
             if let Some(slot) = &state.inventory.slots[i] {
-                let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
-                let color = item_def.category_color();
-                draw_rectangle(x + 4.0, y + 4.0, slot_size - 8.0, slot_size - 8.0, color);
+                self.draw_item_icon(&slot.item_id, x + 4.0, y + 4.0, slot_size - 8.0, state);
 
                 // Quantity
                 if slot.quantity > 1 {
@@ -1163,6 +1273,40 @@ impl Renderer {
 
             // Slot number
             self.draw_text_sharp(&(i + 1).to_string(), x + slot_size - 10.0, y + 12.0, 16.0, WHITE);
+        }
+    }
+
+    /// Draw an item icon using sprite or fallback color
+    /// Uses the left half of the sprite sheet (the smaller inventory icon)
+    fn draw_item_icon(&self, item_id: &str, x: f32, y: f32, size: f32, state: &GameState) {
+        // Try to get the item sprite
+        if let Some(texture) = self.item_sprites.get(item_id) {
+            // The sprite sheet has the icon on the left half
+            // Use the left half of the texture at its natural size, centered in the slot
+            let tex_width = texture.width();
+            let tex_height = texture.height();
+            let icon_width = tex_width / 2.0; // Left half is the small icon
+
+            // Center the icon in the slot
+            let offset_x = (size - icon_width) / 2.0;
+            let offset_y = (size - tex_height) / 2.0;
+
+            draw_texture_ex(
+                texture,
+                x + offset_x,
+                y + offset_y,
+                WHITE,
+                DrawTextureParams {
+                    source: Some(Rect::new(0.0, 0.0, icon_width, tex_height)),
+                    // No dest_size - draw at natural size
+                    ..Default::default()
+                },
+            );
+        } else {
+            // Fallback: colored rectangle based on category
+            let item_def = state.item_registry.get_or_placeholder(item_id);
+            let color = item_def.category_color();
+            draw_rectangle(x, y, size, size, color);
         }
     }
 

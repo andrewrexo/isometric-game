@@ -16,6 +16,9 @@ pub enum UiElementId {
     InventorySlot(usize),
     QuickSlot(usize),
 
+    // Equipment Slots
+    EquipmentSlot(String), // e.g., "body"
+
     // Quest Log
     QuestLogEntry(usize),
 }

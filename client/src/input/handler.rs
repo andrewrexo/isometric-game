@@ -19,6 +19,9 @@ pub enum InputCommand {
     CloseDialogue,
     // Crafting commands
     Craft { recipe_id: String },
+    // Equipment commands
+    Equip { slot_index: u8 },
+    Unequip { slot_type: String },
 }
 
 /// Cardinal directions for isometric movement (no diagonals)
@@ -71,7 +74,8 @@ impl InputHandler {
         // For click detection, do a fresh hit-test at the moment of click
         // This ensures we detect what's actually under the mouse when clicked
         let mouse_clicked = is_mouse_button_pressed(MouseButton::Left);
-        let clicked_element = if mouse_clicked {
+        let mouse_right_clicked = is_mouse_button_pressed(MouseButton::Right);
+        let clicked_element = if mouse_clicked || mouse_right_clicked {
             layout.hit_test(mx, my).cloned()
         } else {
             None
@@ -351,17 +355,31 @@ impl InputHandler {
             }
         }
 
-        // Handle mouse clicks on quick slots (always visible)
+        // Handle mouse clicks on quick slots and inventory (always visible when open)
         if let Some(ref element) = clicked_element {
             match element {
                 UiElementId::QuickSlot(idx) => {
-                    commands.push(InputCommand::UseItem { slot_index: *idx as u8 });
-                    // Don't fall through to target selection
+                    if mouse_clicked {
+                        commands.push(InputCommand::UseItem { slot_index: *idx as u8 });
+                    } else if mouse_right_clicked {
+                        // Right-click on quick slot to equip
+                        commands.push(InputCommand::Equip { slot_index: *idx as u8 });
+                    }
                     return commands;
                 }
-                UiElementId::InventorySlot(_) => {
-                    // Clicking inventory slots doesn't do anything yet
-                    // but should prevent world clicks
+                UiElementId::InventorySlot(idx) => {
+                    if mouse_right_clicked {
+                        // Right-click to equip item from inventory
+                        commands.push(InputCommand::Equip { slot_index: *idx as u8 });
+                    }
+                    // Left-click doesn't do anything for inventory slots yet
+                    return commands;
+                }
+                UiElementId::EquipmentSlot(slot_type) => {
+                    if mouse_right_clicked || mouse_clicked {
+                        // Click on equipment slot to unequip
+                        commands.push(InputCommand::Unequip { slot_type: slot_type.clone() });
+                    }
                     return commands;
                 }
                 _ => {}
