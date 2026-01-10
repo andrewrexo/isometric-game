@@ -714,8 +714,46 @@ impl GameRoom {
                     self.send_system_message(player_id, "Inventory full").await;
                 }
             }
+            "/setlevel" => {
+                // /setlevel <level>
+                if parts.len() < 2 {
+                    self.send_system_message(player_id, "Usage: /setlevel <level>").await;
+                    return;
+                }
+
+                let level: i32 = match parts[1].parse() {
+                    Ok(l) if l >= 1 && l <= 100 => l,
+                    _ => {
+                        self.send_system_message(player_id, "Level must be between 1 and 100").await;
+                        return;
+                    }
+                };
+
+                // Update player level and get new max_hp
+                let new_max_hp = {
+                    let mut players = self.players.write().await;
+                    if let Some(player) = players.get_mut(player_id) {
+                        player.level = level;
+                        player.max_hp = 100 + (level - 1) * 10; // Same formula as level_up()
+                        player.hp = player.max_hp; // Heal to full
+                        tracing::info!("Player {} set level to {}", player_id, level);
+                        player.max_hp
+                    } else {
+                        return;
+                    }
+                };
+
+                self.send_system_message(player_id, &format!("Level set to {}", level)).await;
+
+                // Broadcast the level change to all players
+                self.broadcast(ServerMessage::LevelUp {
+                    player_id: player_id.to_string(),
+                    new_level: level,
+                    new_max_hp,
+                }).await;
+            }
             "/help" => {
-                self.send_system_message(player_id, "Commands: /give <item_id> [qty], /items, /help").await;
+                self.send_system_message(player_id, "Commands: /give <item_id> [qty], /setlevel <lvl>, /items, /help").await;
             }
             "/items" => {
                 // List available items

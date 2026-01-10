@@ -67,42 +67,51 @@ impl Renderer {
         }
         log::info!("Loaded {} player sprite variants", player_sprites.len());
 
-        // Load equipment sprites from assets/sprites/equipment/
+        // Load equipment sprites from assets/sprites/equipment/ (scan directory)
         let mut equipment_sprites = HashMap::new();
-        let equipment_items = ["peasant_suit", "leather_armor"]; // Known equipment items
-        for item_id in equipment_items {
-            let path = format!("assets/sprites/equipment/{}.png", item_id);
-            match load_texture(&path).await {
-                Ok(tex) => {
-                    tex.set_filter(FilterMode::Nearest);
-                    log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
-                    equipment_sprites.insert(item_id.to_string(), tex);
-                }
-                Err(e) => {
-                    log::warn!("Failed to load equipment sprite {}: {}", path, e);
+        if let Ok(entries) = std::fs::read_dir("assets/sprites/equipment") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "png") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        let item_id = stem.to_string();
+                        let path_str = path.to_string_lossy().to_string();
+                        match load_texture(&path_str).await {
+                            Ok(tex) => {
+                                tex.set_filter(FilterMode::Nearest);
+                                log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
+                                equipment_sprites.insert(item_id, tex);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load equipment sprite {}: {}", path_str, e);
+                            }
+                        }
+                    }
                 }
             }
         }
         log::info!("Loaded {} equipment sprite variants", equipment_sprites.len());
 
-        // Load item inventory sprites from assets/sprites/inventory/
+        // Load item inventory sprites from assets/sprites/inventory/ (scan directory)
         let mut item_sprites = HashMap::new();
-        let inventory_items = [
-            "peasant_suit", "peasant_boots", "peasant_dress",
-            "goblin_spear", "archery_armor", "commander_armor", "crusader_armor",
-            "health_potion", "mana_potion", "leather_armor",
-            "goblin_ear", "slime_core", "slime_jelly", "wolf_pelt", "wolf_fang",
-        ];
-        for item_id in inventory_items {
-            let path = format!("assets/sprites/inventory/{}.png", item_id);
-            match load_texture(&path).await {
-                Ok(tex) => {
-                    tex.set_filter(FilterMode::Nearest);
-                    log::info!("Loaded item sprite: {} ({}x{})", item_id, tex.width(), tex.height());
-                    item_sprites.insert(item_id.to_string(), tex);
-                }
-                Err(_) => {
-                    // Not all items have sprites yet, that's ok
+        if let Ok(entries) = std::fs::read_dir("assets/sprites/inventory") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "png") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        let item_id = stem.to_string();
+                        let path_str = path.to_string_lossy().to_string();
+                        match load_texture(&path_str).await {
+                            Ok(tex) => {
+                                tex.set_filter(FilterMode::Nearest);
+                                log::info!("Loaded item sprite: {} ({}x{})", item_id, tex.width(), tex.height());
+                                item_sprites.insert(item_id, tex);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load item sprite {}: {}", path_str, e);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1040,12 +1049,12 @@ impl Renderer {
     }
 
     fn render_inventory(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let inv_width = 320.0; // Widened to accommodate equipment panel
-        let inv_height = 320.0;
+        let slot_size = 70.0; // Sized to fit ~64px item icons
+        let slots_per_row = 5;
+        let inv_width = 500.0; // Widened to accommodate larger slots + equipment panel
+        let inv_height = 380.0;
         let inv_x = (screen_width() - inv_width) / 2.0;
         let inv_y = (screen_height() - inv_height) / 2.0;
-        let slot_size = 40.0;
-        let slots_per_row = 5;
 
         // Background
         draw_rectangle(inv_x, inv_y, inv_width, inv_height, Color::from_rgba(30, 30, 40, 220));
@@ -1086,7 +1095,7 @@ impl Renderer {
 
             // Draw item if present
             if let Some(slot) = &state.inventory.slots[i] {
-                self.draw_item_icon(&slot.item_id, x + 2.0, y + 2.0, slot_size - 8.0, state);
+                self.draw_item_icon(&slot.item_id, x, y, slot_size - 4.0, slot_size - 4.0, state);
 
                 // Quantity
                 if slot.quantity > 1 {
@@ -1101,9 +1110,9 @@ impl Renderer {
         }
 
         // Equipment Section (right side)
-        let equip_x = inv_x + 230.0;
+        let equip_x = inv_x + 380.0; // Adjusted for larger inventory grid
         let equip_y = inv_y + 40.0;
-        let equip_slot_size = 50.0;
+        let equip_slot_size = 70.0; // Match inventory slot size
 
         // Equipment section label
         self.draw_text_sharp("Equipment", equip_x, equip_y, 16.0, WHITE);
@@ -1135,7 +1144,7 @@ impl Renderer {
         if let Some(local_player) = state.get_local_player() {
             if let Some(ref body_item_id) = local_player.equipped_body {
                 // Draw equipped item sprite
-                self.draw_item_icon(body_item_id, body_slot_x + 5.0, body_slot_y + 5.0, equip_slot_size - 10.0, state);
+                self.draw_item_icon(body_item_id, body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, state);
             } else {
                 // Empty slot indicator
                 self.draw_text_sharp("Body", body_slot_x + 8.0, body_slot_y + 32.0, 16.0, DARKGRAY);
@@ -1232,11 +1241,11 @@ impl Renderer {
     }
 
     fn render_quick_slots(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let slot_size = 36.0;
+        let slot_size = 70.0; // Match inventory slot size for ~64px icons
         let padding = 4.0;
         let total_width = 5.0 * (slot_size + padding) - padding;
         let start_x = (screen_width() - total_width) / 2.0;
-        let start_y = screen_height() - slot_size - 40.0;
+        let start_y = screen_height() - slot_size - 20.0;
 
         for i in 0..5 {
             let x = start_x + i as f32 * (slot_size + padding);
@@ -1263,7 +1272,7 @@ impl Renderer {
 
             // Draw item if present
             if let Some(slot) = &state.inventory.slots[i] {
-                self.draw_item_icon(&slot.item_id, x + 4.0, y + 4.0, slot_size - 8.0, state);
+                self.draw_item_icon(&slot.item_id, x, y, slot_size, slot_size, state);
 
                 // Quantity
                 if slot.quantity > 1 {
@@ -1278,18 +1287,17 @@ impl Renderer {
 
     /// Draw an item icon using sprite or fallback color
     /// Uses the left half of the sprite sheet (the smaller inventory icon)
-    fn draw_item_icon(&self, item_id: &str, x: f32, y: f32, size: f32, state: &GameState) {
+    fn draw_item_icon(&self, item_id: &str, x: f32, y: f32, slot_width: f32, slot_height: f32, state: &GameState) {
         // Try to get the item sprite
         if let Some(texture) = self.item_sprites.get(item_id) {
-            // The sprite sheet has the icon on the left half
-            // Use the left half of the texture at its natural size, centered in the slot
-            let tex_width = texture.width();
-            let tex_height = texture.height();
-            let icon_width = tex_width / 2.0; // Left half is the small icon
+            // The sprite sheet layout: left half is the inventory icon
+            // Use 64x32 (tile-sized) from the left half
+            let icon_width = 64.0;
+            let icon_height = 32.0;
 
             // Center the icon in the slot
-            let offset_x = (size - icon_width) / 2.0;
-            let offset_y = (size - tex_height) / 2.0;
+            let offset_x = (slot_width - icon_width) / 2.0;
+            let offset_y = (slot_height - icon_height) / 2.0;
 
             draw_texture_ex(
                 texture,
@@ -1297,17 +1305,56 @@ impl Renderer {
                 y + offset_y,
                 WHITE,
                 DrawTextureParams {
-                    source: Some(Rect::new(0.0, 0.0, icon_width, tex_height)),
-                    // No dest_size - draw at natural size
+                    source: Some(Rect::new(0.0, 0.0, icon_width, icon_height)),
+                    // No dest_size - draw at natural 64x32 size
                     ..Default::default()
                 },
             );
         } else {
-            // Fallback: colored rectangle based on category
+            // Fallback: colored rectangle based on category (64x32 centered)
             let item_def = state.item_registry.get_or_placeholder(item_id);
             let color = item_def.category_color();
-            draw_rectangle(x, y, size, size, color);
+            let icon_width = 64.0;
+            let icon_height = 32.0;
+            let offset_x = (slot_width - icon_width) / 2.0;
+            let offset_y = (slot_height - icon_height) / 2.0;
+            draw_rectangle(x + offset_x, y + offset_y, icon_width, icon_height, color);
         }
+    }
+
+    /// Word-wrap text to fit within a given width (approximate, assumes ~8px per char at size 16)
+    fn wrap_text(&self, text: &str, max_width: f32, font_size: f32) -> Vec<String> {
+        let char_width = font_size * 0.5; // Approximate character width
+        let max_chars = (max_width / char_width) as usize;
+
+        if max_chars == 0 {
+            return vec![text.to_string()];
+        }
+
+        let mut lines = Vec::new();
+        let mut current_line = String::new();
+
+        for word in text.split_whitespace() {
+            if current_line.is_empty() {
+                current_line = word.to_string();
+            } else if current_line.len() + 1 + word.len() <= max_chars {
+                current_line.push(' ');
+                current_line.push_str(word);
+            } else {
+                lines.push(current_line);
+                current_line = word.to_string();
+            }
+        }
+
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+
+        lines
     }
 
     /// Render tooltip for hovered inventory/quick slot items
@@ -1331,18 +1378,27 @@ impl Renderer {
         // Calculate tooltip dimensions based on content
         let padding = 10.0;
         let line_height = 18.0;
-        let tooltip_width = 200.0;
+        let tooltip_width = 220.0;
+        let text_width = tooltip_width - padding * 2.0;
 
-        // Count lines: name, category, description (may wrap), quantity if > 1
-        let mut lines = 2; // name + category always
-        if !item_def.description.is_empty() {
-            lines += 1;
+        // Word-wrap the description
+        let desc_lines = if !item_def.description.is_empty() {
+            self.wrap_text(&item_def.description, text_width, 16.0)
+        } else {
+            vec![]
+        };
+
+        // Count lines: name, category, description lines, blank line before quantity, quantity
+        let mut line_count = 2; // name + category
+        if !desc_lines.is_empty() {
+            line_count += 1; // blank line before description
+            line_count += desc_lines.len();
         }
         if slot.quantity > 1 {
-            lines += 1;
+            line_count += 1; // quantity line
         }
 
-        let tooltip_height = padding * 2.0 + lines as f32 * line_height;
+        let tooltip_height = padding * 2.0 + line_count as f32 * line_height;
 
         // Position tooltip near cursor, but keep on screen
         let mut tooltip_x = mouse_x + 16.0;
@@ -1375,20 +1431,23 @@ impl Renderer {
 
         let mut y = tooltip_y + padding + 12.0;
 
-        // Item name (colored by category)
-        let name_color = item_def.category_color();
-        self.draw_text_sharp(&item_def.display_name, tooltip_x + padding, y, 16.0, name_color);
+        // Item name (white, bold feel)
+        self.draw_text_sharp(&item_def.display_name, tooltip_x + padding, y, 16.0, WHITE);
         y += line_height;
 
-        // Category
+        // Category (colored by type)
         let category_text = format!("[{}]", item_def.category);
-        self.draw_text_sharp(&category_text, tooltip_x + padding, y, 16.0, GRAY);
+        let category_color = item_def.category_color();
+        self.draw_text_sharp(&category_text, tooltip_x + padding, y, 16.0, category_color);
         y += line_height;
 
-        // Description
-        if !item_def.description.is_empty() {
-            self.draw_text_sharp(&item_def.description, tooltip_x + padding, y, 16.0, LIGHTGRAY);
-            y += line_height;
+        // Description (word-wrapped)
+        if !desc_lines.is_empty() {
+            y += line_height * 0.5; // Small gap before description
+            for line in &desc_lines {
+                self.draw_text_sharp(line, tooltip_x + padding, y, 16.0, LIGHTGRAY);
+                y += line_height;
+            }
         }
 
         // Quantity (if more than 1)
