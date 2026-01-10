@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use crate::game::{GameState, ContextMenu};
+use crate::game::{GameState, ContextMenu, DragState};
 use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
 
@@ -24,6 +24,7 @@ pub enum InputCommand {
     Unequip { slot_type: String },
     // Inventory commands
     DropItem { slot_index: u8, quantity: u32 },
+    SwapSlots { from_slot: u8, to_slot: u8 },
 }
 
 /// Cardinal directions for isometric movement (no diagonals)
@@ -77,7 +78,8 @@ impl InputHandler {
         // This ensures we detect what's actually under the mouse when clicked
         let mouse_clicked = is_mouse_button_pressed(MouseButton::Left);
         let mouse_right_clicked = is_mouse_button_pressed(MouseButton::Right);
-        let clicked_element = if mouse_clicked || mouse_right_clicked {
+        let mouse_released = is_mouse_button_released(MouseButton::Left);
+        let clicked_element = if mouse_clicked || mouse_right_clicked || mouse_released {
             layout.hit_test(mx, my).cloned()
         } else {
             None
@@ -86,6 +88,52 @@ impl InputHandler {
         // Toggle debug mode
         if is_key_pressed(KeyCode::F3) {
             // Debug toggle handled in main loop
+        }
+
+        // Handle drag and drop for inventory slot rearrangement
+        if mouse_released {
+            if let Some(drag) = state.ui_state.drag_state.take() {
+                // Drag completed - check if we're over a valid drop target
+                if let Some(ref element) = clicked_element {
+                    match element {
+                        UiElementId::InventorySlot(to_idx) | UiElementId::QuickSlot(to_idx) => {
+                            // Swap slots if dropping on a different slot
+                            if drag.from_slot != *to_idx {
+                                commands.push(InputCommand::SwapSlots {
+                                    from_slot: drag.from_slot as u8,
+                                    to_slot: *to_idx as u8,
+                                });
+                            }
+                        }
+                        _ => {
+                            // Dropped on non-inventory element, cancel drag
+                        }
+                    }
+                }
+                // Drag ended (either completed swap or cancelled)
+                return commands;
+            }
+        }
+
+        // Start drag on left click on inventory slot with item
+        if mouse_clicked && state.ui_state.drag_state.is_none() {
+            if let Some(ref element) = clicked_element {
+                match element {
+                    UiElementId::InventorySlot(idx) | UiElementId::QuickSlot(idx) => {
+                        // Check if slot has an item
+                        if let Some(Some(slot)) = state.inventory.slots.get(*idx) {
+                            state.ui_state.drag_state = Some(DragState {
+                                from_slot: *idx,
+                                item_id: slot.item_id.clone(),
+                                quantity: slot.quantity,
+                            });
+                            // Don't process other input while starting drag
+                            return commands;
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
 
         // Handle context menu interactions first

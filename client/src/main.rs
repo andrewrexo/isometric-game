@@ -310,6 +310,7 @@ fn run_game_frame(
             InputCommand::Unequip { slot_type } => ClientMessage::Unequip { slot_type: slot_type.clone() },
             // Inventory commands
             InputCommand::DropItem { slot_index, quantity } => ClientMessage::DropItem { slot_index: *slot_index, quantity: *quantity },
+            InputCommand::SwapSlots { from_slot, to_slot } => ClientMessage::SwapSlots { from_slot: *from_slot, to_slot: *to_slot },
         };
         network.send(&msg);
     }

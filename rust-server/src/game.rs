@@ -2165,6 +2165,40 @@ impl GameRoom {
         }).await;
     }
 
+    /// Swap two inventory slots
+    pub async fn handle_swap_slots(&self, player_id: &str, from_slot: u8, to_slot: u8) {
+        let from_idx = from_slot as usize;
+        let to_idx = to_slot as usize;
+
+        // Validate slot indices
+        if from_idx >= 20 || to_idx >= 20 || from_idx == to_idx {
+            return;
+        }
+
+        // Perform the swap and get inventory update
+        let (inventory_update, gold) = {
+            let mut players = self.players.write().await;
+            let player = match players.get_mut(player_id) {
+                Some(p) if p.active && !p.is_dead => p,
+                _ => return,
+            };
+
+            // Swap the slots
+            player.inventory.slots.swap(from_idx, to_idx);
+
+            (player.inventory.to_update(), player.inventory.gold)
+        };
+
+        tracing::debug!("Player {} swapped slots {} <-> {}", player_id, from_slot, to_slot);
+
+        // Send inventory update to the player
+        self.send_to_player(player_id, ServerMessage::InventoryUpdate {
+            player_id: player_id.to_string(),
+            slots: inventory_update,
+            gold,
+        }).await;
+    }
+
     pub async fn tick(&self) {
         let delta_time = 1.0 / TICK_RATE;
         let current_time = std::time::SystemTime::now()

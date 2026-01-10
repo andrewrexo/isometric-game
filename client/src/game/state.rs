@@ -102,6 +102,14 @@ pub struct ContextMenu {
     pub is_equipment: bool, // true if this is an equipment slot, not inventory
 }
 
+/// Drag state for inventory slot rearrangement
+#[derive(Debug, Clone)]
+pub struct DragState {
+    pub from_slot: usize,
+    pub item_id: String,
+    pub quantity: i32,
+}
+
 pub struct UiState {
     pub chat_open: bool,
     pub chat_input: String,
@@ -121,6 +129,8 @@ pub struct UiState {
     pub hovered_element: Option<UiElementId>,
     // Context menu state
     pub context_menu: Option<ContextMenu>,
+    // Drag state for inventory slot rearrangement
+    pub drag_state: Option<DragState>,
 }
 
 impl Default for UiState {
@@ -140,6 +150,7 @@ impl Default for UiState {
             crafting_npc_id: None,
             hovered_element: None,
             context_menu: None,
+            drag_state: None,
         }
     }
 }

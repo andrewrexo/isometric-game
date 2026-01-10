@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use std::collections::HashMap;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition, ContextMenu};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition, ContextMenu, DragState};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use crate::ui::{UiElementId, UiLayout};
@@ -1122,6 +1122,11 @@ impl Renderer {
             self.render_context_menu(context_menu, state, &mut layout);
         }
 
+        // Render dragged item at cursor (on top of everything)
+        if let Some(ref drag) = state.ui_state.drag_state {
+            self.render_dragged_item(drag, state);
+        }
+
         layout
     }
 
@@ -1158,25 +1163,38 @@ impl Renderer {
             // Check if this slot is hovered
             let is_hovered = matches!(hovered, Some(UiElementId::InventorySlot(idx)) if *idx == i);
 
-            // Slot background with hover effect
-            let bg_color = if is_hovered {
+            // Check if this slot is being dragged
+            let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if drag.from_slot == i);
+
+            // Slot background with hover/drag effect
+            let bg_color = if is_dragging {
+                Color::from_rgba(30, 30, 40, 255) // Dimmed when dragging
+            } else if is_hovered {
                 Color::from_rgba(70, 70, 90, 255)
             } else {
                 Color::from_rgba(50, 50, 60, 255)
             };
             draw_rectangle(x, y, slot_size - 4.0, slot_size - 4.0, bg_color);
 
-            // Border with hover effect
-            let border_color = if is_hovered { WHITE } else { GRAY };
+            // Border with hover/drag effect
+            let border_color = if is_dragging {
+                Color::from_rgba(100, 100, 255, 255) // Blue border for source slot
+            } else if is_hovered {
+                WHITE
+            } else {
+                GRAY
+            };
             draw_rectangle_lines(x, y, slot_size - 4.0, slot_size - 4.0, 1.0, border_color);
 
-            // Draw item if present
+            // Draw item if present (dimmed if being dragged)
             if let Some(slot) = &state.inventory.slots[i] {
-                self.draw_item_icon(&slot.item_id, x, y, slot_size - 4.0, slot_size - 4.0, state);
+                if !is_dragging {
+                    self.draw_item_icon(&slot.item_id, x, y, slot_size - 4.0, slot_size - 4.0, state);
 
-                // Quantity
-                if slot.quantity > 1 {
-                    self.draw_text_sharp(&slot.quantity.to_string(), x + 2.0, y + slot_size - 8.0, 16.0, WHITE);
+                    // Quantity
+                    if slot.quantity > 1 {
+                        self.draw_text_sharp(&slot.quantity.to_string(), x + 2.0, y + slot_size - 8.0, 16.0, WHITE);
+                    }
                 }
             }
 
@@ -1335,25 +1353,38 @@ impl Renderer {
             // Check if this slot is hovered
             let is_hovered = matches!(hovered, Some(UiElementId::QuickSlot(idx)) if *idx == i);
 
-            // Slot background with hover effect
-            let bg_color = if is_hovered {
+            // Check if this slot is being dragged (quick slots are first 5 inventory slots)
+            let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if drag.from_slot == i);
+
+            // Slot background with hover/drag effect
+            let bg_color = if is_dragging {
+                Color::from_rgba(20, 20, 30, 200) // Dimmed when dragging
+            } else if is_hovered {
                 Color::from_rgba(50, 50, 70, 255)
             } else {
                 Color::from_rgba(30, 30, 40, 200)
             };
             draw_rectangle(x, y, slot_size, slot_size, bg_color);
 
-            // Border with hover effect
-            let border_color = if is_hovered { WHITE } else { GRAY };
+            // Border with hover/drag effect
+            let border_color = if is_dragging {
+                Color::from_rgba(100, 100, 255, 255) // Blue border for source slot
+            } else if is_hovered {
+                WHITE
+            } else {
+                GRAY
+            };
             draw_rectangle_lines(x, y, slot_size, slot_size, 1.0, border_color);
 
-            // Draw item if present
+            // Draw item if present (hide if being dragged)
             if let Some(slot) = &state.inventory.slots[i] {
-                self.draw_item_icon(&slot.item_id, x, y, slot_size, slot_size, state);
+                if !is_dragging {
+                    self.draw_item_icon(&slot.item_id, x, y, slot_size, slot_size, state);
 
-                // Quantity
-                if slot.quantity > 1 {
-                    self.draw_text_sharp(&slot.quantity.to_string(), x + 2.0, y + slot_size - 4.0, 16.0, WHITE);
+                    // Quantity
+                    if slot.quantity > 1 {
+                        self.draw_text_sharp(&slot.quantity.to_string(), x + 2.0, y + slot_size - 4.0, 16.0, WHITE);
+                    }
                 }
             }
 
@@ -1396,6 +1427,37 @@ impl Renderer {
             let offset_x = (slot_width - icon_width) / 2.0;
             let offset_y = (slot_height - icon_height) / 2.0;
             draw_rectangle(x + offset_x, y + offset_y, icon_width, icon_height, color);
+        }
+    }
+
+    /// Render a dragged item following the cursor
+    fn render_dragged_item(&self, drag: &DragState, state: &GameState) {
+        let (mx, my) = mouse_position();
+        let slot_size = 46.0;
+
+        // Semi-transparent background for the dragged item
+        draw_rectangle(
+            mx - slot_size / 2.0,
+            my - slot_size / 2.0,
+            slot_size,
+            slot_size,
+            Color::from_rgba(50, 50, 60, 180),
+        );
+        draw_rectangle_lines(
+            mx - slot_size / 2.0,
+            my - slot_size / 2.0,
+            slot_size,
+            slot_size,
+            2.0,
+            Color::from_rgba(255, 255, 255, 200),
+        );
+
+        // Draw the item icon centered on cursor
+        self.draw_item_icon(&drag.item_id, mx - slot_size / 2.0, my - slot_size / 2.0, slot_size, slot_size, state);
+
+        // Draw quantity if > 1
+        if drag.quantity > 1 {
+            self.draw_text_sharp(&drag.quantity.to_string(), mx - slot_size / 2.0 + 2.0, my + slot_size / 2.0 - 4.0, 16.0, WHITE);
         }
     }
 
