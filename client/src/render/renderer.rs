@@ -1026,10 +1026,64 @@ impl Renderer {
         }
     }
 
+    /// Register ground item clickable areas and render hover labels
+    fn render_ground_item_overlays(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
+        for (item_id, item) in &state.ground_items {
+            let (screen_x, screen_y) = world_to_screen(item.x, item.y, &state.camera);
+
+            // Clickable area (centered on item position)
+            let click_width = 44.0;
+            let click_height = 32.0;
+            let bounds = Rect::new(
+                screen_x - click_width / 2.0,
+                screen_y - click_height - 8.0,
+                click_width,
+                click_height,
+            );
+            layout.add(UiElementId::GroundItem(item_id.clone()), bounds);
+
+            // Check if hovered
+            let is_hovered = matches!(hovered, Some(UiElementId::GroundItem(id)) if id == item_id);
+
+            if is_hovered {
+                // Get item definition for display name
+                let item_def = state.item_registry.get_or_placeholder(&item.item_id);
+
+                // Build label text
+                let label = if item.quantity > 1 {
+                    format!("{} (x{})", item_def.display_name, item.quantity)
+                } else {
+                    item_def.display_name.clone()
+                };
+
+                // Draw label above the item
+                let label_width = self.measure_text_sharp(&label, 16.0).width;
+                let label_x = screen_x - label_width / 2.0;
+                let label_y = screen_y - click_height - 20.0;
+
+                // Background for readability
+                let padding = 4.0;
+                draw_rectangle(
+                    label_x - padding,
+                    label_y - 14.0,
+                    label_width + padding * 2.0,
+                    18.0,
+                    Color::from_rgba(0, 0, 0, 180),
+                );
+
+                // Label text
+                self.draw_text_sharp(&label, label_x, label_y, 16.0, WHITE);
+            }
+        }
+    }
+
     /// Render all interactive UI elements and return the layout for hit detection
     fn render_interactive_ui(&self, state: &GameState) -> UiLayout {
         let mut layout = UiLayout::new();
         let hovered = &state.ui_state.hovered_element;
+
+        // Ground item clickable areas and hover labels (world-space, registered first)
+        self.render_ground_item_overlays(state, hovered, &mut layout);
 
         // Inventory UI (when open)
         if state.ui_state.inventory_open {

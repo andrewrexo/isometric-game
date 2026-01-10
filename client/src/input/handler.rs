@@ -467,6 +467,26 @@ impl InputHandler {
                     }
                     return commands;
                 }
+                UiElementId::GroundItem(item_id) => {
+                    if mouse_clicked {
+                        // Left-click on ground item - attempt pickup if within range
+                        if let Some(local_id) = &state.local_player_id {
+                            if let Some(player) = state.players.get(local_id) {
+                                if let Some(ground_item) = state.ground_items.get(item_id) {
+                                    let dx = ground_item.x - player.x;
+                                    let dy = ground_item.y - player.y;
+                                    let dist = (dx * dx + dy * dy).sqrt();
+
+                                    const PICKUP_RANGE: f32 = 2.0;
+                                    if dist < PICKUP_RANGE {
+                                        commands.push(InputCommand::Pickup { item_id: item_id.clone() });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return commands;
+                }
                 _ => {}
             }
         }

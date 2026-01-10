@@ -24,6 +24,9 @@ pub enum UiElementId {
 
     // Context Menu
     ContextMenuOption(usize),
+
+    // World Items
+    GroundItem(String), // item instance ID
 }
 
 /// A single interactive UI element with its bounds
