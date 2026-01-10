@@ -336,9 +336,12 @@ impl NetworkClient {
                     // Server sends i32 grid positions
                     let x = extract_i32(value, "x").unwrap_or(0) as f32;
                     let y = extract_i32(value, "y").unwrap_or(0) as f32;
+                    // Appearance
+                    let gender = extract_string(value, "gender").unwrap_or_else(|| "male".to_string());
+                    let skin = extract_string(value, "skin").unwrap_or_else(|| "tan".to_string());
 
-                    log::info!("Player joined: {} at ({}, {})", name, x, y);
-                    let player = Player::new(id.clone(), name, x, y);
+                    log::info!("Player joined: {} at ({}, {}) [{}/{}]", name, x, y, gender, skin);
+                    let player = Player::new(id.clone(), name, x, y, gender, skin);
                     state.players.insert(id, player);
                 }
             }

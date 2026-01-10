@@ -46,6 +46,8 @@ pub struct PlayerSaveData {
     pub exp_to_next_level: i32,
     pub gold: i32,
     pub inventory_json: String,
+    pub gender: String,
+    pub skin: String,
 }
 
 // ============================================================================
@@ -117,6 +119,9 @@ pub struct Player {
     pub is_dead: bool,
     pub death_time: u64, // When the player died (for respawn timer)
     pub inventory: Inventory,
+    // Character appearance
+    pub gender: String, // "male" or "female"
+    pub skin: String,   // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
 }
 
 const PLAYER_RESPAWN_TIME_MS: u64 = 5000; // 5 seconds to respawn
@@ -128,7 +133,7 @@ fn exp_for_level(level: i32) -> i32 {
 }
 
 impl Player {
-    pub fn new(id: &str, name: &str, spawn_x: i32, spawn_y: i32) -> Self {
+    pub fn new(id: &str, name: &str, spawn_x: i32, spawn_y: i32, gender: &str, skin: &str) -> Self {
         Self {
             id: id.to_string(),
             name: name.to_string(),
@@ -151,6 +156,8 @@ impl Player {
             is_dead: false,
             death_time: 0,
             inventory: Inventory::new(),
+            gender: gender.to_string(),
+            skin: skin.to_string(),
         }
     }
 
@@ -216,6 +223,9 @@ pub struct PlayerUpdate {
     pub exp: i32,
     pub exp_to_next_level: i32,
     pub gold: i32,
+    // Character appearance
+    pub gender: String,
+    pub skin: String,
 }
 
 // ============================================================================
@@ -359,10 +369,10 @@ impl GameRoom {
         }
     }
 
-    pub async fn reserve_player(&self, player_id: &str, name: &str) {
+    pub async fn reserve_player(&self, player_id: &str, name: &str, gender: &str, skin: &str) {
         let (spawn_x, spawn_y) = self.world.get_spawn_position().await;
         let mut players = self.players.write().await;
-        let player = Player::new(player_id, name, spawn_x, spawn_y);
+        let player = Player::new(player_id, name, spawn_x, spawn_y, gender, skin);
         players.insert(player_id.to_string(), player);
 
         // Track player's starting chunk
@@ -385,9 +395,11 @@ impl GameRoom {
         exp_to_next_level: i32,
         gold: i32,
         inventory_json: &str,
+        gender: &str,
+        skin: &str,
     ) {
         let mut players = self.players.write().await;
-        let mut player = Player::new(player_id, name, x, y);
+        let mut player = Player::new(player_id, name, x, y, gender, skin);
 
         // Restore saved stats
         player.hp = hp;
@@ -423,8 +435,8 @@ impl GameRoom {
         }
 
         tracing::info!(
-            "Restored player {} at ({}, {}) with {} HP, level {}, {} gold",
-            name, x, y, hp, level, gold
+            "Restored player {} at ({}, {}) with {} HP, level {}, {} gold, appearance: {} {}",
+            name, x, y, hp, level, gold, gender, skin
         );
 
         players.insert(player_id.to_string(), player);
@@ -468,6 +480,8 @@ impl GameRoom {
                 exp_to_next_level: p.exp_to_next_level,
                 gold: p.inventory.gold,
                 inventory_json,
+                gender: p.gender.clone(),
+                skin: p.skin.clone(),
             }
         })
     }
@@ -535,6 +549,11 @@ impl GameRoom {
     pub async fn get_player_position(&self, player_id: &str) -> Option<(i32, i32)> {
         let players = self.players.read().await;
         players.get(player_id).map(|p| (p.x, p.y))
+    }
+
+    pub async fn get_player_appearance(&self, player_id: &str) -> Option<(String, String)> {
+        let players = self.players.read().await;
+        players.get(player_id).map(|p| (p.gender.clone(), p.skin.clone()))
     }
 
     /// Get the initial inventory update message for a player (used on connection)
@@ -1766,6 +1785,8 @@ impl GameRoom {
                     exp: player.exp,
                     exp_to_next_level: player.exp_to_next_level,
                     gold: player.inventory.gold,
+                    gender: player.gender.clone(),
+                    skin: player.skin.clone(),
                 });
             }
         }

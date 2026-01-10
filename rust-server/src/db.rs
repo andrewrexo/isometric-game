@@ -22,7 +22,13 @@ pub struct PlayerData {
     pub exp_to_next_level: i32,
     pub gold: i32,
     pub inventory_json: String, // JSON serialized inventory
+    pub gender: String,         // "male" or "female"
+    pub skin: String,           // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
 }
+
+// Available appearance options
+pub const GENDERS: &[&str] = &["male", "female"];
+pub const SKINS: &[&str] = &["tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"];
 
 pub struct Database {
     pool: SqlitePool,
@@ -72,6 +78,10 @@ impl Database {
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN gold INTEGER DEFAULT 0")
             .execute(pool).await;
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN inventory_json TEXT DEFAULT '[]'")
+            .execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN gender TEXT DEFAULT 'male'")
+            .execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN skin TEXT DEFAULT 'tan'")
             .execute(pool).await;
 
         // Quest system tables
@@ -126,7 +136,7 @@ impl Database {
         Ok(())
     }
 
-    /// Create a new player with hashed password
+    /// Create a new player with hashed password and random appearance
     pub async fn create_player(
         &self,
         username: &str,
@@ -140,11 +150,19 @@ impl Database {
             .map_err(|e| format!("Failed to hash password: {}", e))?
             .to_string();
 
+        // Assign random appearance
+        let gender_idx = rand::random::<usize>() % GENDERS.len();
+        let skin_idx = rand::random::<usize>() % SKINS.len();
+        let gender = GENDERS[gender_idx];
+        let skin = SKINS[skin_idx];
+
         let result = sqlx::query(
-            "INSERT INTO players (username, password_hash) VALUES (?, ?)",
+            "INSERT INTO players (username, password_hash, gender, skin) VALUES (?, ?, ?, ?)",
         )
         .bind(username)
         .bind(&password_hash)
+        .bind(gender)
+        .bind(skin)
         .execute(&self.pool)
         .await
         .map_err(|e| {
@@ -155,13 +173,14 @@ impl Database {
             }
         })?;
 
-        tracing::info!("Created player: {} (id: {})", username, result.last_insert_rowid());
+        tracing::info!("Created player: {} (id: {}) with appearance: {} {}",
+            username, result.last_insert_rowid(), gender, skin);
         Ok(result.last_insert_rowid())
     }
 
     pub async fn get_player_by_username(&self, username: &str) -> Result<Option<PlayerData>, sqlx::Error> {
         let row = sqlx::query(
-            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json FROM players WHERE username = ?",
+            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin FROM players WHERE username = ?",
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -180,6 +199,8 @@ impl Database {
             exp_to_next_level: r.get("exp_to_next_level"),
             gold: r.get("gold"),
             inventory_json: r.get("inventory_json"),
+            gender: r.try_get("gender").unwrap_or_else(|_| "male".to_string()),
+            skin: r.try_get("skin").unwrap_or_else(|_| "tan".to_string()),
         }))
     }
 

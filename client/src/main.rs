@@ -165,9 +165,9 @@ async fn main() {
     {
         let mut game_state = GameState::new();
 
-        // Create a local player for demo
+        // Create a local player for demo with default appearance
         use game::Player;
-        let player = Player::new("local".to_string(), "WebPlayer".to_string(), 5.0, 5.0);
+        let player = Player::new("local".to_string(), "WebPlayer".to_string(), 5.0, 5.0, "male".to_string(), "tan".to_string());
         game_state.players.insert("local".to_string(), player);
         game_state.local_player_id = Some("local".to_string());
 
@@ -175,6 +175,31 @@ async fn main() {
 
         loop {
             let delta = get_frame_time();
+
+            // Toggle debug mode with F3
+            if is_key_pressed(KeyCode::F3) {
+                game_state.debug_mode = !game_state.debug_mode;
+            }
+
+            // Debug controls for appearance cycling (only in debug mode)
+            if game_state.debug_mode {
+                if let Some(local_id) = &game_state.local_player_id.clone() {
+                    if let Some(player) = game_state.players.get_mut(local_id) {
+                        if is_key_pressed(KeyCode::F5) {
+                            player.gender = match player.gender.as_str() {
+                                "male" => "female".to_string(),
+                                _ => "male".to_string(),
+                            };
+                        }
+                        if is_key_pressed(KeyCode::F6) {
+                            let skins = ["tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"];
+                            let current_idx = skins.iter().position(|&s| s == player.skin).unwrap_or(0);
+                            let next_idx = (current_idx + 1) % skins.len();
+                            player.skin = skins[next_idx].to_string();
+                        }
+                    }
+                }
+            }
 
             // Render and get UI layout
             clear_background(Color::from_rgba(30, 30, 40, 255));
@@ -191,6 +216,9 @@ async fn main() {
             if game_state.debug_mode {
                 renderer.draw_text_sharp(&format!("FPS: {}", get_fps()), 10.0, 20.0, 16.0, WHITE);
                 renderer.draw_text_sharp("WASM Demo (no network)", 10.0, 40.0, 16.0, YELLOW);
+                if let Some(player) = game_state.get_local_player() {
+                    renderer.draw_text_sharp(&format!("Appearance: {} {} (F5/F6 to cycle)", player.gender, player.skin), 10.0, 60.0, 16.0, Color::from_rgba(150, 200, 255, 255));
+                }
             }
 
             next_frame().await;
@@ -207,6 +235,36 @@ fn run_game_frame(
     renderer: &Renderer,
 ) {
     let delta = get_frame_time();
+
+    // Toggle debug mode with F3
+    if is_key_pressed(KeyCode::F3) {
+        game_state.debug_mode = !game_state.debug_mode;
+    }
+
+    // Debug controls for appearance cycling (only in debug mode)
+    if game_state.debug_mode {
+        if let Some(local_id) = &game_state.local_player_id.clone() {
+            if let Some(player) = game_state.players.get_mut(local_id) {
+                // F5 to cycle gender
+                if is_key_pressed(KeyCode::F5) {
+                    player.gender = match player.gender.as_str() {
+                        "male" => "female".to_string(),
+                        _ => "male".to_string(),
+                    };
+                    log::info!("Debug: Changed gender to {}", player.gender);
+                }
+
+                // F6 to cycle skin
+                if is_key_pressed(KeyCode::F6) {
+                    let skins = ["tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"];
+                    let current_idx = skins.iter().position(|&s| s == player.skin).unwrap_or(0);
+                    let next_idx = (current_idx + 1) % skins.len();
+                    player.skin = skins[next_idx].to_string();
+                    log::info!("Debug: Changed skin to {}", player.skin);
+                }
+            }
+        }
+    }
 
     // 1. Poll network messages
     network.poll(game_state);
@@ -268,6 +326,8 @@ fn run_game_frame(
             renderer.draw_text_sharp(&format!("Pos: ({:.1}, {:.1})", player.x, player.y), 10.0, 80.0, 16.0, YELLOW);
             renderer.draw_text_sharp(&format!("Chunk: ({}, {})", chunk_x, chunk_y), 10.0, 100.0, 16.0, YELLOW);
             renderer.draw_text_sharp(&format!("NPCs: {}", game_state.npcs.len()), 10.0, 120.0, 16.0, WHITE);
+            // Appearance debug info
+            renderer.draw_text_sharp(&format!("Appearance: {} {} (F5/F6 to cycle)", player.gender, player.skin), 10.0, 140.0, 16.0, Color::from_rgba(150, 200, 255, 255));
         }
     }
 }

@@ -115,12 +115,16 @@ pub struct Player {
     pub is_dead: bool,
     pub death_time: f64, // When the player died (game time)
 
+    // Appearance
+    pub gender: String, // "male" or "female"
+    pub skin: String,   // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
+
     // Animation
     pub animation: PlayerAnimation,
 }
 
 impl Player {
-    pub fn new(id: String, name: String, x: f32, y: f32) -> Self {
+    pub fn new(id: String, name: String, x: f32, y: f32, gender: String, skin: String) -> Self {
         Self {
             id,
             name,
@@ -143,6 +147,8 @@ impl Player {
             exp_to_next_level: 100,
             is_dead: false,
             death_time: 0.0,
+            gender,
+            skin,
             animation: PlayerAnimation::new(),
         }
     }

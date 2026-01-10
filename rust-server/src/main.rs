@@ -598,7 +598,8 @@ async fn matchmake_join_or_create(
     // Pre-create player with saved data or defaults
     if let Some(data) = player_data {
         // Load saved player
-        info!("Loading saved player: {} (db_id: {}) at ({}, {})", username, db_player_id, data.x, data.y);
+        info!("Loading saved player: {} (db_id: {}) at ({}, {}) as {} {}",
+            username, db_player_id, data.x, data.y, data.gender, data.skin);
         room.reserve_player_with_data(
             &player_id,
             &username,
@@ -611,10 +612,12 @@ async fn matchmake_join_or_create(
             data.exp_to_next_level,
             data.gold,
             &data.inventory_json,
+            &data.gender,
+            &data.skin,
         ).await;
     } else {
-        // New player with defaults
-        room.reserve_player(&player_id, &username).await;
+        // New player with defaults (shouldn't happen - auth creates player)
+        room.reserve_player(&player_id, &username, "male", "tan").await;
     }
 
     // Load quest state from database
@@ -796,6 +799,8 @@ async fn handle_socket(
                 name: existing_player.name.clone(),
                 x: existing_player.x,
                 y: existing_player.y,
+                gender: existing_player.gender.clone(),
+                skin: existing_player.skin.clone(),
             };
             if let Ok(bytes) = protocol::encode_server_message(&msg) {
                 let _ = sender.send(Message::Binary(bytes)).await;
@@ -819,11 +824,14 @@ async fn handle_socket(
 
     // Notify others about this player
     let (x, y) = room.get_player_position(&player_id).await.unwrap_or((0, 0));
+    let (gender, skin) = room.get_player_appearance(&player_id).await.unwrap_or_else(|| ("male".to_string(), "tan".to_string()));
     room.broadcast(ServerMessage::PlayerJoined {
         id: player_id.clone(),
         name: player_name.clone(),
         x,
         y,
+        gender,
+        skin,
     })
     .await;
 

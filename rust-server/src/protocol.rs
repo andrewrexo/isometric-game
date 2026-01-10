@@ -73,6 +73,8 @@ pub enum ServerMessage {
         name: String,
         x: i32,
         y: i32,
+        gender: String,
+        skin: String,
     },
     PlayerLeft {
         id: String,
@@ -360,7 +362,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             ));
             Value::Map(map)
         }
-        ServerMessage::PlayerJoined { id, name, x, y } => {
+        ServerMessage::PlayerJoined { id, name, x, y, gender, skin } => {
             let mut map = Vec::new();
             map.push((Value::String("id".into()), Value::String(id.clone().into())));
             map.push((
@@ -369,6 +371,8 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             ));
             map.push((Value::String("x".into()), Value::Integer((*x as i64).into())));
             map.push((Value::String("y".into()), Value::Integer((*y as i64).into())));
+            map.push((Value::String("gender".into()), Value::String(gender.clone().into())));
+            map.push((Value::String("skin".into()), Value::String(skin.clone().into())));
             Value::Map(map)
         }
         ServerMessage::PlayerLeft { id } => {
@@ -403,6 +407,8 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     pmap.push((Value::String("exp".into()), Value::Integer((p.exp as i64).into())));
                     pmap.push((Value::String("expToNextLevel".into()), Value::Integer((p.exp_to_next_level as i64).into())));
                     pmap.push((Value::String("gold".into()), Value::Integer((p.gold as i64).into())));
+                    pmap.push((Value::String("gender".into()), Value::String(p.gender.clone().into())));
+                    pmap.push((Value::String("skin".into()), Value::String(p.skin.clone().into())));
                     Value::Map(pmap)
                 })
                 .collect();

@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use std::collections::HashMap;
 use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
@@ -12,13 +13,17 @@ const TILESET_TILE_WIDTH: f32 = 64.0;
 const TILESET_TILE_HEIGHT: f32 = 32.0;
 const TILESET_COLUMNS: u32 = 32;
 
+/// Available player appearance options
+pub const GENDERS: &[&str] = &["male", "female"];
+pub const SKINS: &[&str] = &["tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"];
+
 pub struct Renderer {
     player_color: Color,
     local_player_color: Color,
     /// Loaded tileset texture
     tileset: Option<Texture2D>,
-    /// Player sprite sheet texture
-    player_sprite: Option<Texture2D>,
+    /// Player sprite sheets by appearance key (e.g., "male_tan")
+    player_sprites: HashMap<String, Texture2D>,
     /// Multi-size pixel font for sharp text rendering at various sizes
     font: BitmapFont,
 }
@@ -38,18 +43,25 @@ impl Renderer {
             }
         };
 
-        // Try to load the player sprite sheet
-        let player_sprite = match load_texture("assets/sprites/player_base_0.png").await {
-            Ok(tex) => {
-                tex.set_filter(FilterMode::Nearest);
-                log::info!("Loaded player sprite: {}x{}", tex.width(), tex.height());
-                Some(tex)
+        // Load all player sprite sheets for each appearance combination
+        let mut player_sprites = HashMap::new();
+        for gender in GENDERS {
+            for skin in SKINS {
+                let key = format!("{}_{}", gender, skin);
+                let path = format!("assets/sprites/players/player_{}_{}.png", gender, skin);
+                match load_texture(&path).await {
+                    Ok(tex) => {
+                        tex.set_filter(FilterMode::Nearest);
+                        log::debug!("Loaded player sprite: {}", key);
+                        player_sprites.insert(key, tex);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load player sprite {}: {}", path, e);
+                    }
+                }
             }
-            Err(e) => {
-                log::warn!("Failed to load player sprite: {}. Using fallback shapes.", e);
-                None
-            }
-        };
+        }
+        log::info!("Loaded {} player sprite variants", player_sprites.len());
 
         // Load monogram pixel font at multiple sizes for crisp rendering
         let font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
@@ -63,9 +75,17 @@ impl Renderer {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
             tileset,
-            player_sprite,
+            player_sprites,
             font,
         }
+    }
+
+    /// Get the sprite texture for a given player appearance
+    fn get_player_sprite(&self, gender: &str, skin: &str) -> Option<&Texture2D> {
+        let key = format!("{}_{}", gender, skin);
+        self.player_sprites.get(&key)
+            // Fallback to male_tan if sprite not found
+            .or_else(|| self.player_sprites.get("male_tan"))
     }
 
     /// Draw text with pixel font for sharp rendering
@@ -561,8 +581,8 @@ impl Renderer {
         // Draw shadow under player
         draw_ellipse(screen_x, screen_y, 16.0, 7.0, 0.0, Color::from_rgba(0, 0, 0, 60));
 
-        // Try to render sprite, fall back to colored circle
-        if let Some(sprite) = &self.player_sprite {
+        // Try to render sprite based on player's appearance, fall back to colored circle
+        if let Some(sprite) = self.get_player_sprite(&player.gender, &player.skin) {
             let coords = player.animation.get_sprite_coords();
             let (src_x, src_y, src_w, src_h) = coords.to_source_rect();
 
@@ -620,7 +640,8 @@ impl Renderer {
         }
 
         // Player name
-        let name_y_offset = if self.player_sprite.is_some() { SPRITE_HEIGHT - 8.0 } else { 24.0 };
+        let has_sprite = self.get_player_sprite(&player.gender, &player.skin).is_some();
+        let name_y_offset = if has_sprite { SPRITE_HEIGHT - 8.0 } else { 24.0 };
         let name_width = self.measure_text_sharp(&player.name, 16.0).width;
         self.draw_text_sharp(
             &player.name,
