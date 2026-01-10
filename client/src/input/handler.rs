@@ -115,20 +115,51 @@ impl InputHandler {
             }
         }
 
+        // Double-click detection threshold (300ms)
+        const DOUBLE_CLICK_THRESHOLD: f64 = 0.3;
+
         // Start drag on left click on inventory slot with item
+        // But first check for double-click to equip
         if mouse_clicked && state.ui_state.drag_state.is_none() {
             if let Some(ref element) = clicked_element {
                 match element {
                     UiElementId::InventorySlot(idx) | UiElementId::QuickSlot(idx) => {
                         // Check if slot has an item
                         if let Some(Some(slot)) = state.inventory.slots.get(*idx) {
-                            state.ui_state.drag_state = Some(DragState {
-                                from_slot: *idx,
-                                item_id: slot.item_id.clone(),
-                                quantity: slot.quantity,
-                            });
-                            // Don't process other input while starting drag
-                            return commands;
+                            // Check for double-click
+                            let is_double_click = state.ui_state.double_click_state.last_click_slot == Some(*idx)
+                                && current_time - state.ui_state.double_click_state.last_click_time < DOUBLE_CLICK_THRESHOLD;
+
+                            if is_double_click {
+                                // Reset double-click state
+                                state.ui_state.double_click_state.last_click_slot = None;
+                                state.ui_state.double_click_state.last_click_time = 0.0;
+
+                                // Check if item is equippable
+                                let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                                if item_def.equipment.is_some() {
+                                    // Equip the item
+                                    commands.push(InputCommand::Equip { slot_index: *idx as u8 });
+                                    return commands;
+                                } else {
+                                    // Not equippable - use the item instead (e.g., health potion)
+                                    commands.push(InputCommand::UseItem { slot_index: *idx as u8 });
+                                    return commands;
+                                }
+                            } else {
+                                // First click - record for potential double-click
+                                state.ui_state.double_click_state.last_click_slot = Some(*idx);
+                                state.ui_state.double_click_state.last_click_time = current_time;
+
+                                // Start drag
+                                state.ui_state.drag_state = Some(DragState {
+                                    from_slot: *idx,
+                                    item_id: slot.item_id.clone(),
+                                    quantity: slot.quantity,
+                                });
+                                // Don't process other input while starting drag
+                                return commands;
+                            }
                         }
                     }
                     _ => {}
@@ -618,21 +649,27 @@ impl InputHandler {
             state.ui_state.inventory_open = !state.ui_state.inventory_open;
         }
 
-        // Use items (1-5 keys for quick slots)
-        if is_key_pressed(KeyCode::Key1) {
-            commands.push(InputCommand::UseItem { slot_index: 0 });
-        }
-        if is_key_pressed(KeyCode::Key2) {
-            commands.push(InputCommand::UseItem { slot_index: 1 });
-        }
-        if is_key_pressed(KeyCode::Key3) {
-            commands.push(InputCommand::UseItem { slot_index: 2 });
-        }
-        if is_key_pressed(KeyCode::Key4) {
-            commands.push(InputCommand::UseItem { slot_index: 3 });
-        }
-        if is_key_pressed(KeyCode::Key5) {
-            commands.push(InputCommand::UseItem { slot_index: 4 });
+        // Use/equip items (1-5 keys for quick slots)
+        let quick_slot_keys = [
+            (KeyCode::Key1, 0usize),
+            (KeyCode::Key2, 1usize),
+            (KeyCode::Key3, 2usize),
+            (KeyCode::Key4, 3usize),
+            (KeyCode::Key5, 4usize),
+        ];
+        for (key, slot_idx) in quick_slot_keys {
+            if is_key_pressed(key) {
+                if let Some(Some(slot)) = state.inventory.slots.get(slot_idx) {
+                    let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                    if item_def.equipment.is_some() {
+                        // Equippable item - equip it
+                        commands.push(InputCommand::Equip { slot_index: slot_idx as u8 });
+                    } else {
+                        // Not equippable - use it (e.g., consume potion)
+                        commands.push(InputCommand::UseItem { slot_index: slot_idx as u8 });
+                    }
+                }
+            }
         }
 
         // Pickup nearest item (F key)
