@@ -895,8 +895,8 @@ impl NetworkClient {
                 if let Some(value) = data {
                     let quest_id = extract_string(value, "quest_id").unwrap_or_default();
                     let quest_name = extract_string(value, "quest_name").unwrap_or_default();
-                    let exp_reward = extract_i32(value, "exp_reward").unwrap_or(0);
-                    let gold_reward = extract_i32(value, "gold_reward").unwrap_or(0);
+                    let exp_reward = extract_i32(value, "rewards_exp").unwrap_or(0);
+                    let gold_reward = extract_i32(value, "rewards_gold").unwrap_or(0);
 
                     log::info!("Quest completed: {} - {} (EXP: {}, Gold: {})", quest_id, quest_name, exp_reward, gold_reward);
 

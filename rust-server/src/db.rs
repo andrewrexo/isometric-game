@@ -407,10 +407,13 @@ impl Database {
 
         // Save completed quests
         for quest_id in &state.completed_quests {
-            // Only insert if not exists - completed quests are immutable
+            // Insert or update to completed state (quest may have been active before)
             sqlx::query(
-                r#"INSERT OR IGNORE INTO player_quests (player_id, quest_id, state, completed_at)
-                   VALUES (?, ?, 'completed', CURRENT_TIMESTAMP)"#
+                r#"INSERT INTO player_quests (player_id, quest_id, state, completed_at)
+                   VALUES (?, ?, 'completed', CURRENT_TIMESTAMP)
+                   ON CONFLICT(player_id, quest_id) DO UPDATE SET
+                       state = 'completed',
+                       completed_at = CURRENT_TIMESTAMP"#
             )
             .bind(db_player_id)
             .bind(quest_id)
