@@ -48,6 +48,7 @@ pub struct LoginScreen {
     auth_client: AuthClient,
     dev_mode: bool,
     font: BitmapFont,
+    logo: Option<Texture2D>,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -74,12 +75,19 @@ impl LoginScreen {
             auth_client: AuthClient::new(server_url),
             dev_mode,
             font: BitmapFont::default(),
+            logo: None,
         }
     }
 
-    /// Load font asynchronously - call this after creating the screen
+    /// Load font and logo asynchronously - call this after creating the screen
     pub async fn load_font(&mut self) {
         self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
+
+        // Load logo texture
+        if let Ok(texture) = load_texture("assets/ui/logo.png").await {
+            texture.set_filter(FilterMode::Nearest);
+            self.logo = Some(texture);
+        }
     }
 
     /// Draw text with pixel font for sharp rendering
@@ -200,11 +208,30 @@ impl Screen for LoginScreen {
             draw_line(i as f32 * 70.0, 0.0, i as f32 * 70.0, sh, 1.0, color);
         }
 
-        // Title
-        let title = "NEW AEVEN";
-        let title_size = 32.0;
-        let title_width = self.measure_text_sharp(title, title_size).width;
-        self.draw_text_sharp(title, (sw - title_width) / 2.0, sh * 0.18, title_size, WHITE);
+        // Logo
+        if let Some(logo) = &self.logo {
+            let logo_scale = 0.25; // Scale down the logo
+            let logo_w = logo.width() * logo_scale;
+            let logo_h = logo.height() * logo_scale;
+            let logo_x = (sw - logo_w) / 2.0;
+            let logo_y = sh * 0.08;
+            draw_texture_ex(
+                logo,
+                logo_x.floor(),
+                logo_y.floor(),
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(vec2(logo_w.floor(), logo_h.floor())),
+                    ..Default::default()
+                },
+            );
+        } else {
+            // Fallback to text if logo not loaded
+            let title = "NEW AEVEN";
+            let title_size = 32.0;
+            let title_width = self.measure_text_sharp(title, title_size).width;
+            self.draw_text_sharp(title, (sw - title_width) / 2.0, sh * 0.18, title_size, WHITE);
+        }
 
         // Subtitle
         let subtitle = match self.mode {
@@ -235,7 +262,7 @@ impl Screen for LoginScreen {
             format!("{}{}", self.username, cursor)
         };
         let text_color = if self.username.is_empty() && !username_active { DARKGRAY } else { WHITE };
-        self.draw_text_sharp(&username_display, box_x + 12.0, start_y + 32.0, 20.0, text_color);
+        self.draw_text_sharp(&username_display, box_x + 12.0, start_y + 30.0, 16.0, text_color);
 
         // Password field
         let password_y = start_y + 85.0;
@@ -253,7 +280,7 @@ impl Screen for LoginScreen {
             format!("{}{}", masked, cursor)
         };
         let text_color = if self.password.is_empty() && !password_active { DARKGRAY } else { WHITE };
-        self.draw_text_sharp(&password_display, box_x + 12.0, password_y + 32.0, 20.0, text_color);
+        self.draw_text_sharp(&password_display, box_x + 12.0, password_y + 30.0, 16.0, text_color);
 
         // Error message
         if let Some(ref error) = self.error_message {
