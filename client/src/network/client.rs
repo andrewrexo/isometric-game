@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats};
 use crate::game::npc::{Npc, NpcType, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -478,14 +478,31 @@ impl NetworkClient {
                     let text = extract_string(value, "text").unwrap_or_default();
                     let timestamp = extract_u64(value, "timestamp").unwrap_or(0) as f64;
 
+                    // Add to chat log
                     state.ui_state.chat_messages.push(ChatMessage {
-                        sender_name,
-                        text,
+                        sender_name: sender_name.clone(),
+                        text: text.clone(),
                         timestamp,
                     });
 
                     if state.ui_state.chat_messages.len() > 100 {
                         state.ui_state.chat_messages.remove(0);
+                    }
+
+                    // Create chat bubble above the player who sent the message
+                    // Find player by name
+                    if let Some((player_id, _)) = state.players.iter().find(|(_, p)| p.name == sender_name) {
+                        let player_id = player_id.clone();
+
+                        // Remove any existing bubble for this player (only one bubble per player)
+                        state.chat_bubbles.retain(|b| b.player_id != player_id);
+
+                        // Add new bubble
+                        state.chat_bubbles.push(ChatBubble {
+                            player_id,
+                            text,
+                            time: macroquad::time::get_time(),
+                        });
                     }
                 }
             }

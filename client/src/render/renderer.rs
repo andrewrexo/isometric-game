@@ -333,10 +333,13 @@ impl Renderer {
         // 6. Render floating level up text
         self.render_level_up_events(state);
 
-        // 7. Render UI (non-interactive elements)
+        // 7. Render chat bubbles above players
+        self.render_chat_bubbles(state);
+
+        // 8. Render UI (non-interactive elements)
         self.render_ui(state);
 
-        // 8. Render interactive UI elements and return layout for hit detection
+        // 9. Render interactive UI elements and return layout for hit detection
         self.render_interactive_ui(state)
     }
 
@@ -384,6 +387,120 @@ impl Renderer {
                 font_size,
                 Color::from_rgba(255, 215, 0, alpha),
             );
+        }
+    }
+
+    /// Render chat bubbles above players' heads
+    fn render_chat_bubbles(&self, state: &GameState) {
+        let current_time = macroquad::time::get_time();
+
+        for bubble in &state.chat_bubbles {
+            let age = (current_time - bubble.time) as f32;
+            if age > 5.0 {
+                continue;
+            }
+
+            // Find the player this bubble belongs to
+            let Some(player) = state.players.get(&bubble.player_id) else {
+                continue;
+            };
+
+            // Get player screen position
+            let (screen_x, screen_y) = world_to_screen(player.x, player.y, &state.camera);
+
+            // Fade out in the last 1 second (age 4-5)
+            let alpha = if age > 4.0 {
+                ((5.0 - age) * 255.0) as u8
+            } else {
+                255
+            };
+
+            // Word wrap the text
+            let max_bubble_width = 220.0;
+            let font_size = 16.0;
+            let line_height = 18.0;
+            let padding = 4.0;
+            let tail_height = 6.0;
+            let corner_radius = 3.0;
+
+            let lines = self.wrap_text(&bubble.text, max_bubble_width - padding * 2.0, font_size);
+            let num_lines = lines.len().max(1);
+
+            // Calculate bubble dimensions
+            let mut max_line_width = 0.0f32;
+            for line in &lines {
+                let width = self.measure_text_sharp(line, font_size).width;
+                max_line_width = max_line_width.max(width);
+            }
+
+            let bubble_width = (max_line_width + padding * 2.0).max(30.0);
+            let bubble_height = num_lines as f32 * line_height + padding * 2.0;
+
+            // Position bubble above player (above name tag and health bar)
+            let bubble_x = screen_x - bubble_width / 2.0;
+            let bubble_y = screen_y - 95.0 - bubble_height - tail_height;
+
+            // Colors with alpha - off-white paper/comic book style
+            let bg_color = Color::from_rgba(255, 250, 240, alpha); // Warm off-white/cream
+            let border_color = Color::from_rgba(60, 50, 40, alpha); // Dark brown border
+            let text_color = Color::from_rgba(30, 25, 20, alpha); // Dark brown text
+
+            // Draw rounded rectangle bubble body
+            let r = corner_radius;
+            // Horizontal strip (full width, inset vertically)
+            draw_rectangle(bubble_x, bubble_y + r, bubble_width, bubble_height - r * 2.0, bg_color);
+            // Vertical strip (full height, inset horizontally)
+            draw_rectangle(bubble_x + r, bubble_y, bubble_width - r * 2.0, bubble_height, bg_color);
+            // Four corner circles
+            draw_circle(bubble_x + r, bubble_y + r, r, bg_color);
+            draw_circle(bubble_x + bubble_width - r, bubble_y + r, r, bg_color);
+            draw_circle(bubble_x + r, bubble_y + bubble_height - r, r, bg_color);
+            draw_circle(bubble_x + bubble_width - r, bubble_y + bubble_height - r, r, bg_color);
+
+            // Draw tail (triangle pointing down)
+            let tail_x = screen_x;
+            let tail_top_y = bubble_y + bubble_height;
+            let tail_bottom_y = tail_top_y + tail_height;
+            let tail_half_width = 5.0;
+
+            draw_triangle(
+                Vec2::new(tail_x - tail_half_width, tail_top_y),
+                Vec2::new(tail_x + tail_half_width, tail_top_y),
+                Vec2::new(tail_x, tail_bottom_y),
+                bg_color,
+            );
+
+            // Draw border - rounded corners with lines
+            // Top edge
+            draw_line(bubble_x + r, bubble_y, bubble_x + bubble_width - r, bubble_y, 1.0, border_color);
+            // Bottom edge (with gap for tail)
+            draw_line(bubble_x + r, bubble_y + bubble_height, tail_x - tail_half_width, bubble_y + bubble_height, 1.0, border_color);
+            draw_line(tail_x + tail_half_width, bubble_y + bubble_height, bubble_x + bubble_width - r, bubble_y + bubble_height, 1.0, border_color);
+            // Left edge
+            draw_line(bubble_x, bubble_y + r, bubble_x, bubble_y + bubble_height - r, 1.0, border_color);
+            // Right edge
+            draw_line(bubble_x + bubble_width, bubble_y + r, bubble_x + bubble_width, bubble_y + bubble_height - r, 1.0, border_color);
+            // Corner arcs (approximate with short lines for pixel-art look)
+            // Top-left
+            draw_line(bubble_x, bubble_y + r, bubble_x + r, bubble_y, 1.0, border_color);
+            // Top-right
+            draw_line(bubble_x + bubble_width - r, bubble_y, bubble_x + bubble_width, bubble_y + r, 1.0, border_color);
+            // Bottom-left
+            draw_line(bubble_x, bubble_y + bubble_height - r, bubble_x + r, bubble_y + bubble_height, 1.0, border_color);
+            // Bottom-right
+            draw_line(bubble_x + bubble_width - r, bubble_y + bubble_height, bubble_x + bubble_width, bubble_y + bubble_height - r, 1.0, border_color);
+            // Tail edges
+            draw_line(tail_x - tail_half_width, tail_top_y, tail_x, tail_bottom_y, 1.0, border_color);
+            draw_line(tail_x + tail_half_width, tail_top_y, tail_x, tail_bottom_y, 1.0, border_color);
+
+            // Draw text lines
+            let text_x = bubble_x + padding;
+            let mut text_y = bubble_y + padding + font_size * 0.85;
+
+            for line in &lines {
+                self.draw_text_sharp(line, text_x, text_y, font_size, text_color);
+                text_y += line_height;
+            }
         }
     }
 

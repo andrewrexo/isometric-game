@@ -47,6 +47,13 @@ pub struct LevelUpEvent {
     pub time: f64,
 }
 
+/// Chat bubble displayed above a player's head
+pub struct ChatBubble {
+    pub player_id: String,
+    pub text: String,
+    pub time: f64,
+}
+
 /// A choice in a dialogue box
 #[derive(Clone, Debug)]
 pub struct DialogueChoice {
@@ -203,6 +210,9 @@ pub struct GameState {
     pub damage_events: Vec<DamageEvent>,
     pub level_up_events: Vec<LevelUpEvent>,
 
+    // Chat bubbles above players
+    pub chat_bubbles: Vec<ChatBubble>,
+
     // Inventory
     pub inventory: Inventory,
 
@@ -240,6 +250,7 @@ impl GameState {
             selected_entity_id: None,
             damage_events: Vec::new(),
             level_up_events: Vec::new(),
+            chat_bubbles: Vec::new(),
             inventory: Inventory::new(),
             item_registry: ItemRegistry::new(),
             recipe_definitions: Vec::new(),
@@ -299,6 +310,9 @@ impl GameState {
 
         // Clean up old level up events (older than 2.0 seconds)
         self.level_up_events.retain(|event| current_time - event.time < 2.0);
+
+        // Clean up old chat bubbles (older than 5.0 seconds)
+        self.chat_bubbles.retain(|bubble| current_time - bubble.time < 5.0);
 
         // Clean up old quest completion events (older than 4 seconds)
         self.ui_state.quest_completed_events.retain(|event| current_time - event.time < 4.0);
