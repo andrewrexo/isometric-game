@@ -17,18 +17,18 @@ max_stack = 9999
 base_price = 1
 sellable = false
 
-[iron_ore]
-display_name = "Iron Ore"
-sprite = "item_iron_ore"
-description = "Raw iron ore for smithing."
-category = "material"
-max_stack = 99
-base_price = 10
+# [iron_ore]
+# display_name = "Iron Ore"
+# sprite = "item_iron_ore"
+# description = "Raw iron ore for smithing."
+# category = "material"
+# max_stack = 99
+# base_price = 10
 
-[goblin_ear]
-display_name = "Goblin Ear"
-sprite = "item_goblin_ear"
-description = "A trophy from a slain goblin. Some collectors pay well for these."
-category = "material"
-max_stack = 99
-base_price = 3
+# [goblin_ear]
+# display_name = "Goblin Ear"
+# sprite = "item_goblin_ear"
+# description = "A trophy from a slain goblin. Some collectors pay well for these."
+# category = "material"
+# max_stack = 99
+# base_price = 3

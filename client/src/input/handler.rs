@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use crate::game::{GameState, ContextMenu, DragState};
+use crate::game::{GameState, ContextMenu, DragState, DragSource};
 use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
 
@@ -21,7 +21,7 @@ pub enum InputCommand {
     Craft { recipe_id: String },
     // Equipment commands
     Equip { slot_index: u8 },
-    Unequip { slot_type: String },
+    Unequip { slot_type: String, target_slot: Option<u8> },
     // Inventory commands
     DropItem { slot_index: u8, quantity: u32 },
     SwapSlots { from_slot: u8, to_slot: u8 },
@@ -90,19 +90,94 @@ impl InputHandler {
             // Debug toggle handled in main loop
         }
 
-        // Handle drag and drop for inventory slot rearrangement
+        // Handle drag and drop for inventory slot rearrangement and equipment
         if mouse_released {
             if let Some(drag) = state.ui_state.drag_state.take() {
                 // Drag completed - check if we're over a valid drop target
                 if let Some(ref element) = clicked_element {
                     match element {
                         UiElementId::InventorySlot(to_idx) | UiElementId::QuickSlot(to_idx) => {
-                            // Swap slots if dropping on a different slot
-                            if drag.from_slot != *to_idx {
-                                commands.push(InputCommand::SwapSlots {
-                                    from_slot: drag.from_slot as u8,
-                                    to_slot: *to_idx as u8,
-                                });
+                            match &drag.source {
+                                DragSource::Inventory(from_idx) => {
+                                    // Swap inventory slots if dropping on a different slot
+                                    if *from_idx != *to_idx {
+                                        // Optimistic update: immediately swap locally
+                                        state.inventory.swap_slots(*from_idx, *to_idx);
+
+                                        commands.push(InputCommand::SwapSlots {
+                                            from_slot: *from_idx as u8,
+                                            to_slot: *to_idx as u8,
+                                        });
+                                    }
+                                }
+                                DragSource::Equipment(slot_type) => {
+                                    // Dragging from equipment to inventory - unequip to specific slot
+                                    // Optimistic update: immediately move to inventory and clear equipment
+                                    if state.inventory.slots.get(*to_idx).map(|s| s.is_none()).unwrap_or(false) {
+                                        state.inventory.set_slot(*to_idx, drag.item_id.clone(), drag.quantity);
+
+                                        // Update player's equipped state optimistically
+                                        if let Some(local_id) = &state.local_player_id.clone() {
+                                            if let Some(player) = state.players.get_mut(local_id) {
+                                                match slot_type.as_str() {
+                                                    "body" => player.equipped_body = None,
+                                                    "feet" => player.equipped_feet = None,
+                                                    _ => {}
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    commands.push(InputCommand::Unequip {
+                                        slot_type: slot_type.clone(),
+                                        target_slot: Some(*to_idx as u8),
+                                    });
+                                }
+                            }
+                        }
+                        UiElementId::EquipmentSlot(target_slot_type) => {
+                            match &drag.source {
+                                DragSource::Inventory(from_idx) => {
+                                    // Dragging from inventory to equipment - equip if valid slot type
+                                    // First check if player meets requirements before optimistic update
+                                    let item_def = state.item_registry.get_or_placeholder(&drag.item_id);
+                                    let can_equip = if let Some(ref equip) = item_def.equipment {
+                                        // Check slot type matches target
+                                        let slot_matches = equip.slot_type == *target_slot_type;
+                                        // Check level requirement
+                                        let level_ok = state.get_local_player()
+                                            .map(|p| p.level >= equip.level_required)
+                                            .unwrap_or(false);
+                                        slot_matches && level_ok
+                                    } else {
+                                        false // Not equippable
+                                    };
+
+                                    if can_equip {
+                                        // Optimistic update: immediately equip and clear inventory slot
+                                        if let Some(local_id) = &state.local_player_id.clone() {
+                                            if let Some(player) = state.players.get_mut(local_id) {
+                                                match target_slot_type.as_str() {
+                                                    "body" => player.equipped_body = Some(drag.item_id.clone()),
+                                                    "feet" => player.equipped_feet = Some(drag.item_id.clone()),
+                                                    _ => {}
+                                                }
+                                            }
+                                        }
+                                        state.inventory.clear_slot(*from_idx);
+
+                                        commands.push(InputCommand::Equip { slot_index: *from_idx as u8 });
+                                    }
+                                    // If can't equip, drag is cancelled - item stays in inventory
+                                }
+                                DragSource::Equipment(source_slot_type) => {
+                                    // Dragging from equipment slot to another equipment slot
+                                    // Only makes sense if they're different types, otherwise no-op
+                                    if source_slot_type != target_slot_type {
+                                        // Can't swap different equipment slot types directly
+                                        // Would need unequip + equip, which isn't supported
+                                    }
+                                }
                             }
                         }
                         _ => {
@@ -151,15 +226,32 @@ impl InputHandler {
                                 state.ui_state.double_click_state.last_click_slot = Some(*idx);
                                 state.ui_state.double_click_state.last_click_time = current_time;
 
-                                // Start drag
+                                // Start drag from inventory
                                 state.ui_state.drag_state = Some(DragState {
-                                    from_slot: *idx,
+                                    source: DragSource::Inventory(*idx),
                                     item_id: slot.item_id.clone(),
                                     quantity: slot.quantity,
                                 });
                                 // Don't process other input while starting drag
                                 return commands;
                             }
+                        }
+                    }
+                    UiElementId::EquipmentSlot(slot_type) => {
+                        // Check if equipment slot has an item
+                        let equipped_item = match slot_type.as_str() {
+                            "body" => state.get_local_player().and_then(|p| p.equipped_body.clone()),
+                            "feet" => state.get_local_player().and_then(|p| p.equipped_feet.clone()),
+                            _ => None,
+                        };
+                        if let Some(item_id) = equipped_item {
+                            // Start drag from equipment slot
+                            state.ui_state.drag_state = Some(DragState {
+                                source: DragSource::Equipment(slot_type.clone()),
+                                item_id,
+                                quantity: 1, // Equipment is always quantity 1
+                            });
+                            return commands;
                         }
                     }
                     _ => {}
@@ -180,7 +272,10 @@ impl InputHandler {
                                 // Equipment slot context menu - only unequip option
                                 if *option_idx == 0 {
                                     if let Some(ref slot_type) = menu.equipment_slot {
-                                        commands.push(InputCommand::Unequip { slot_type: slot_type.clone() });
+                                        commands.push(InputCommand::Unequip {
+                                            slot_type: slot_type.clone(),
+                                            target_slot: None, // Use first available slot
+                                        });
                                     }
                                 }
                             } else {

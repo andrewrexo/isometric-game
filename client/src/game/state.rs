@@ -103,10 +103,17 @@ pub struct ContextMenu {
     pub equipment_slot: Option<String>, // "body", "feet", etc. when is_equipment is true
 }
 
-/// Drag state for inventory slot rearrangement
+/// Source of a drag operation
+#[derive(Debug, Clone, PartialEq)]
+pub enum DragSource {
+    Inventory(usize),          // Inventory slot index
+    Equipment(String),         // Equipment slot type ("body", "feet")
+}
+
+/// Drag state for inventory/equipment rearrangement
 #[derive(Debug, Clone)]
 pub struct DragState {
-    pub from_slot: usize,
+    pub source: DragSource,
     pub item_id: String,
     pub quantity: i32,
 }

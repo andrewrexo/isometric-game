@@ -307,7 +307,7 @@ fn run_game_frame(
             InputCommand::Craft { recipe_id } => ClientMessage::Craft { recipe_id: recipe_id.clone() },
             // Equipment commands
             InputCommand::Equip { slot_index } => ClientMessage::Equip { slot_index: *slot_index },
-            InputCommand::Unequip { slot_type } => ClientMessage::Unequip { slot_type: slot_type.clone() },
+            InputCommand::Unequip { slot_type, target_slot } => ClientMessage::Unequip { slot_type: slot_type.clone(), target_slot: *target_slot },
             // Inventory commands
             InputCommand::DropItem { slot_index, quantity } => ClientMessage::DropItem { slot_index: *slot_index, quantity: *quantity },
             InputCommand::SwapSlots { from_slot, to_slot } => ClientMessage::SwapSlots { from_slot: *from_slot, to_slot: *to_slot },

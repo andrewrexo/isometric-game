@@ -12,14 +12,14 @@ base_price = 25
 type = "heal"
 amount = 30
 
-[mana_potion]
-display_name = "Mana Potion"
-sprite = "item_mana_potion"
-description = "Restores 20 MP when consumed."
-category = "consumable"
-max_stack = 10
-base_price = 30
+# [mana_potion]
+# display_name = "Mana Potion"
+# sprite = "item_mana_potion"
+# description = "Restores 20 MP when consumed."
+# category = "consumable"
+# max_stack = 10
+# base_price = 30
 
-[mana_potion.use_effect]
-type = "restore_mana"
-amount = 20
+# [mana_potion.use_effect]
+# type = "restore_mana"
+# amount = 20

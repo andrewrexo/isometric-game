@@ -56,7 +56,7 @@ pub enum ClientMessage {
     Equip { slot_index: u8 },
 
     #[serde(rename = "unequip")]
-    Unequip { slot_type: String },
+    Unequip { slot_type: String, target_slot: Option<u8> },
 
     #[serde(rename = "dropItem")]
     DropItem { slot_index: u8, quantity: u32 },
@@ -140,8 +140,11 @@ impl ClientMessage {
                 data.insert("slot_index".into(), Value::Integer((*slot_index as i64).into()));
                 "equip"
             }
-            ClientMessage::Unequip { slot_type } => {
+            ClientMessage::Unequip { slot_type, target_slot } => {
                 data.insert("slot_type".into(), Value::String(slot_type.clone().into()));
+                if let Some(slot) = target_slot {
+                    data.insert("target_slot".into(), Value::Integer((*slot as i64).into()));
+                }
                 "unequip"
             }
             ClientMessage::DropItem { slot_index, quantity } => {

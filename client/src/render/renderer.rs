@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use std::collections::HashMap;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition, ContextMenu, DragState};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition, ContextMenu, DragState, DragSource};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use crate::ui::{UiElementId, UiLayout};
@@ -869,20 +869,16 @@ impl Renderer {
 
         // Try to use item sprite, fall back to colored rectangle
         if let Some(texture) = self.item_sprites.get(&item.item_id) {
-            // Use inventory sprite - extract icon portion at 44x32, centered in 64x32 tile
-            let icon_width = 44.0;
-            let icon_height = 32.0;
-            let src_rect = Rect::new(0.0, 0.0, icon_width, icon_height);
+            // Use full texture, centered on the ground position
+            let icon_width = texture.width();
+            let icon_height = texture.height();
 
             draw_texture_ex(
                 texture,
                 screen_x - icon_width / 2.0,
                 item_y - icon_height,
                 WHITE,
-                DrawTextureParams {
-                    source: Some(src_rect),
-                    ..Default::default()
-                },
+                DrawTextureParams::default(),
             );
         } else {
             // Fallback to colored rectangle
@@ -1179,7 +1175,7 @@ impl Renderer {
             let is_hovered = matches!(hovered, Some(UiElementId::InventorySlot(idx)) if *idx == i);
 
             // Check if this slot is being dragged
-            let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if drag.from_slot == i);
+            let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Inventory(idx) if *idx == i));
 
             // Slot background with hover/drag effect
             let bg_color = if is_dragging {
@@ -1238,8 +1234,13 @@ impl Renderer {
         // Check if body slot is hovered
         let body_hovered = matches!(hovered, Some(UiElementId::EquipmentSlot(slot)) if slot == "body");
 
+        // Check if body slot is being dragged
+        let body_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Equipment(slot) if slot == "body"));
+
         // Body slot background
-        let body_bg_color = if body_hovered {
+        let body_bg_color = if body_dragging {
+            Color::from_rgba(30, 30, 40, 255) // Dimmed when dragging
+        } else if body_hovered {
             Color::from_rgba(70, 70, 100, 255)
         } else {
             Color::from_rgba(40, 40, 60, 255)
@@ -1247,17 +1248,25 @@ impl Renderer {
         draw_rectangle(body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, body_bg_color);
 
         // Body slot border
-        let body_border_color = if body_hovered { WHITE } else { Color::from_rgba(80, 80, 120, 255) };
+        let body_border_color = if body_dragging {
+            Color::from_rgba(100, 100, 255, 255) // Blue border when dragging
+        } else if body_hovered {
+            WHITE
+        } else {
+            Color::from_rgba(80, 80, 120, 255)
+        };
         draw_rectangle_lines(body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, 2.0, body_border_color);
 
-        // Draw equipped body item or placeholder
-        if let Some(local_player) = state.get_local_player() {
-            if let Some(ref body_item_id) = local_player.equipped_body {
-                // Draw equipped item sprite
-                self.draw_item_icon(body_item_id, body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, state);
-            } else {
-                // Empty slot indicator
-                self.draw_text_sharp("Body", body_slot_x + 8.0, body_slot_y + 32.0, 16.0, DARKGRAY);
+        // Draw equipped body item or placeholder (hide if being dragged)
+        if !body_dragging {
+            if let Some(local_player) = state.get_local_player() {
+                if let Some(ref body_item_id) = local_player.equipped_body {
+                    // Draw equipped item sprite
+                    self.draw_item_icon(body_item_id, body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, state);
+                } else {
+                    // Empty slot indicator
+                    self.draw_text_sharp("Body", body_slot_x + 8.0, body_slot_y + 32.0, 16.0, DARKGRAY);
+                }
             }
         }
 
@@ -1275,8 +1284,13 @@ impl Renderer {
         // Check if feet slot is hovered
         let feet_hovered = matches!(hovered, Some(UiElementId::EquipmentSlot(slot)) if slot == "feet");
 
+        // Check if feet slot is being dragged
+        let feet_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Equipment(slot) if slot == "feet"));
+
         // Feet slot background
-        let feet_bg_color = if feet_hovered {
+        let feet_bg_color = if feet_dragging {
+            Color::from_rgba(30, 30, 40, 255) // Dimmed when dragging
+        } else if feet_hovered {
             Color::from_rgba(70, 70, 100, 255)
         } else {
             Color::from_rgba(40, 40, 60, 255)
@@ -1284,17 +1298,25 @@ impl Renderer {
         draw_rectangle(feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, feet_bg_color);
 
         // Feet slot border
-        let feet_border_color = if feet_hovered { WHITE } else { Color::from_rgba(80, 80, 120, 255) };
+        let feet_border_color = if feet_dragging {
+            Color::from_rgba(100, 100, 255, 255) // Blue border when dragging
+        } else if feet_hovered {
+            WHITE
+        } else {
+            Color::from_rgba(80, 80, 120, 255)
+        };
         draw_rectangle_lines(feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, 2.0, feet_border_color);
 
-        // Draw equipped feet item or placeholder
-        if let Some(local_player) = state.get_local_player() {
-            if let Some(ref feet_item_id) = local_player.equipped_feet {
-                // Draw equipped item sprite
-                self.draw_item_icon(feet_item_id, feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, state);
-            } else {
-                // Empty slot indicator
-                self.draw_text_sharp("Feet", feet_slot_x + 8.0, feet_slot_y + 32.0, 16.0, DARKGRAY);
+        // Draw equipped feet item or placeholder (hide if being dragged)
+        if !feet_dragging {
+            if let Some(local_player) = state.get_local_player() {
+                if let Some(ref feet_item_id) = local_player.equipped_feet {
+                    // Draw equipped item sprite
+                    self.draw_item_icon(feet_item_id, feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, state);
+                } else {
+                    // Empty slot indicator
+                    self.draw_text_sharp("Feet", feet_slot_x + 8.0, feet_slot_y + 32.0, 16.0, DARKGRAY);
+                }
             }
         }
 
@@ -1406,7 +1428,7 @@ impl Renderer {
             let is_hovered = matches!(hovered, Some(UiElementId::QuickSlot(idx)) if *idx == i);
 
             // Check if this slot is being dragged (quick slots are first 5 inventory slots)
-            let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if drag.from_slot == i);
+            let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Inventory(idx) if *idx == i));
 
             // Slot background with hover/drag effect
             let bg_color = if is_dragging {
@@ -1446,14 +1468,13 @@ impl Renderer {
     }
 
     /// Draw an item icon using sprite or fallback color
-    /// Uses the left half of the sprite sheet (the smaller inventory icon)
+    /// Uses the full texture, centered in the slot
     fn draw_item_icon(&self, item_id: &str, x: f32, y: f32, slot_width: f32, slot_height: f32, state: &GameState) {
         // Try to get the item sprite
         if let Some(texture) = self.item_sprites.get(item_id) {
-            // The sprite sheet layout: left half is the inventory icon
-            // Use 44x32 from the left half
-            let icon_width = 44.0;
-            let icon_height = 32.0;
+            // Use full texture, centered in the slot
+            let icon_width = texture.width();
+            let icon_height = texture.height();
 
             // Center the icon in the slot
             let offset_x = (slot_width - icon_width) / 2.0;
@@ -1464,17 +1485,13 @@ impl Renderer {
                 x + offset_x,
                 y + offset_y,
                 WHITE,
-                DrawTextureParams {
-                    source: Some(Rect::new(0.0, 0.0, icon_width, icon_height)),
-                    // No dest_size - draw at natural 44x32 size
-                    ..Default::default()
-                },
+                DrawTextureParams::default(),
             );
         } else {
-            // Fallback: colored rectangle based on category (44x32 centered)
+            // Fallback: colored rectangle based on category (centered)
             let item_def = state.item_registry.get_or_placeholder(item_id);
             let color = item_def.category_color();
-            let icon_width = 44.0;
+            let icon_width = 32.0;
             let icon_height = 32.0;
             let offset_x = (slot_width - icon_width) / 2.0;
             let offset_y = (slot_height - icon_height) / 2.0;

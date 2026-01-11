@@ -61,6 +61,27 @@ impl Inventory {
             .map(|slot| slot.quantity)
             .sum()
     }
+
+    /// Swap two inventory slots (for optimistic UI updates)
+    pub fn swap_slots(&mut self, from_slot: usize, to_slot: usize) {
+        if from_slot < INVENTORY_SIZE && to_slot < INVENTORY_SIZE {
+            self.slots.swap(from_slot, to_slot);
+        }
+    }
+
+    /// Move item from a slot to an empty slot, or set a slot directly (for optimistic unequip)
+    pub fn set_slot(&mut self, slot_index: usize, item_id: String, quantity: i32) {
+        if slot_index < INVENTORY_SIZE {
+            self.slots[slot_index] = Some(InventorySlot { item_id, quantity });
+        }
+    }
+
+    /// Clear a slot (for optimistic equip from inventory)
+    pub fn clear_slot(&mut self, slot_index: usize) {
+        if slot_index < INVENTORY_SIZE {
+            self.slots[slot_index] = None;
+        }
+    }
 }
 
 impl Default for Inventory {
