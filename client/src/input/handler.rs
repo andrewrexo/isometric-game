@@ -694,6 +694,9 @@ impl InputHandler {
                     }
                 }
                 state.auto_path = None;
+
+                // Send stop command so we don't keep moving in the last direction
+                commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
             }
         }
 
