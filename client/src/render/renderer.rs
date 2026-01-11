@@ -419,7 +419,7 @@ impl Renderer {
             let max_bubble_width = 220.0;
             let font_size = 16.0;
             let line_height = 18.0;
-            let padding = 4.0;
+            let padding = 2.0;
             let tail_height = 6.0;
             let corner_radius = 3.0;
 
@@ -436,30 +436,40 @@ impl Renderer {
             let bubble_width = (max_line_width + padding * 2.0).max(30.0);
             let bubble_height = num_lines as f32 * line_height + padding * 2.0;
 
-            // Position bubble above player (above name tag and health bar)
+            // Position bubble above player (above name tag)
             let bubble_x = screen_x - bubble_width / 2.0;
-            let bubble_y = screen_y - 95.0 - bubble_height - tail_height;
+            let bubble_y = screen_y - 75.0 - bubble_height - tail_height;
 
             // Colors with alpha - off-white paper/comic book style
             let bg_color = Color::from_rgba(255, 250, 240, alpha); // Warm off-white/cream
             let border_color = Color::from_rgba(60, 50, 40, alpha); // Dark brown border
             let text_color = Color::from_rgba(30, 25, 20, alpha); // Dark brown text
 
-            // Draw rounded rectangle bubble body
+            // Draw rounded rectangle bubble body (pixel-aligned for clean edges)
+            // Using chamfered corners - no circles, just two overlapping rectangles
             let r = corner_radius;
-            // Horizontal strip (full width, inset vertically)
-            draw_rectangle(bubble_x, bubble_y + r, bubble_width, bubble_height - r * 2.0, bg_color);
-            // Vertical strip (full height, inset horizontally)
-            draw_rectangle(bubble_x + r, bubble_y, bubble_width - r * 2.0, bubble_height, bg_color);
-            // Four corner circles
-            draw_circle(bubble_x + r, bubble_y + r, r, bg_color);
-            draw_circle(bubble_x + bubble_width - r, bubble_y + r, r, bg_color);
-            draw_circle(bubble_x + r, bubble_y + bubble_height - r, r, bg_color);
-            draw_circle(bubble_x + bubble_width - r, bubble_y + bubble_height - r, r, bg_color);
+            let bx = bubble_x.floor();
+            let by = bubble_y.floor();
+            let bw = bubble_width.floor();
+            let bh = bubble_height.floor();
+
+            // Horizontal strip (full width, inset top/bottom by radius)
+            draw_rectangle(bx, by + r, bw, bh - r * 2.0, bg_color);
+            // Vertical strip (full height, inset left/right by radius)
+            draw_rectangle(bx + r, by, bw - r * 2.0, bh, bg_color);
+            // Corner triangles to fill the chamfered corners
+            // Top-left
+            draw_triangle(Vec2::new(bx, by + r), Vec2::new(bx + r, by), Vec2::new(bx + r, by + r), bg_color);
+            // Top-right
+            draw_triangle(Vec2::new(bx + bw - r, by), Vec2::new(bx + bw, by + r), Vec2::new(bx + bw - r, by + r), bg_color);
+            // Bottom-left
+            draw_triangle(Vec2::new(bx, by + bh - r), Vec2::new(bx + r, by + bh - r), Vec2::new(bx + r, by + bh), bg_color);
+            // Bottom-right
+            draw_triangle(Vec2::new(bx + bw - r, by + bh - r), Vec2::new(bx + bw, by + bh - r), Vec2::new(bx + bw - r, by + bh), bg_color);
 
             // Draw tail (triangle pointing down)
-            let tail_x = screen_x;
-            let tail_top_y = bubble_y + bubble_height;
+            let tail_x = screen_x.floor();
+            let tail_top_y = by + bh;
             let tail_bottom_y = tail_top_y + tail_height;
             let tail_half_width = 5.0;
 
@@ -472,32 +482,34 @@ impl Renderer {
 
             // Draw border - rounded corners with lines
             // Top edge
-            draw_line(bubble_x + r, bubble_y, bubble_x + bubble_width - r, bubble_y, 1.0, border_color);
+            draw_line(bx + r, by, bx + bw - r, by, 1.0, border_color);
             // Bottom edge (with gap for tail)
-            draw_line(bubble_x + r, bubble_y + bubble_height, tail_x - tail_half_width, bubble_y + bubble_height, 1.0, border_color);
-            draw_line(tail_x + tail_half_width, bubble_y + bubble_height, bubble_x + bubble_width - r, bubble_y + bubble_height, 1.0, border_color);
+            draw_line(bx + r, by + bh, tail_x - tail_half_width, by + bh, 1.0, border_color);
+            draw_line(tail_x + tail_half_width, by + bh, bx + bw - r, by + bh, 1.0, border_color);
             // Left edge
-            draw_line(bubble_x, bubble_y + r, bubble_x, bubble_y + bubble_height - r, 1.0, border_color);
+            draw_line(bx, by + r, bx, by + bh - r, 1.0, border_color);
             // Right edge
-            draw_line(bubble_x + bubble_width, bubble_y + r, bubble_x + bubble_width, bubble_y + bubble_height - r, 1.0, border_color);
-            // Corner arcs (approximate with short lines for pixel-art look)
+            draw_line(bx + bw, by + r, bx + bw, by + bh - r, 1.0, border_color);
+            // Corner arcs (diagonal lines for pixel-art look)
             // Top-left
-            draw_line(bubble_x, bubble_y + r, bubble_x + r, bubble_y, 1.0, border_color);
+            draw_line(bx, by + r, bx + r, by, 1.0, border_color);
             // Top-right
-            draw_line(bubble_x + bubble_width - r, bubble_y, bubble_x + bubble_width, bubble_y + r, 1.0, border_color);
+            draw_line(bx + bw - r, by, bx + bw, by + r, 1.0, border_color);
             // Bottom-left
-            draw_line(bubble_x, bubble_y + bubble_height - r, bubble_x + r, bubble_y + bubble_height, 1.0, border_color);
+            draw_line(bx, by + bh - r, bx + r, by + bh, 1.0, border_color);
             // Bottom-right
-            draw_line(bubble_x + bubble_width - r, bubble_y + bubble_height, bubble_x + bubble_width, bubble_y + bubble_height - r, 1.0, border_color);
+            draw_line(bx + bw - r, by + bh, bx + bw, by + bh - r, 1.0, border_color);
             // Tail edges
             draw_line(tail_x - tail_half_width, tail_top_y, tail_x, tail_bottom_y, 1.0, border_color);
             draw_line(tail_x + tail_half_width, tail_top_y, tail_x, tail_bottom_y, 1.0, border_color);
 
-            // Draw text lines
-            let text_x = bubble_x + padding;
-            let mut text_y = bubble_y + padding + font_size * 0.85;
+            // Draw text lines (centered)
+            let bubble_center_x = bx + bw / 2.0;
+            let mut text_y = by + padding + font_size * 0.85;
 
             for line in &lines {
+                let line_width = self.measure_text_sharp(line, font_size).width;
+                let text_x = bubble_center_x - line_width / 2.0;
                 self.draw_text_sharp(line, text_x, text_y, font_size, text_color);
                 text_y += line_height;
             }
@@ -848,14 +860,14 @@ impl Renderer {
             );
         }
 
-        // Player name
+        // Player name (positioned just above head)
         let has_sprite = self.get_player_sprite(&player.gender, &player.skin).is_some();
         let name_y_offset = if has_sprite { SPRITE_HEIGHT - 8.0 } else { 24.0 };
         let name_width = self.measure_text_sharp(&player.name, 16.0).width;
         self.draw_text_sharp(
             &player.name,
             screen_x - name_width / 2.0,
-            screen_y - name_y_offset - 5.0,
+            screen_y - name_y_offset + 2.0,
             16.0,
             WHITE,
         );
@@ -865,7 +877,7 @@ impl Renderer {
             let bar_width = 30.0;
             let bar_height = 4.0;
             let bar_x = screen_x - bar_width / 2.0;
-            let bar_y = screen_y - name_y_offset - 20.0;
+            let bar_y = screen_y - name_y_offset - 13.0;
 
             // Background
             draw_rectangle(bar_x, bar_y, bar_width, bar_height, DARKGRAY);
