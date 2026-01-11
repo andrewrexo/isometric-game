@@ -25,6 +25,11 @@ pub enum UiElementId {
     // Context Menu
     ContextMenuOption(usize),
 
+    // Escape Menu
+    EscapeMenuZoom1x,
+    EscapeMenuZoom2x,
+    EscapeMenuDisconnect,
+
     // World Items
     GroundItem(String), // item instance ID
 }

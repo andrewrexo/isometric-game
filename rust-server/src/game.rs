@@ -127,6 +127,9 @@ pub struct Player {
     // Equipment
     pub equipped_body: Option<String>, // Item ID of equipped body armor
     pub equipped_feet: Option<String>, // Item ID of equipped boots
+    // Admin privileges
+    pub is_admin: bool,
+    pub is_god_mode: bool, // Invincibility for admins
 }
 
 const PLAYER_RESPAWN_TIME_MS: u64 = 5000; // 5 seconds to respawn
@@ -165,6 +168,8 @@ impl Player {
             skin: skin.to_string(),
             equipped_body: None,
             equipped_feet: None,
+            is_admin: false,
+            is_god_mode: false,
         }
     }
 
@@ -280,6 +285,8 @@ pub struct PlayerUpdate {
     // Equipment
     pub equipped_body: Option<String>,
     pub equipped_feet: Option<String>,
+    // Admin status
+    pub is_admin: bool,
 }
 
 // ============================================================================
@@ -453,6 +460,7 @@ impl GameRoom {
         skin: &str,
         equipped_body: Option<String>,
         equipped_feet: Option<String>,
+        is_admin: bool,
     ) {
         let mut players = self.players.write().await;
         let mut player = Player::new(player_id, name, x, y, gender, skin);
@@ -466,6 +474,7 @@ impl GameRoom {
         player.inventory.gold = gold;
         player.equipped_body = equipped_body;
         player.equipped_feet = equipped_feet;
+        player.is_admin = is_admin;
 
         // Restore inventory from JSON - support both old (u8) and new (String) formats
         // Skip invalid slots (empty item_id or quantity <= 0) to prevent ghost items
@@ -635,6 +644,30 @@ impl GameRoom {
         npcs.values().cloned().collect()
     }
 
+    /// Spawn an NPC at a specific location (admin command)
+    pub async fn spawn_npc_at(&self, prototype_id: &str, x: f32, y: f32) -> String {
+        let npc_id = format!("admin_npc_{}", Uuid::new_v4());
+
+        let npc = if let Some(prototype) = self.entity_registry.get(prototype_id) {
+            Npc::from_prototype(
+                &npc_id,
+                prototype_id,
+                prototype,
+                x as i32,
+                y as i32,
+                1, // Default level
+            )
+        } else {
+            // Fallback to legacy NpcType
+            Npc::new(&npc_id, NpcType::Slime, x as i32, y as i32, 1)
+        };
+
+        let mut npcs = self.npcs.write().await;
+        npcs.insert(npc_id.clone(), npc);
+        tracing::info!("Admin spawned NPC {} at ({}, {})", prototype_id, x, y);
+        npc_id
+    }
+
     pub async fn handle_move(&self, player_id: &str, dx: f32, dy: f32) {
         let mut players = self.players.write().await;
         if let Some(player) = players.get_mut(player_id) {
@@ -698,6 +731,19 @@ impl GameRoom {
     async fn handle_chat_command(&self, player_id: &str, text: &str) {
         let parts: Vec<&str> = text.split_whitespace().collect();
         let command = parts.first().map(|s| s.to_lowercase()).unwrap_or_default();
+
+        // Check if player is admin for privileged commands
+        let is_admin = {
+            let players = self.players.read().await;
+            players.get(player_id).map(|p| p.is_admin).unwrap_or(false)
+        };
+
+        // Admin-only commands check
+        let admin_commands = ["/give", "/setlevel", "/teleport", "/spawn", "/heal", "/kill", "/god", "/announce"];
+        if admin_commands.contains(&command.as_str()) && !is_admin {
+            self.send_system_message(player_id, "This command requires admin privileges.").await;
+            return;
+        }
 
         match command.as_str() {
             "/give" => {
@@ -782,13 +828,172 @@ impl GameRoom {
                 }).await;
             }
             "/help" => {
-                self.send_system_message(player_id, "Commands: /give <item_id> [qty], /setlevel <lvl>, /items, /help").await;
+                if is_admin {
+                    self.send_system_message(player_id, "Commands: /give <item> [qty], /setlevel <lvl>, /teleport <x> <y>, /spawn <npc> [x] [y], /heal [player], /kill <player>, /god, /announce <msg>, /items, /help").await;
+                } else {
+                    self.send_system_message(player_id, "Commands: /items, /help").await;
+                }
             }
             "/items" => {
                 // List available items
                 let items: Vec<&String> = self.item_registry.ids().collect();
                 let list = items.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
                 self.send_system_message(player_id, &format!("Items: {}", list)).await;
+            }
+            "/teleport" => {
+                // /teleport <x> <y>
+                if parts.len() < 3 {
+                    self.send_system_message(player_id, "Usage: /teleport <x> <y>").await;
+                    return;
+                }
+                let x: i32 = match parts[1].parse() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        self.send_system_message(player_id, "Invalid x coordinate").await;
+                        return;
+                    }
+                };
+                let y: i32 = match parts[2].parse() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        self.send_system_message(player_id, "Invalid y coordinate").await;
+                        return;
+                    }
+                };
+                {
+                    let mut players = self.players.write().await;
+                    if let Some(player) = players.get_mut(player_id) {
+                        player.x = x;
+                        player.y = y;
+                        tracing::info!("Player {} teleported to ({}, {})", player_id, x, y);
+                    }
+                }
+                self.send_system_message(player_id, &format!("Teleported to ({}, {})", x, y)).await;
+            }
+            "/spawn" => {
+                // /spawn <npc_id> [x] [y]
+                if parts.len() < 2 {
+                    self.send_system_message(player_id, "Usage: /spawn <npc_id> [x] [y]").await;
+                    return;
+                }
+                let npc_id = parts[1];
+
+                // Get spawn position (player position if not specified)
+                let (spawn_x, spawn_y) = {
+                    let players = self.players.read().await;
+                    if let Some(player) = players.get(player_id) {
+                        let x = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(player.x);
+                        let y = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(player.y);
+                        (x, y)
+                    } else {
+                        return;
+                    }
+                };
+
+                // Check if NPC type exists
+                if self.entity_registry.get(npc_id).is_none() {
+                    let available: Vec<&String> = self.entity_registry.ids().collect();
+                    let list = available.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                    self.send_system_message(player_id, &format!("Unknown NPC: {}. Available: {}", npc_id, list)).await;
+                    return;
+                }
+
+                // Spawn the NPC
+                let spawned_id = self.spawn_npc_at(npc_id, spawn_x as f32, spawn_y as f32).await;
+                self.send_system_message(player_id, &format!("Spawned {} at ({}, {}) [id: {}]", npc_id, spawn_x, spawn_y, spawned_id)).await;
+                tracing::info!("Admin {} spawned {} at ({}, {})", player_id, npc_id, spawn_x, spawn_y);
+            }
+            "/heal" => {
+                // /heal [player_name]
+                let target_name = parts.get(1).map(|s| *s);
+
+                let healed = {
+                    let mut players = self.players.write().await;
+                    if let Some(name) = target_name {
+                        // Find player by name
+                        if let Some(player) = players.values_mut().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                            player.hp = player.max_hp;
+                            player.is_dead = false;
+                            Some(player.name.clone())
+                        } else {
+                            None
+                        }
+                    } else {
+                        // Heal self
+                        if let Some(player) = players.get_mut(player_id) {
+                            player.hp = player.max_hp;
+                            player.is_dead = false;
+                            Some(player.name.clone())
+                        } else {
+                            None
+                        }
+                    }
+                };
+
+                match healed {
+                    Some(name) => self.send_system_message(player_id, &format!("Healed {} to full HP", name)).await,
+                    None => self.send_system_message(player_id, "Player not found").await,
+                }
+            }
+            "/kill" => {
+                // /kill <player_name>
+                if parts.len() < 2 {
+                    self.send_system_message(player_id, "Usage: /kill <player_name>").await;
+                    return;
+                }
+                let target_name = parts[1];
+
+                let killed = {
+                    let mut players = self.players.write().await;
+                    if let Some(player) = players.values_mut().find(|p| p.name.eq_ignore_ascii_case(target_name)) {
+                        player.hp = 0;
+                        player.is_dead = true;
+                        player.death_time = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u64;
+                        Some(player.name.clone())
+                    } else {
+                        None
+                    }
+                };
+
+                match killed {
+                    Some(name) => {
+                        self.send_system_message(player_id, &format!("Killed {}", name)).await;
+                        tracing::info!("Admin {} killed player {}", player_id, name);
+                    }
+                    None => self.send_system_message(player_id, "Player not found").await,
+                }
+            }
+            "/god" => {
+                // Toggle god mode (invincibility)
+                let (enabled, player_name) = {
+                    let mut players = self.players.write().await;
+                    if let Some(player) = players.get_mut(player_id) {
+                        player.is_god_mode = !player.is_god_mode;
+                        (player.is_god_mode, player.name.clone())
+                    } else {
+                        return;
+                    }
+                };
+                let status = if enabled { "enabled" } else { "disabled" };
+                self.send_system_message(player_id, &format!("God mode {}", status)).await;
+                tracing::info!("Admin {} ({}) toggled god mode: {}", player_name, player_id, status);
+            }
+            "/announce" => {
+                // /announce <message>
+                if parts.len() < 2 {
+                    self.send_system_message(player_id, "Usage: /announce <message>").await;
+                    return;
+                }
+                let message = parts[1..].join(" ");
+
+                // Broadcast announcement to all players
+                self.broadcast(ServerMessage::Announcement {
+                    text: message.clone(),
+                }).await;
+                tracing::info!("Admin {} announced: {}", player_id, message);
             }
             _ => {
                 self.send_system_message(player_id, &format!("Unknown command: {}. Try /help", command)).await;
@@ -926,6 +1131,10 @@ impl GameRoom {
             if let Some(target) = players.get_mut(&target_id) {
                 if target.is_dead {
                     return; // Already dead
+                }
+                // God mode prevents all damage
+                if target.is_god_mode {
+                    return;
                 }
                 // Calculate actual damage after defense (minimum 1 damage)
                 let defense = target.defense_bonus(&self.item_registry);
@@ -2357,6 +2566,7 @@ impl GameRoom {
                     skin: player.skin.clone(),
                     equipped_body: player.equipped_body.clone(),
                     equipped_feet: player.equipped_feet.clone(),
+                    is_admin: player.is_admin,
                 });
             }
         }
@@ -2399,6 +2609,10 @@ impl GameRoom {
                 if let Some(target) = players.get_mut(&target_id) {
                     if target.is_dead {
                         continue; // Already dead
+                    }
+                    // God mode prevents all damage
+                    if target.is_god_mode {
+                        continue;
                     }
                     target.hp = (target.hp - damage).max(0);
                     let died = target.hp <= 0;

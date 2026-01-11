@@ -618,6 +618,7 @@ async fn matchmake_join_or_create(
             &data.skin,
             data.equipped_body.clone(),
             data.equipped_feet.clone(),
+            data.is_admin,
         ).await;
     } else {
         // New player with defaults (shouldn't happen - auth creates player)

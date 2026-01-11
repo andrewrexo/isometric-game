@@ -256,6 +256,10 @@ pub enum ServerMessage {
         item_id: Option<String>,
         error: Option<String>,
     },
+    /// Server-wide announcement from admin
+    Announcement {
+        text: String,
+    },
 }
 
 /// Layer data for chunk transmission
@@ -373,6 +377,7 @@ impl ServerMessage {
             ServerMessage::ShopOpen { .. } => "shopOpen",
             ServerMessage::EquipmentUpdate { .. } => "equipmentUpdate",
             ServerMessage::EquipResult { .. } => "equipResult",
+            ServerMessage::Announcement { .. } => "announcement",
         }
     }
 }
@@ -458,6 +463,10 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                             Some(item_id) => Value::String(item_id.clone().into()),
                             None => Value::Nil,
                         },
+                    ));
+                    pmap.push((
+                        Value::String("is_admin".into()),
+                        Value::Boolean(p.is_admin),
                     ));
                     Value::Map(pmap)
                 })
@@ -1016,6 +1025,11 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     None => Value::Nil,
                 },
             ));
+            Value::Map(map)
+        }
+        ServerMessage::Announcement { text } => {
+            let mut map = Vec::new();
+            map.push((Value::String("text".into()), Value::String(text.clone().into())));
             Value::Map(map)
         }
     };

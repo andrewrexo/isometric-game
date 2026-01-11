@@ -5,6 +5,7 @@ use super::item_registry::ItemRegistry;
 use super::npc::Npc;
 use super::tilemap::Tilemap;
 use super::chunk::ChunkManager;
+use super::pathfinding::PathState;
 use crate::ui::UiElementId;
 
 pub struct Camera {
@@ -100,6 +101,13 @@ pub struct QuestCompletedEvent {
     pub time: f64,
 }
 
+/// Server-wide announcement from admin
+#[derive(Clone, Debug)]
+pub struct Announcement {
+    pub text: String,
+    pub time: f64,
+}
+
 /// Context menu for right-clicking items
 #[derive(Debug, Clone)]
 pub struct ContextMenu {
@@ -147,6 +155,8 @@ pub struct UiState {
     pub crafting_selected_category: usize,
     pub crafting_selected_recipe: usize,
     pub crafting_npc_id: Option<String>,
+    // Escape menu state
+    pub escape_menu_open: bool,
     // Mouse hover state for UI elements
     pub hovered_element: Option<UiElementId>,
     // Context menu state
@@ -155,6 +165,8 @@ pub struct UiState {
     pub drag_state: Option<DragState>,
     // Double-click tracking for equipping items
     pub double_click_state: DoubleClickState,
+    // Server announcements
+    pub announcements: Vec<Announcement>,
 }
 
 impl Default for UiState {
@@ -172,6 +184,7 @@ impl Default for UiState {
             crafting_selected_category: 0,
             crafting_selected_recipe: 0,
             crafting_npc_id: None,
+            escape_menu_open: false,
             hovered_element: None,
             context_menu: None,
             drag_state: None,
@@ -179,6 +192,7 @@ impl Default for UiState {
                 last_click_slot: None,
                 last_click_time: 0.0,
             },
+            announcements: Vec::new(),
         }
     }
 }
@@ -195,6 +209,7 @@ pub struct GameState {
     pub connection_status: ConnectionStatus,
     pub local_player_id: Option<String>,
     pub selected_character_name: Option<String>,
+    pub disconnect_requested: bool,
 
     // World
     pub tilemap: Tilemap,
@@ -231,6 +246,12 @@ pub struct GameState {
 
     // Debug
     pub debug_mode: bool,
+
+    // Tile hover state (world coordinates of tile under mouse)
+    pub hovered_tile: Option<(i32, i32)>,
+
+    // Automated pathfinding state
+    pub auto_path: Option<PathState>,
 }
 
 impl GameState {
@@ -242,6 +263,7 @@ impl GameState {
             connection_status: ConnectionStatus::Disconnected,
             local_player_id: None,
             selected_character_name: None,
+            disconnect_requested: false,
             tilemap,
             chunk_manager: ChunkManager::new(),
             players: HashMap::new(),
@@ -258,7 +280,14 @@ impl GameState {
             ui_state: UiState::default(),
             server_tick: 0,
             debug_mode: true,
+            hovered_tile: None,
+            auto_path: None,
         }
+    }
+
+    /// Clear the current auto-path (e.g., when player presses movement keys)
+    pub fn clear_auto_path(&mut self) {
+        self.auto_path = None;
     }
 
     /// Update with current input direction for smooth local movement
@@ -316,6 +345,9 @@ impl GameState {
 
         // Clean up old quest completion events (older than 4 seconds)
         self.ui_state.quest_completed_events.retain(|event| current_time - event.time < 4.0);
+
+        // Clean up old announcements (older than 8 seconds)
+        self.ui_state.announcements.retain(|ann| current_time - ann.time < 8.0);
     }
 
     pub fn get_local_player(&self) -> Option<&Player> {

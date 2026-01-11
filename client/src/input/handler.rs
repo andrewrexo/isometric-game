@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use crate::game::{GameState, ContextMenu, DragState, DragSource};
+use crate::game::{GameState, ContextMenu, DragState, DragSource, PathState, pathfinding};
 use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
 
@@ -73,6 +73,18 @@ impl InputHandler {
 
         // Update hover state for visual feedback (used by renderer next frame)
         state.ui_state.hovered_element = layout.hit_test(mx, my).cloned();
+
+        // Update hovered tile based on mouse position (only when not hovering UI)
+        // Use round() instead of floor() because tile sprites are visually centered
+        // at integer world coordinates, forming diamonds that span [-0.5, 0.5) around each point
+        if state.ui_state.hovered_element.is_none() {
+            let (world_x, world_y) = screen_to_world(mx, my, &state.camera);
+            let tile_x = world_x.round() as i32;
+            let tile_y = world_y.round() as i32;
+            state.hovered_tile = Some((tile_x, tile_y));
+        } else {
+            state.hovered_tile = None;
+        }
 
         // For click detection, do a fresh hit-test at the moment of click
         // This ensures we detect what's actually under the mouse when clicked
@@ -329,6 +341,48 @@ impl InputHandler {
             }
         }
 
+        // Handle escape menu
+        if state.ui_state.escape_menu_open {
+            // Handle mouse clicks on escape menu elements
+            if let Some(ref element) = clicked_element {
+                if mouse_clicked {
+                    match element {
+                        UiElementId::EscapeMenuZoom1x => {
+                            state.camera.zoom = 1.0;
+                            state.ui_state.escape_menu_open = false;
+                            return commands;
+                        }
+                        UiElementId::EscapeMenuZoom2x => {
+                            state.camera.zoom = 2.0;
+                            state.ui_state.escape_menu_open = false;
+                            return commands;
+                        }
+                        UiElementId::EscapeMenuDisconnect => {
+                            state.disconnect_requested = true;
+                            state.ui_state.escape_menu_open = false;
+                            return commands;
+                        }
+                        _ => {
+                            // Clicked somewhere else, close menu
+                            state.ui_state.escape_menu_open = false;
+                        }
+                    }
+                }
+            } else if mouse_clicked {
+                // Clicked outside any element, close menu
+                state.ui_state.escape_menu_open = false;
+            }
+
+            // Escape closes escape menu
+            if is_key_pressed(KeyCode::Escape) {
+                state.ui_state.escape_menu_open = false;
+                return commands;
+            }
+
+            // Don't process other input while escape menu is open
+            return commands;
+        }
+
         // Handle dialogue mode - intercept input when dialogue is open
         if let Some(dialogue) = &state.ui_state.active_dialogue {
             // Handle mouse clicks on dialogue elements
@@ -552,6 +606,11 @@ impl InputHandler {
         let left = is_key_down(KeyCode::A) || is_key_down(KeyCode::Left);
         let right = is_key_down(KeyCode::D) || is_key_down(KeyCode::Right);
 
+        // Cancel auto-path if any movement key is pressed
+        if up || down || left || right {
+            state.clear_auto_path();
+        }
+
         // Determine new direction - only one direction at a time
         // Priority: keep current direction if still held, otherwise pick new one
         let new_dir = match self.current_dir {
@@ -592,6 +651,50 @@ impl InputHandler {
             self.last_dx = dx;
             self.last_dy = dy;
             self.last_send_time = current_time;
+        }
+
+        // Path following - generate movement commands when auto-pathing
+        // Only follow path if not manually moving
+        if dx == 0.0 && dy == 0.0 {
+            // Get player position first to avoid borrow conflicts
+            let player_pos = state.get_local_player().map(|p| (p.x.round() as i32, p.y.round() as i32));
+
+            if let (Some((player_x, player_y)), Some(ref mut path_state)) = (player_pos, &mut state.auto_path) {
+                // Check if we've reached the current waypoint
+                if path_state.current_index < path_state.path.len() {
+                    let (target_x, target_y) = path_state.path[path_state.current_index];
+
+                    if player_x == target_x && player_y == target_y {
+                        // Move to next waypoint
+                        path_state.current_index += 1;
+                    }
+
+                    // Generate movement toward current waypoint
+                    if path_state.current_index < path_state.path.len() {
+                        let (next_x, next_y) = path_state.path[path_state.current_index];
+                        let move_dx = (next_x - player_x).signum() as f32;
+                        let move_dy = (next_y - player_y).signum() as f32;
+
+                        // Only move in one direction at a time (grid-based movement)
+                        if move_dx != 0.0 {
+                            commands.push(InputCommand::Move { dx: move_dx, dy: 0.0 });
+                        } else if move_dy != 0.0 {
+                            commands.push(InputCommand::Move { dx: 0.0, dy: move_dy });
+                        }
+                    }
+                }
+            }
+
+            // Check if path completed and handle pickup if needed
+            if state.auto_path.as_ref().map(|p| p.current_index >= p.path.len()).unwrap_or(false) {
+                // Path completed - check for pickup target
+                if let Some(ref path_state) = state.auto_path {
+                    if let Some(ref item_id) = path_state.pickup_target {
+                        commands.push(InputCommand::Pickup { item_id: item_id.clone() });
+                    }
+                }
+                state.auto_path = None;
+            }
         }
 
         // Attack (Space key) - holding space continues attacking with cooldown
@@ -660,7 +763,7 @@ impl InputHandler {
                 }
                 UiElementId::GroundItem(item_id) => {
                     if mouse_clicked {
-                        // Left-click on ground item - attempt pickup if within range
+                        // Left-click on ground item - attempt pickup if within range, or path to it
                         if let Some(local_id) = &state.local_player_id {
                             if let Some(player) = state.players.get(local_id) {
                                 if let Some(ground_item) = state.ground_items.get(item_id) {
@@ -671,6 +774,27 @@ impl InputHandler {
                                     const PICKUP_RANGE: f32 = 2.0;
                                     if dist < PICKUP_RANGE {
                                         commands.push(InputCommand::Pickup { item_id: item_id.clone() });
+                                    } else {
+                                        // Out of range - path to an adjacent tile
+                                        let player_x = player.x.round() as i32;
+                                        let player_y = player.y.round() as i32;
+                                        let item_x = ground_item.x.round() as i32;
+                                        let item_y = ground_item.y.round() as i32;
+
+                                        const MAX_PATH_DISTANCE: i32 = 32;
+                                        if let Some((dest, path)) = pathfinding::find_path_to_adjacent(
+                                            (player_x, player_y),
+                                            (item_x, item_y),
+                                            &state.chunk_manager,
+                                            MAX_PATH_DISTANCE,
+                                        ) {
+                                            state.auto_path = Some(PathState {
+                                                path,
+                                                current_index: 0,
+                                                destination: dest,
+                                                pickup_target: Some(item_id.clone()),
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -730,17 +854,50 @@ impl InputHandler {
             if let Some((entity_id, _)) = nearest_entity {
                 commands.push(InputCommand::Target { entity_id });
             } else {
-                // Clicked on empty space - clear target
+                // Clicked on empty space - try to path there
+                let tile_x = world_x.round() as i32;
+                let tile_y = world_y.round() as i32;
+
+                // Only path if within range and walkable
+                const MAX_PATH_DISTANCE: i32 = 32;
+
+                if let Some(player) = state.get_local_player() {
+                    let player_x = player.x.round() as i32;
+                    let player_y = player.y.round() as i32;
+                    let dist = (tile_x - player_x).abs().max((tile_y - player_y).abs());
+
+                    if dist <= MAX_PATH_DISTANCE && state.chunk_manager.is_walkable(tile_x as f32, tile_y as f32) {
+                        // Calculate path using A*
+                        if let Some(path) = pathfinding::find_path(
+                            (player_x, player_y),
+                            (tile_x, tile_y),
+                            &state.chunk_manager,
+                            MAX_PATH_DISTANCE,
+                        ) {
+                            state.auto_path = Some(PathState {
+                                path,
+                                current_index: 0,
+                                destination: (tile_x, tile_y),
+                                pickup_target: None,
+                            });
+                        }
+                    }
+                }
+
+                // Also clear target when clicking empty space
                 if state.selected_entity_id.is_some() {
                     commands.push(InputCommand::ClearTarget);
                 }
             }
         }
 
-        // Clear target with Escape
+        // Escape key - clear target first, then open escape menu if no target
         if is_key_pressed(KeyCode::Escape) {
             if state.selected_entity_id.is_some() {
                 commands.push(InputCommand::ClearTarget);
+            } else {
+                // No target selected - open escape menu
+                state.ui_state.escape_menu_open = true;
             }
         }
 

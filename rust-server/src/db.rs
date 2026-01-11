@@ -26,6 +26,7 @@ pub struct PlayerData {
     pub skin: String,           // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
     pub equipped_body: Option<String>, // Item ID of equipped body armor
     pub equipped_feet: Option<String>, // Item ID of equipped boots
+    pub is_admin: bool,         // Game Master privileges
 }
 
 // Available appearance options
@@ -88,6 +89,8 @@ impl Database {
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_body TEXT")
             .execute(pool).await;
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_feet TEXT")
+            .execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN is_admin BOOLEAN DEFAULT FALSE")
             .execute(pool).await;
 
         // Quest system tables
@@ -186,7 +189,7 @@ impl Database {
 
     pub async fn get_player_by_username(&self, username: &str) -> Result<Option<PlayerData>, sqlx::Error> {
         let row = sqlx::query(
-            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin, equipped_body, equipped_feet FROM players WHERE username = ?",
+            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin, equipped_body, equipped_feet, is_admin FROM players WHERE username = ?",
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -209,6 +212,7 @@ impl Database {
             skin: r.try_get("skin").unwrap_or_else(|_| "tan".to_string()),
             equipped_body: r.try_get::<String, _>("equipped_body").ok().filter(|s| !s.is_empty()),
             equipped_feet: r.try_get::<String, _>("equipped_feet").ok().filter(|s| !s.is_empty()),
+            is_admin: r.try_get::<bool, _>("is_admin").unwrap_or(false),
         }))
     }
 

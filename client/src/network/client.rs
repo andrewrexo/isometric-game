@@ -342,11 +342,14 @@ impl NetworkClient {
                     // Equipment (filter empty strings to None)
                     let equipped_body = extract_string(value, "equipped_body").filter(|s| !s.is_empty());
                     let equipped_feet = extract_string(value, "equipped_feet").filter(|s| !s.is_empty());
+                    // Admin status
+                    let is_admin = extract_bool(value, "is_admin").unwrap_or(false);
 
                     log::info!("Player joined: {} at ({}, {}) [{}/{}]", name, x, y, gender, skin);
                     let mut player = Player::new(id.clone(), name, x, y, gender, skin);
                     player.equipped_body = equipped_body;
                     player.equipped_feet = equipped_feet;
+                    player.is_admin = is_admin;
                     state.players.insert(id, player);
                 }
             }
@@ -385,6 +388,7 @@ impl NetworkClient {
                             let gold = extract_i32(player_value, "gold");
                             let equipped_body = extract_string(player_value, "equipped_body").filter(|s| !s.is_empty());
                             let equipped_feet = extract_string(player_value, "equipped_feet").filter(|s| !s.is_empty());
+                            let is_admin = extract_bool(player_value, "is_admin").unwrap_or(false);
 
                             if let Some(player) = state.players.get_mut(&id) {
                                 // Read velocity for client-side prediction
@@ -416,6 +420,8 @@ impl NetworkClient {
                                 // Update equipment
                                 player.equipped_body = equipped_body.clone();
                                 player.equipped_feet = equipped_feet.clone();
+                                // Update admin status
+                                player.is_admin = is_admin;
                             }
 
                             // Update inventory gold for local player
@@ -1076,6 +1082,19 @@ impl NetworkClient {
                 }
             }
 
+            // ========== Admin Messages ==========
+
+            "announcement" => {
+                if let Some(value) = data {
+                    let text = extract_string(value, "text").unwrap_or_default();
+                    log::info!("Server announcement: {}", text);
+                    state.ui_state.announcements.push(crate::game::Announcement {
+                        text,
+                        time: macroquad::time::get_time(),
+                    });
+                }
+            }
+
             _ => {
                 log::debug!("Unhandled message type: {}", msg_type);
             }
@@ -1100,6 +1119,15 @@ impl NetworkClient {
 
     pub fn is_connected(&self) -> bool {
         self.connection_state == ConnectionState::Connected
+    }
+
+    pub fn disconnect(&mut self) {
+        self.sender = None;
+        self.receiver = None;
+        self.connection_state = ConnectionState::Disconnected;
+        self.room_id = None;
+        self.session_token = None;
+        log::info!("Disconnected from server");
     }
 }
 

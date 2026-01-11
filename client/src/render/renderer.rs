@@ -254,6 +254,11 @@ impl Renderer {
         // 1. Render ground layer tiles
         self.render_tilemap_layer(state, LayerType::Ground);
 
+        // 1.5. Render hovered tile border if hovering over a tile
+        if let Some((tile_x, tile_y)) = state.hovered_tile {
+            self.render_tile_hover(tile_x, tile_y, &state.camera);
+        }
+
         // 2. Collect renderable items (players + NPCs + items + object tiles) for depth sorting
         #[derive(Clone)]
         enum Renderable<'a> {
@@ -752,6 +757,45 @@ impl Renderer {
         draw_line(left.0, left.1, top.0, top.1, 2.0, color);
     }
 
+    /// Draw corner indicators for the hovered tile
+    fn render_tile_hover(&self, tile_x: i32, tile_y: i32, camera: &Camera) {
+        // Get the center of the tile in screen space
+        let (center_x, center_y) = world_to_screen(tile_x as f32 + 0.5, tile_y as f32 + 0.5, camera);
+        let center_y = center_y - TILE_HEIGHT / 2.0;
+
+        // Tile dimensions (half-sizes for diamond corners)
+        let half_w = TILE_WIDTH / 2.0;
+        let half_h = TILE_HEIGHT / 2.0;
+
+        // Diamond corners (isometric tile shape)
+        let top = (center_x, center_y - half_h);
+        let right = (center_x + half_w, center_y);
+        let bottom = (center_x, center_y + half_h);
+        let left = (center_x - half_w, center_y);
+
+        // Corner size as fraction of edge length
+        let t = 0.2;
+
+        // Thin white lines with some transparency
+        let color = Color::from_rgba(255, 255, 255, 180);
+
+        // Top corner
+        draw_line(top.0, top.1, top.0 + (left.0 - top.0) * t, top.1 + (left.1 - top.1) * t, 1.0, color);
+        draw_line(top.0, top.1, top.0 + (right.0 - top.0) * t, top.1 + (right.1 - top.1) * t, 1.0, color);
+
+        // Right corner
+        draw_line(right.0, right.1, right.0 + (top.0 - right.0) * t, right.1 + (top.1 - right.1) * t, 1.0, color);
+        draw_line(right.0, right.1, right.0 + (bottom.0 - right.0) * t, right.1 + (bottom.1 - right.1) * t, 1.0, color);
+
+        // Bottom corner
+        draw_line(bottom.0, bottom.1, bottom.0 + (right.0 - bottom.0) * t, bottom.1 + (right.1 - bottom.1) * t, 1.0, color);
+        draw_line(bottom.0, bottom.1, bottom.0 + (left.0 - bottom.0) * t, bottom.1 + (left.1 - bottom.1) * t, 1.0, color);
+
+        // Left corner
+        draw_line(left.0, left.1, left.0 + (bottom.0 - left.0) * t, left.1 + (bottom.1 - left.1) * t, 1.0, color);
+        draw_line(left.0, left.1, left.0 + (top.0 - left.0) * t, left.1 + (top.1 - left.1) * t, 1.0, color);
+    }
+
     fn render_player(&self, player: &Player, is_local: bool, is_selected: bool, camera: &Camera) {
         let (screen_x, screen_y) = world_to_screen(player.x, player.y, camera);
 
@@ -863,14 +907,34 @@ impl Renderer {
         // Player name (positioned just above head)
         let has_sprite = self.get_player_sprite(&player.gender, &player.skin).is_some();
         let name_y_offset = if has_sprite { SPRITE_HEIGHT - 8.0 } else { 24.0 };
+
+        // Build display name with optional (GM) suffix
         let name_width = self.measure_text_sharp(&player.name, 16.0).width;
+        let gm_width = if player.is_admin { self.measure_text_sharp(" (GM)", 16.0).width } else { 0.0 };
+        let total_width = name_width + gm_width;
+        let name_x = screen_x - total_width / 2.0;
+        let name_y = screen_y - name_y_offset + 2.0;
+
+        // Draw player name in white
         self.draw_text_sharp(
             &player.name,
-            screen_x - name_width / 2.0,
-            screen_y - name_y_offset + 2.0,
+            name_x,
+            name_y,
             16.0,
             WHITE,
         );
+
+        // Draw (GM) suffix in gold if admin
+        if player.is_admin {
+            let gold_color = Color::from_rgba(255, 215, 0, 255);
+            self.draw_text_sharp(
+                " (GM)",
+                name_x + name_width,
+                name_y,
+                16.0,
+                gold_color,
+            );
+        }
 
         // Health bar (if not full HP)
         if player.hp < player.max_hp {
@@ -1025,6 +1089,39 @@ impl Renderer {
     }
 
     fn render_ui(&self, state: &GameState) {
+        // Server announcements (top of screen)
+        let current_time = macroquad::time::get_time();
+        for (i, announcement) in state.ui_state.announcements.iter().enumerate() {
+            let age = current_time - announcement.time;
+            // Fade out after 6 seconds (announcements last 8 seconds total)
+            let alpha = if age > 6.0 { ((8.0 - age) / 2.0 * 255.0) as u8 } else { 255 };
+
+            let font_size = 24.0;
+            let text = format!("[ANNOUNCEMENT] {}", announcement.text);
+            let text_dims = self.measure_text_sharp(&text, font_size);
+            let text_x = (screen_width() - text_dims.width) / 2.0;
+            let text_y = 50.0 + (i as f32 * 35.0);
+
+            // Dark background for visibility
+            let padding = 10.0;
+            draw_rectangle(
+                text_x - padding,
+                text_y - font_size - padding / 2.0,
+                text_dims.width + padding * 2.0,
+                font_size + padding,
+                Color::from_rgba(0, 0, 0, (180.0 * alpha as f32 / 255.0) as u8),
+            );
+
+            // Gold text with black outline
+            let gold_color = Color::from_rgba(255, 215, 0, alpha);
+            for ox in [-1.0, 1.0] {
+                for oy in [-1.0, 1.0] {
+                    self.draw_text_sharp(&text, text_x + ox, text_y + oy, font_size, Color::from_rgba(0, 0, 0, alpha));
+                }
+            }
+            self.draw_text_sharp(&text, text_x, text_y, font_size, gold_color);
+        }
+
         // "You Died" overlay for local player
         if let Some(player) = state.get_local_player() {
             if player.is_dead {
@@ -1265,6 +1362,11 @@ impl Renderer {
         // Render dragged item at cursor (on top of everything)
         if let Some(ref drag) = state.ui_state.drag_state {
             self.render_dragged_item(drag, state);
+        }
+
+        // Render escape menu on top of everything
+        if state.ui_state.escape_menu_open {
+            self.render_escape_menu(state, &mut layout);
         }
 
         layout
@@ -1919,6 +2021,102 @@ impl Renderer {
 
             y += option_height;
         }
+    }
+
+    /// Render the escape menu (settings and disconnect)
+    fn render_escape_menu(&self, state: &GameState, layout: &mut UiLayout) {
+        // Semi-transparent overlay
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 150));
+
+        let menu_width = 280.0;
+        let menu_height = 220.0;
+        let menu_x = (screen_width() - menu_width) / 2.0;
+        let menu_y = (screen_height() - menu_height) / 2.0;
+
+        // Background
+        draw_rectangle(menu_x, menu_y, menu_width, menu_height, Color::from_rgba(30, 30, 40, 245));
+        draw_rectangle_lines(menu_x, menu_y, menu_width, menu_height, 2.0, Color::from_rgba(100, 100, 120, 255));
+
+        // Title
+        let title = "Menu";
+        let title_width = self.measure_text_sharp(title, 20.0).width;
+        self.draw_text_sharp(title, menu_x + (menu_width - title_width) / 2.0, menu_y + 35.0, 20.0, WHITE);
+
+        // Camera Zoom section
+        self.draw_text_sharp("Camera Zoom", menu_x + 20.0, menu_y + 70.0, 16.0, LIGHTGRAY);
+
+        let button_width = 100.0;
+        let button_height = 36.0;
+        let button_y = menu_y + 85.0;
+        let button_spacing = 20.0;
+        let buttons_total_width = button_width * 2.0 + button_spacing;
+        let buttons_start_x = menu_x + (menu_width - buttons_total_width) / 2.0;
+
+        // Get current mouse position for hover detection
+        let (mouse_x, mouse_y) = mouse_position();
+
+        // 1x Zoom button
+        let zoom_1x_bounds = Rect::new(buttons_start_x, button_y, button_width, button_height);
+        layout.add(UiElementId::EscapeMenuZoom1x, zoom_1x_bounds);
+        let is_1x_hovered = mouse_x >= zoom_1x_bounds.x && mouse_x <= zoom_1x_bounds.x + zoom_1x_bounds.w
+            && mouse_y >= zoom_1x_bounds.y && mouse_y <= zoom_1x_bounds.y + zoom_1x_bounds.h;
+        let is_1x_selected = (state.camera.zoom - 1.0).abs() < 0.1;
+        let bg_1x = if is_1x_selected {
+            Color::from_rgba(60, 100, 60, 255)
+        } else if is_1x_hovered {
+            Color::from_rgba(70, 70, 90, 255)
+        } else {
+            Color::from_rgba(50, 50, 60, 255)
+        };
+        draw_rectangle(zoom_1x_bounds.x, zoom_1x_bounds.y, zoom_1x_bounds.w, zoom_1x_bounds.h, bg_1x);
+        draw_rectangle_lines(zoom_1x_bounds.x, zoom_1x_bounds.y, zoom_1x_bounds.w, zoom_1x_bounds.h, 1.0, if is_1x_selected { GREEN } else { GRAY });
+        let text_1x = "1x";
+        let text_1x_width = self.measure_text_sharp(text_1x, 16.0).width;
+        self.draw_text_sharp(text_1x, zoom_1x_bounds.x + (button_width - text_1x_width) / 2.0, zoom_1x_bounds.y + 24.0, 16.0, WHITE);
+
+        // 2x Zoom button
+        let zoom_2x_bounds = Rect::new(buttons_start_x + button_width + button_spacing, button_y, button_width, button_height);
+        layout.add(UiElementId::EscapeMenuZoom2x, zoom_2x_bounds);
+        let is_2x_hovered = mouse_x >= zoom_2x_bounds.x && mouse_x <= zoom_2x_bounds.x + zoom_2x_bounds.w
+            && mouse_y >= zoom_2x_bounds.y && mouse_y <= zoom_2x_bounds.y + zoom_2x_bounds.h;
+        let is_2x_selected = (state.camera.zoom - 2.0).abs() < 0.1;
+        let bg_2x = if is_2x_selected {
+            Color::from_rgba(60, 100, 60, 255)
+        } else if is_2x_hovered {
+            Color::from_rgba(70, 70, 90, 255)
+        } else {
+            Color::from_rgba(50, 50, 60, 255)
+        };
+        draw_rectangle(zoom_2x_bounds.x, zoom_2x_bounds.y, zoom_2x_bounds.w, zoom_2x_bounds.h, bg_2x);
+        draw_rectangle_lines(zoom_2x_bounds.x, zoom_2x_bounds.y, zoom_2x_bounds.w, zoom_2x_bounds.h, 1.0, if is_2x_selected { GREEN } else { GRAY });
+        let text_2x = "2x";
+        let text_2x_width = self.measure_text_sharp(text_2x, 16.0).width;
+        self.draw_text_sharp(text_2x, zoom_2x_bounds.x + (button_width - text_2x_width) / 2.0, zoom_2x_bounds.y + 24.0, 16.0, WHITE);
+
+        // Disconnect button
+        let disconnect_width = 180.0;
+        let disconnect_height = 40.0;
+        let disconnect_x = menu_x + (menu_width - disconnect_width) / 2.0;
+        let disconnect_y = menu_y + menu_height - disconnect_height - 30.0;
+        let disconnect_bounds = Rect::new(disconnect_x, disconnect_y, disconnect_width, disconnect_height);
+        layout.add(UiElementId::EscapeMenuDisconnect, disconnect_bounds);
+        let is_disconnect_hovered = mouse_x >= disconnect_bounds.x && mouse_x <= disconnect_bounds.x + disconnect_bounds.w
+            && mouse_y >= disconnect_bounds.y && mouse_y <= disconnect_bounds.y + disconnect_bounds.h;
+        let bg_disconnect = if is_disconnect_hovered {
+            Color::from_rgba(120, 50, 50, 255)
+        } else {
+            Color::from_rgba(80, 40, 40, 255)
+        };
+        draw_rectangle(disconnect_bounds.x, disconnect_bounds.y, disconnect_bounds.w, disconnect_bounds.h, bg_disconnect);
+        draw_rectangle_lines(disconnect_bounds.x, disconnect_bounds.y, disconnect_bounds.w, disconnect_bounds.h, 1.0, Color::from_rgba(180, 80, 80, 255));
+        let disconnect_text = "Disconnect";
+        let disconnect_text_width = self.measure_text_sharp(disconnect_text, 16.0).width;
+        self.draw_text_sharp(disconnect_text, disconnect_bounds.x + (disconnect_width - disconnect_text_width) / 2.0, disconnect_bounds.y + 26.0, 16.0, WHITE);
+
+        // Hint text
+        let hint = "Press ESC to close";
+        let hint_width = self.measure_text_sharp(hint, 14.0).width;
+        self.draw_text_sharp(hint, menu_x + (menu_width - hint_width) / 2.0, menu_y + menu_height - 10.0, 14.0, GRAY);
     }
 
     /// Render the dialogue box for NPC conversations

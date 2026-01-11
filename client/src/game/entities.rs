@@ -123,6 +123,9 @@ pub struct Player {
     pub equipped_body: Option<String>, // Item ID of equipped body armor
     pub equipped_feet: Option<String>, // Item ID of equipped boots
 
+    // Admin status
+    pub is_admin: bool,
+
     // Animation
     pub animation: PlayerAnimation,
 }
@@ -155,6 +158,7 @@ impl Player {
             skin,
             equipped_body: None,
             equipped_feet: None,
+            is_admin: false,
             animation: PlayerAnimation::new(),
         }
     }

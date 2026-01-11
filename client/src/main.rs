@@ -153,6 +153,16 @@ async fn main() {
                 AppState::Playing { game_state, network, input_handler, .. } |
                 AppState::GuestMode { game_state, network, input_handler } => {
                     run_game_frame(game_state, network, input_handler, &renderer);
+
+                    // Check for disconnect request
+                    if game_state.disconnect_requested {
+                        // Disconnect from server and return to login
+                        network.disconnect();
+                        let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+                        login_screen.load_font().await;
+                        app_state = AppState::Login(login_screen);
+                        continue;
+                    }
                 }
             }
 
