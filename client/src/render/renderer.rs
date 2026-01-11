@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use std::collections::HashMap;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition, ContextMenu, DragState, DragSource};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, ActiveDialogue, ActiveQuest, RecipeDefinition, ContextMenu, DragState, DragSource, MapObject};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use crate::ui::{UiElementId, UiLayout};
@@ -17,6 +17,11 @@ const TILESET_COLUMNS: u32 = 32;
 pub const GENDERS: &[&str] = &["male", "female"];
 pub const SKINS: &[&str] = &["tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"];
 
+/// Objects tileset firstgid from objects.tsx (used to map gids to sprite filenames)
+const OBJECTS_FIRSTGID: u32 = 1249;
+/// Offset to convert local tile id to sprite filename number
+const OBJECTS_ID_OFFSET: u32 = 87;
+
 pub struct Renderer {
     player_color: Color,
     local_player_color: Color,
@@ -28,6 +33,8 @@ pub struct Renderer {
     equipment_sprites: HashMap<String, Texture2D>,
     /// Item inventory sprites by item ID (sprite sheets with icon on left half)
     item_sprites: HashMap<String, Texture2D>,
+    /// Map object sprites by filename number (e.g., "101" -> Texture2D)
+    object_sprites: HashMap<String, Texture2D>,
     /// Multi-size pixel font for sharp text rendering at various sizes
     font: BitmapFont,
     /// Quest complete banner texture
@@ -119,6 +126,31 @@ impl Renderer {
         }
         log::info!("Loaded {} item sprite variants", item_sprites.len());
 
+        // Load map object sprites from assets/sprites/objects/ (scan directory)
+        let mut object_sprites = HashMap::new();
+        if let Ok(entries) = std::fs::read_dir("assets/sprites/objects") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "png") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        let sprite_key = stem.to_string();
+                        let path_str = path.to_string_lossy().to_string();
+                        match load_texture(&path_str).await {
+                            Ok(tex) => {
+                                tex.set_filter(FilterMode::Nearest);
+                                log::debug!("Loaded object sprite: {} ({}x{})", sprite_key, tex.width(), tex.height());
+                                object_sprites.insert(sprite_key, tex);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load object sprite {}: {}", path_str, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        log::info!("Loaded {} object sprite variants", object_sprites.len());
+
         // Load monogram pixel font at multiple sizes for crisp rendering
         let font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
         if font.is_loaded() {
@@ -147,6 +179,7 @@ impl Renderer {
             player_sprites,
             equipment_sprites,
             item_sprites,
+            object_sprites,
             font,
             quest_complete_texture,
         }
@@ -158,6 +191,17 @@ impl Renderer {
         self.player_sprites.get(&key)
             // Fallback to male_tan if sprite not found
             .or_else(|| self.player_sprites.get("male_tan"))
+    }
+
+    /// Get the sprite texture for a map object by its gid
+    fn get_object_sprite(&self, gid: u32) -> Option<&Texture2D> {
+        if gid < OBJECTS_FIRSTGID {
+            return None;
+        }
+        let local_id = gid - OBJECTS_FIRSTGID;
+        let sprite_number = local_id + OBJECTS_ID_OFFSET;
+        let key = sprite_number.to_string();
+        self.object_sprites.get(&key)
     }
 
     /// Draw text with pixel font for sharp rendering
@@ -278,13 +322,14 @@ impl Renderer {
             self.render_tile_hover(tile_x, tile_y, &state.camera);
         }
 
-        // 2. Collect renderable items (players + NPCs + items + object tiles) for depth sorting
+        // 2. Collect renderable items (players + NPCs + items + object tiles + map objects) for depth sorting
         #[derive(Clone)]
         enum Renderable<'a> {
             Player(&'a Player, bool),
             Npc(&'a Npc),
             Item(&'a GroundItem),
             Tile { x: u32, y: u32, tile_id: u32 },
+            ChunkObject(&'a MapObject),
         }
 
         let mut renderables: Vec<(f32, Renderable)> = Vec::new();
@@ -308,7 +353,7 @@ impl Renderer {
             renderables.push((depth, Renderable::Npc(npc)));
         }
 
-        // Add object layer tiles (trees, rocks, buildings)
+        // Add object layer tiles (trees, rocks, buildings) from static tilemap
         for layer in &state.tilemap.layers {
             if layer.layer_type == LayerType::Objects {
                 for y in 0..state.tilemap.height {
@@ -321,6 +366,15 @@ impl Renderer {
                         }
                     }
                 }
+            }
+        }
+
+        // Add map objects from loaded chunks (trees, rocks, decorations placed in Tiled)
+        for chunk in state.chunk_manager.chunks().values() {
+            for obj in &chunk.objects {
+                // Depth is based on tile_y (bottom edge of object for proper sorting)
+                let depth = calculate_depth(obj.tile_x as f32, obj.tile_y as f32, 1);
+                renderables.push((depth, Renderable::ChunkObject(obj)));
             }
         }
 
@@ -344,6 +398,9 @@ impl Renderer {
                 Renderable::Tile { x, y, tile_id } => {
                     let (screen_x, screen_y) = world_to_screen(x as f32, y as f32, &state.camera);
                     self.draw_isometric_object(screen_x, screen_y, tile_id, state.camera.zoom);
+                }
+                Renderable::ChunkObject(obj) => {
+                    self.render_map_object(obj, &state.camera);
                 }
             }
         }
@@ -1116,6 +1173,61 @@ impl Renderer {
             let qty_text = format!("x{}", item.quantity);
             let text_width = self.measure_text_sharp(&qty_text, 16.0).width;
             self.draw_text_sharp(&qty_text, screen_x - text_width / 2.0, item_y + 14.0 * zoom, 16.0, WHITE);
+        }
+    }
+
+    /// Render a map object (tree, rock, decoration) from chunk data
+    fn render_map_object(&self, obj: &MapObject, camera: &Camera) {
+        // Get screen position for the tile CENTER (add 0.5 to tile coords)
+        let (screen_x, screen_y) = world_to_screen(obj.tile_x as f32 + 0.5, obj.tile_y as f32 + 0.5, camera);
+        let zoom = camera.zoom;
+
+        // Try to get the sprite for this gid
+        if let Some(texture) = self.get_object_sprite(obj.gid) {
+            let tex_width = texture.width();
+            let tex_height = texture.height();
+
+            // Scale the sprite (round to avoid fractional scaling artifacts)
+            let scaled_width = (tex_width * zoom).round();
+            let scaled_height = (tex_height * zoom).round();
+
+            // Position sprite so its bottom-center aligns with the tile center
+            // Round to pixel grid to avoid subpixel rendering artifacts
+            let draw_x = (screen_x - scaled_width / 2.0).round();
+            let draw_y = (screen_y - scaled_height).round();
+
+            draw_texture_ex(
+                texture,
+                draw_x,
+                draw_y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(Vec2::new(scaled_width, scaled_height)),
+                    ..Default::default()
+                },
+            );
+        } else {
+            // Fallback: draw a colored placeholder rectangle
+            let placeholder_width = (32.0 * zoom).round();
+            let placeholder_height = (64.0 * zoom).round();
+            let draw_x = (screen_x - placeholder_width / 2.0).round();
+            let draw_y = (screen_y - placeholder_height).round();
+
+            draw_rectangle(
+                draw_x,
+                draw_y,
+                placeholder_width,
+                placeholder_height,
+                Color::from_rgba(100, 150, 100, 200),
+            );
+            draw_rectangle_lines(
+                draw_x,
+                draw_y,
+                placeholder_width,
+                placeholder_height,
+                2.0,
+                Color::from_rgba(50, 100, 50, 255),
+            );
         }
     }
 

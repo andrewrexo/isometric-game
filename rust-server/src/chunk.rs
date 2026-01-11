@@ -23,6 +23,21 @@ pub struct EntitySpawn {
     pub unique_id: Option<String>,
 }
 
+/// Map object placed from Tiled's object layer (trees, rocks, decorations)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MapObject {
+    /// Global tile ID from objects.tsx tileset
+    pub gid: u32,
+    /// World tile X coordinate
+    pub tile_x: i32,
+    /// World tile Y coordinate
+    pub tile_y: i32,
+    /// Sprite width in pixels
+    pub width: u32,
+    /// Sprite height in pixels
+    pub height: u32,
+}
+
 /// Chunk coordinates in the world grid
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChunkCoord {
@@ -137,6 +152,8 @@ pub struct Chunk {
     pub entity_spawns: Vec<EntitySpawn>,
     /// Simple spawn points for players (local coordinates)
     pub player_spawns: Vec<(u32, u32)>,
+    /// Map objects (trees, rocks, decorations) from object layer
+    pub objects: Vec<MapObject>,
 }
 
 impl Chunk {
@@ -151,6 +168,7 @@ impl Chunk {
             ],
             entity_spawns: Vec::new(),
             player_spawns: Vec::new(),
+            objects: Vec::new(),
         }
     }
 

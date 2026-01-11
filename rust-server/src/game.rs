@@ -2685,7 +2685,7 @@ impl GameRoom {
 
     /// Handle chunk request from client
     pub async fn handle_chunk_request(&self, chunk_x: i32, chunk_y: i32) -> Option<ServerMessage> {
-        use crate::protocol::ChunkLayerData;
+        use crate::protocol::{ChunkLayerData, ChunkObjectData};
 
         let coord = ChunkCoord::new(chunk_x, chunk_y);
         if let Some(chunk) = self.world.get_chunk_data(coord).await {
@@ -2698,11 +2698,22 @@ impl GameRoom {
 
             let collision = chunk.pack_collision();
 
+            let objects: Vec<ChunkObjectData> = chunk.objects.iter().map(|obj| {
+                ChunkObjectData {
+                    gid: obj.gid,
+                    tile_x: obj.tile_x,
+                    tile_y: obj.tile_y,
+                    width: obj.width,
+                    height: obj.height,
+                }
+            }).collect();
+
             Some(ServerMessage::ChunkData {
                 chunk_x,
                 chunk_y,
                 layers,
                 collision,
+                objects,
             })
         } else {
             Some(ServerMessage::ChunkNotFound { chunk_x, chunk_y })

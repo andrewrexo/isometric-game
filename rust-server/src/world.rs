@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
-use crate::chunk::{world_to_local, Chunk, ChunkCoord, ChunkLayer, ChunkLayerType, EntitySpawn, CHUNK_SIZE};
+use crate::chunk::{world_to_local, Chunk, ChunkCoord, ChunkLayer, ChunkLayerType, EntitySpawn, MapObject, CHUNK_SIZE};
 
 /// World manager that handles loading and caching chunks
 pub struct World {
@@ -146,35 +146,65 @@ impl World {
                         }
                     }
                 } else if layer_type_str == "objectgroup" {
-                    // Parse object groups for collision and spawn points
+                    // Get layer offset (Tiled applies this to object positions)
+                    let offset_x = layer_value["offsetx"].as_f64().unwrap_or(0.0);
+                    let offset_y = layer_value["offsety"].as_f64().unwrap_or(0.0);
+
+                    // Parse object groups for collision, spawn points, and map objects
                     if let Some(objects) = layer_value["objects"].as_array() {
                         for obj in objects {
                             let obj_type = obj["type"].as_str().unwrap_or("");
                             let pixel_x = obj["x"].as_f64().unwrap_or(0.0);
                             let pixel_y = obj["y"].as_f64().unwrap_or(0.0);
-                            let x = (pixel_x / 64.0) as u32; // Assuming 64px tiles
-                            let y = (pixel_y / 32.0) as u32;
-                            let obj_width = obj["width"].as_f64().unwrap_or(64.0) as u32 / 64;
-                            let obj_height = obj["height"].as_f64().unwrap_or(32.0) as u32 / 32;
+                            let obj_width = obj["width"].as_f64().unwrap_or(0.0);
+                            let obj_height = obj["height"].as_f64().unwrap_or(0.0);
 
-                            if obj_type == "collision" || name.to_lowercase().contains("collision") {
-                                // Mark collision area
-                                for dy in 0..obj_height.max(1) {
-                                    for dx in 0..obj_width.max(1) {
-                                        chunk.set_collision(x + dx, y + dy, true);
+                            // Check if this object has a gid (it's a tileset object like tree/rock)
+                            if let Some(gid) = obj["gid"].as_u64() {
+                                // Tiled isometric: pixel coords use tileHeight (32) for both
+                                let tile_x = (pixel_x / 32.0).floor() as i32;
+                                let tile_y = (pixel_y / 32.0).floor() as i32;
+
+                                // Convert to world coordinates (add chunk offset)
+                                let world_tile_x = coord.x * CHUNK_SIZE as i32 + tile_x;
+                                let world_tile_y = coord.y * CHUNK_SIZE as i32 + tile_y;
+
+                                info!("SERVER Object gid {} | pixel ({:.1}, {:.1}) | local ({}, {}) | chunk ({}, {}) | WORLD ({}, {})",
+                                    gid, pixel_x, pixel_y, tile_x, tile_y, coord.x, coord.y, world_tile_x, world_tile_y);
+
+                                chunk.objects.push(MapObject {
+                                    gid: gid as u32,
+                                    tile_x: world_tile_x,
+                                    tile_y: world_tile_y,
+                                    width: obj_width as u32,
+                                    height: obj_height as u32,
+                                });
+                            } else {
+                                // Legacy handling for non-gid objects (collision, spawn points)
+                                let x = (pixel_x / 64.0) as u32;
+                                let y = (pixel_y / 32.0) as u32;
+                                let collision_width = (obj_width / 64.0).ceil() as u32;
+                                let collision_height = (obj_height / 32.0).ceil() as u32;
+
+                                if obj_type == "collision" || name.to_lowercase().contains("collision") {
+                                    // Mark collision area
+                                    for dy in 0..collision_height.max(1) {
+                                        for dx in 0..collision_width.max(1) {
+                                            chunk.set_collision(x + dx, y + dy, true);
+                                        }
                                     }
+                                } else if obj_type == "entity_spawn" || obj_type == "npc_spawn" {
+                                    // Parse entity spawn from Tiled object properties
+                                    if let Some(spawn) = self.parse_entity_spawn(obj, coord) {
+                                        info!("Found entity spawn: {} at ({}, {})",
+                                            spawn.entity_id, spawn.world_x, spawn.world_y);
+                                        chunk.entity_spawns.push(spawn);
+                                    }
+                                } else if obj_type == "player_spawn" || obj_type == "spawn"
+                                    || name.to_lowercase().contains("spawn")
+                                {
+                                    chunk.player_spawns.push((x, y));
                                 }
-                            } else if obj_type == "entity_spawn" || obj_type == "npc_spawn" {
-                                // Parse entity spawn from Tiled object properties
-                                if let Some(spawn) = self.parse_entity_spawn(obj, coord) {
-                                    info!("Found entity spawn: {} at ({}, {})",
-                                        spawn.entity_id, spawn.world_x, spawn.world_y);
-                                    chunk.entity_spawns.push(spawn);
-                                }
-                            } else if obj_type == "player_spawn" || obj_type == "spawn"
-                                || name.to_lowercase().contains("spawn")
-                            {
-                                chunk.player_spawns.push((x, y));
                             }
                         }
                     }

@@ -36,6 +36,21 @@ pub fn world_to_local(world_x: i32, world_y: i32) -> (u32, u32) {
     )
 }
 
+/// Map object placed from Tiled's object layer (trees, rocks, decorations)
+#[derive(Debug, Clone)]
+pub struct MapObject {
+    /// Global tile ID from objects.tsx tileset
+    pub gid: u32,
+    /// World tile X coordinate
+    pub tile_x: i32,
+    /// World tile Y coordinate
+    pub tile_y: i32,
+    /// Sprite width in pixels
+    pub width: u32,
+    /// Sprite height in pixels
+    pub height: u32,
+}
+
 /// Layer types matching server
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChunkLayerType {
@@ -85,6 +100,8 @@ pub struct Chunk {
     pub coord: ChunkCoord,
     pub layers: Vec<ChunkLayer>,
     pub collision: Vec<bool>,
+    /// Map objects (trees, rocks, decorations) from object layer
+    pub objects: Vec<MapObject>,
 }
 
 impl Chunk {
@@ -97,6 +114,7 @@ impl Chunk {
                 ChunkLayer::new(ChunkLayerType::Overhead),
             ],
             collision: vec![false; (CHUNK_SIZE * CHUNK_SIZE) as usize],
+            objects: Vec::new(),
         }
     }
 
@@ -187,7 +205,14 @@ impl ChunkManager {
     }
 
     /// Load chunk data received from server
-    pub fn load_chunk(&mut self, chunk_x: i32, chunk_y: i32, layers: Vec<(u8, Vec<u32>)>, collision: &[u8]) {
+    pub fn load_chunk(
+        &mut self,
+        chunk_x: i32,
+        chunk_y: i32,
+        layers: Vec<(u8, Vec<u32>)>,
+        collision: &[u8],
+        objects: Vec<MapObject>,
+    ) {
         let coord = ChunkCoord::new(chunk_x, chunk_y);
         let mut chunk = Chunk::new(coord);
 
@@ -205,13 +230,18 @@ impl ChunkManager {
         // Load collision
         chunk.collision = Chunk::unpack_collision(collision);
 
+        // Load map objects
+        chunk.objects = objects;
+
         // Remove from pending
         self.pending_requests.remove(&coord);
+
+        let object_count = chunk.objects.len();
 
         // Store chunk
         self.chunks.insert(coord, chunk);
 
-        log::info!("Loaded chunk ({}, {})", chunk_x, chunk_y);
+        log::info!("Loaded chunk ({}, {}) with {} objects", chunk_x, chunk_y, object_count);
     }
 
     /// Check if a world position is walkable

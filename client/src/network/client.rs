@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject};
 use crate::game::npc::{Npc, NpcType, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -783,10 +783,30 @@ impl NetworkClient {
                             .collect())
                         .unwrap_or_default();
 
-                    log::debug!("Received chunk data: ({}, {}) with {} layers, {} collision bytes",
-                        chunk_x, chunk_y, layers.len(), collision.len());
+                    // Parse map objects
+                    let mut objects: Vec<MapObject> = Vec::new();
+                    if let Some(objects_arr) = extract_array(value, "objects") {
+                        for obj_value in objects_arr {
+                            let gid = obj_value["gid"].as_u64().unwrap_or(0) as u32;
+                            let tile_x = obj_value["tileX"].as_i64().unwrap_or(0) as i32;
+                            let tile_y = obj_value["tileY"].as_i64().unwrap_or(0) as i32;
+                            let width = obj_value["width"].as_u64().unwrap_or(0) as u32;
+                            let height = obj_value["height"].as_u64().unwrap_or(0) as u32;
+                            log::info!("CLIENT received object gid {} at WORLD tile ({}, {})", gid, tile_x, tile_y);
+                            objects.push(MapObject {
+                                gid,
+                                tile_x,
+                                tile_y,
+                                width,
+                                height,
+                            });
+                        }
+                    }
 
-                    state.chunk_manager.load_chunk(chunk_x, chunk_y, layers, &collision);
+                    log::debug!("Received chunk data: ({}, {}) with {} layers, {} collision bytes, {} objects",
+                        chunk_x, chunk_y, layers.len(), collision.len(), objects.len());
+
+                    state.chunk_manager.load_chunk(chunk_x, chunk_y, layers, &collision, objects);
                 }
             }
 

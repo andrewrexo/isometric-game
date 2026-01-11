@@ -213,6 +213,7 @@ pub enum ServerMessage {
         chunk_y: i32,
         layers: Vec<ChunkLayerData>,
         collision: Vec<u8>, // Packed collision bits
+        objects: Vec<ChunkObjectData>, // Map objects (trees, rocks, etc.)
     },
     ChunkNotFound {
         chunk_x: i32,
@@ -267,6 +268,16 @@ pub enum ServerMessage {
 pub struct ChunkLayerData {
     pub layer_type: u8, // 0=Ground, 1=Objects, 2=Overhead
     pub tiles: Vec<u32>,
+}
+
+/// Map object data for chunk transmission (trees, rocks, decorations)
+#[derive(Debug, Clone, Serialize)]
+pub struct ChunkObjectData {
+    pub gid: u32,      // Global tile ID from objects.tsx
+    pub tile_x: i32,   // World tile X coordinate
+    pub tile_y: i32,   // World tile Y coordinate
+    pub width: u32,    // Sprite width in pixels
+    pub height: u32,   // Sprite height in pixels
 }
 
 /// Entity definition for client-side registry
@@ -818,6 +829,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             chunk_y,
             layers,
             collision,
+            objects,
         } => {
             let mut map = Vec::new();
             map.push((
@@ -858,6 +870,36 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                 Value::String("collision".into()),
                 Value::Array(collision_bytes),
             ));
+
+            // Encode map objects
+            let object_values: Vec<Value> = objects
+                .iter()
+                .map(|o| {
+                    let mut omap = Vec::new();
+                    omap.push((
+                        Value::String("gid".into()),
+                        Value::Integer((o.gid as i64).into()),
+                    ));
+                    omap.push((
+                        Value::String("tileX".into()),
+                        Value::Integer((o.tile_x as i64).into()),
+                    ));
+                    omap.push((
+                        Value::String("tileY".into()),
+                        Value::Integer((o.tile_y as i64).into()),
+                    ));
+                    omap.push((
+                        Value::String("width".into()),
+                        Value::Integer((o.width as i64).into()),
+                    ));
+                    omap.push((
+                        Value::String("height".into()),
+                        Value::Integer((o.height as i64).into()),
+                    ));
+                    Value::Map(omap)
+                })
+                .collect();
+            map.push((Value::String("objects".into()), Value::Array(object_values)));
 
             Value::Map(map)
         }
