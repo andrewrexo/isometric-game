@@ -538,8 +538,13 @@ impl InputHandler {
         if is_key_pressed(KeyCode::Enter) {
             state.ui_state.chat_open = true;
             state.ui_state.chat_input.clear();
+            // Drain any accumulated characters from the queue
+            while get_char_pressed().is_some() {}
             return commands;
         }
+
+        // Drain character queue when chat is closed to prevent accumulation
+        while get_char_pressed().is_some() {}
 
         // Read which keys are held
         let up = is_key_down(KeyCode::W) || is_key_down(KeyCode::Up);
