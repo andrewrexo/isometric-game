@@ -1580,6 +1580,9 @@ impl Renderer {
         // Get item definition from registry
         let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
 
+        // Get player level for requirement checking
+        let player_level = state.get_local_player().map(|p| p.level).unwrap_or(1);
+
         // Get mouse position for tooltip placement
         let (mouse_x, mouse_y) = mouse_position();
 
@@ -1596,12 +1599,26 @@ impl Renderer {
             vec![]
         };
 
-        // Count lines: name, category, description lines, blank line before quantity, quantity
+        // Count lines: name, category, description lines, equipment stats, quantity
         let mut line_count = 2; // name + category
         if !desc_lines.is_empty() {
             line_count += 1; // blank line before description
             line_count += desc_lines.len();
         }
+
+        // Count equipment stat lines
+        if let Some(ref equip) = item_def.equipment {
+            line_count += 1; // blank line before stats
+            line_count += 1; // slot type
+            if equip.damage_bonus != 0 {
+                line_count += 1;
+            }
+            if equip.defense_bonus != 0 {
+                line_count += 1;
+            }
+            line_count += 1; // level requirement (always show for equipment)
+        }
+
         if slot.quantity > 1 {
             line_count += 1; // quantity line
         }
@@ -1656,6 +1673,51 @@ impl Renderer {
                 self.draw_text_sharp(line, tooltip_x + padding, y, 16.0, LIGHTGRAY);
                 y += line_height;
             }
+        }
+
+        // Equipment stats section
+        if let Some(ref equip) = item_def.equipment {
+            y += line_height * 0.5; // Small gap before stats
+
+            // Slot type
+            let slot_text = format!("Slot: {}", equip.slot_type);
+            self.draw_text_sharp(&slot_text, tooltip_x + padding, y, 16.0, Color::from_rgba(150, 150, 180, 255));
+            y += line_height;
+
+            // Damage bonus (green for positive)
+            if equip.damage_bonus != 0 {
+                let damage_text = if equip.damage_bonus > 0 {
+                    format!("+{} Damage", equip.damage_bonus)
+                } else {
+                    format!("{} Damage", equip.damage_bonus)
+                };
+                let damage_color = if equip.damage_bonus > 0 { GREEN } else { RED };
+                self.draw_text_sharp(&damage_text, tooltip_x + padding, y, 16.0, damage_color);
+                y += line_height;
+            }
+
+            // Defense bonus (green for positive)
+            if equip.defense_bonus != 0 {
+                let defense_text = if equip.defense_bonus > 0 {
+                    format!("+{} Defense", equip.defense_bonus)
+                } else {
+                    format!("{} Defense", equip.defense_bonus)
+                };
+                let defense_color = if equip.defense_bonus > 0 { GREEN } else { RED };
+                self.draw_text_sharp(&defense_text, tooltip_x + padding, y, 16.0, defense_color);
+                y += line_height;
+            }
+
+            // Level requirement (green if met, red if not)
+            let meets_requirement = player_level >= equip.level_required;
+            let req_color = if meets_requirement {
+                Color::from_rgba(100, 200, 100, 255) // Soft green
+            } else {
+                Color::from_rgba(255, 100, 100, 255) // Soft red
+            };
+            let req_text = format!("Requires Level {}", equip.level_required);
+            self.draw_text_sharp(&req_text, tooltip_x + padding, y, 16.0, req_color);
+            y += line_height;
         }
 
         // Quantity (if more than 1)
