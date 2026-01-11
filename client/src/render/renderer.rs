@@ -1960,55 +1960,89 @@ impl Renderer {
         // Get mouse position for tooltip placement
         let (mouse_x, mouse_y) = mouse_position();
 
+        // Prepare text strings early for measurement
+        let name_text = if slot.quantity > 1 {
+            format!("{} x{}", item_def.display_name, slot.quantity)
+        } else {
+            item_def.display_name.clone()
+        };
+        let category_text = format!("[{}]", item_def.category);
+
         // Calculate tooltip dimensions based on content
-        let padding = 10.0;
-        let line_height = 18.0;
-        let tooltip_width = 220.0;
-        let text_width = tooltip_width - padding * 2.0;
+        let padding = 5.0;
+        let line_height = 16.0;
+        let font_size = 16.0;
+        let max_tooltip_width = 200.0;
+        let text_width_limit = max_tooltip_width - padding * 2.0;
 
         // Word-wrap the description
         let desc_lines = if !item_def.description.is_empty() {
-            self.wrap_text(&item_def.description, text_width, 16.0)
+            self.wrap_text(&item_def.description, text_width_limit, font_size)
         } else {
             vec![]
         };
 
-        // Count lines: name, category, description lines, equipment stats, quantity
-        let mut line_count = 2; // name + category
-        if !desc_lines.is_empty() {
-            line_count += 1; // blank line before description
-            line_count += desc_lines.len();
+        // Calculate tooltip width based on longest line
+        let mut max_w = self.measure_text_sharp(&name_text, font_size).width;
+        max_w = max_w.max(self.measure_text_sharp(&category_text, font_size).width);
+        for line in &desc_lines {
+            max_w = max_w.max(self.measure_text_sharp(line, font_size).width);
         }
 
-        // Count equipment stat lines
         if let Some(ref equip) = item_def.equipment {
-            line_count += 1; // blank line before stats
-            line_count += 1; // slot type
             if equip.damage_bonus != 0 {
-                line_count += 1;
+                let damage_text = if equip.damage_bonus > 0 {
+                    format!("+{} Damage", equip.damage_bonus)
+                } else {
+                    format!("{} Damage", equip.damage_bonus)
+                };
+                max_w = max_w.max(self.measure_text_sharp(&damage_text, font_size).width);
             }
             if equip.defense_bonus != 0 {
-                line_count += 1;
+                let defense_text = if equip.defense_bonus > 0 {
+                    format!("+{} Defense", equip.defense_bonus)
+                } else {
+                    format!("{} Defense", equip.defense_bonus)
+                };
+                max_w = max_w.max(self.measure_text_sharp(&defense_text, font_size).width);
             }
-            line_count += 1; // level requirement (always show for equipment)
+            let req_text = format!("Requires Level {}", equip.level_required);
+            max_w = max_w.max(self.measure_text_sharp(&req_text, font_size).width);
         }
 
-        if slot.quantity > 1 {
-            line_count += 1; // quantity line
+        let tooltip_width = (max_w + padding * 2.0).ceil();
+
+        // Calculate tooltip height based on actual lines drawn
+        let mut total_h = padding * 2.0;
+        total_h += line_height; // Name
+        total_h += line_height; // Category
+        if !desc_lines.is_empty() {
+            total_h += line_height * 0.5; // Gap
+            total_h += desc_lines.len() as f32 * line_height;
+        }
+        if let Some(ref equip) = item_def.equipment {
+            total_h += line_height * 0.5; // Gap
+            if equip.damage_bonus != 0 {
+                total_h += line_height;
+            }
+            if equip.defense_bonus != 0 {
+                total_h += line_height;
+            }
+            total_h += line_height; // Level requirement
         }
 
-        let tooltip_height = padding * 2.0 + line_count as f32 * line_height;
+        let tooltip_height = total_h.ceil();
 
         // Position tooltip near cursor, but keep on screen
-        let mut tooltip_x = mouse_x + 16.0;
-        let mut tooltip_y = mouse_y + 16.0;
+        let mut tooltip_x = (mouse_x + 16.0).floor();
+        let mut tooltip_y = (mouse_y + 16.0).floor();
 
         // Clamp to screen bounds
         if tooltip_x + tooltip_width > screen_width() {
-            tooltip_x = mouse_x - tooltip_width - 8.0;
+            tooltip_x = (mouse_x - tooltip_width - 8.0).floor();
         }
         if tooltip_y + tooltip_height > screen_height() {
-            tooltip_y = mouse_y - tooltip_height - 8.0;
+            tooltip_y = (mouse_y - tooltip_height - 8.0).floor();
         }
 
         // Draw tooltip background
@@ -2019,23 +2053,13 @@ impl Renderer {
             tooltip_height,
             Color::from_rgba(20, 20, 30, 240),
         );
-        draw_rectangle_lines(
-            tooltip_x,
-            tooltip_y,
-            tooltip_width,
-            tooltip_height,
-            1.0,
-            Color::from_rgba(100, 100, 120, 255),
-        );
 
         let mut y = tooltip_y + padding + 12.0;
 
-        // Item name (white, bold feel)
-        self.draw_text_sharp(&item_def.display_name, tooltip_x + padding, y, 16.0, WHITE);
+        self.draw_text_sharp(&name_text, tooltip_x + padding, y, 16.0, WHITE);
         y += line_height;
 
-        // Category (colored by type)
-        let category_text = format!("[{}]", item_def.category);
+        // Category (colored by type).
         let category_color = item_def.category_color();
         self.draw_text_sharp(&category_text, tooltip_x + padding, y, 16.0, category_color);
         y += line_height;
@@ -2052,11 +2076,6 @@ impl Renderer {
         // Equipment stats section
         if let Some(ref equip) = item_def.equipment {
             y += line_height * 0.5; // Small gap before stats
-
-            // Slot type
-            let slot_text = format!("Slot: {}", equip.slot_type);
-            self.draw_text_sharp(&slot_text, tooltip_x + padding, y, 16.0, Color::from_rgba(150, 150, 180, 255));
-            y += line_height;
 
             // Damage bonus (green for positive)
             if equip.damage_bonus != 0 {
@@ -2092,12 +2111,6 @@ impl Renderer {
             let req_text = format!("Requires Level {}", equip.level_required);
             self.draw_text_sharp(&req_text, tooltip_x + padding, y, 16.0, req_color);
             y += line_height;
-        }
-
-        // Quantity (if more than 1)
-        if slot.quantity > 1 {
-            let qty_text = format!("Quantity: {}", slot.quantity);
-            self.draw_text_sharp(&qty_text, tooltip_x + padding, y, 16.0, WHITE);
         }
     }
 
