@@ -30,6 +30,8 @@ pub struct Renderer {
     item_sprites: HashMap<String, Texture2D>,
     /// Multi-size pixel font for sharp text rendering at various sizes
     font: BitmapFont,
+    /// Quest complete banner texture
+    quest_complete_texture: Option<Texture2D>,
 }
 
 impl Renderer {
@@ -125,6 +127,19 @@ impl Renderer {
             log::warn!("Failed to load monogram font, using default");
         }
 
+        // Load quest complete banner texture
+        let quest_complete_texture = match load_texture("assets/ui/quest_complete.png").await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                log::info!("Loaded quest complete texture: {}x{}", tex.width(), tex.height());
+                Some(tex)
+            }
+            Err(e) => {
+                log::warn!("Failed to load quest complete texture: {}", e);
+                None
+            }
+        };
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
@@ -133,6 +148,7 @@ impl Renderer {
             equipment_sprites,
             item_sprites,
             font,
+            quest_complete_texture,
         }
     }
 
@@ -221,11 +237,14 @@ impl Renderer {
     }
 
     /// Draw a tile sprite from the tileset
-    fn draw_tile_sprite(&self, screen_x: f32, screen_y: f32, tile_id: u32) {
+    fn draw_tile_sprite(&self, screen_x: f32, screen_y: f32, tile_id: u32, zoom: f32) {
+        let scaled_width = TILE_WIDTH * zoom;
+        let scaled_height = TILE_HEIGHT * zoom;
+
         if let (Some(tileset), Some(uv)) = (&self.tileset, self.get_tile_uv(tile_id)) {
             // Center the tile on screen position
-            let draw_x = screen_x - TILE_WIDTH / 2.0;
-            let draw_y = screen_y - TILE_HEIGHT / 2.0;
+            let draw_x = screen_x - scaled_width / 2.0;
+            let draw_y = screen_y - scaled_height / 2.0;
 
             draw_texture_ex(
                 tileset,
@@ -239,14 +258,14 @@ impl Renderer {
                         TILESET_TILE_WIDTH,
                         TILESET_TILE_HEIGHT,
                     )),
-                    dest_size: Some(Vec2::new(TILE_WIDTH, TILE_HEIGHT)),
+                    dest_size: Some(Vec2::new(scaled_width, scaled_height)),
                     ..Default::default()
                 },
             );
         } else {
             // Fallback to colored tile
             let color = get_tile_color(tile_id);
-            self.draw_isometric_tile(screen_x, screen_y, color);
+            self.draw_isometric_tile(screen_x, screen_y, color, zoom);
         }
     }
 
@@ -324,7 +343,7 @@ impl Renderer {
                 }
                 Renderable::Tile { x, y, tile_id } => {
                     let (screen_x, screen_y) = world_to_screen(x as f32, y as f32, &state.camera);
-                    self.draw_isometric_object(screen_x, screen_y, tile_id);
+                    self.draw_isometric_object(screen_x, screen_y, tile_id, state.camera.zoom);
                 }
             }
         }
@@ -615,11 +634,11 @@ impl Renderer {
                             }
 
                             // Draw tile sprite (or fallback to colored tile)
-                            self.draw_tile_sprite(screen_x, screen_y, tile_id);
+                            self.draw_tile_sprite(screen_x, screen_y, tile_id, state.camera.zoom);
 
                             // Draw collision indicator in debug mode
                             if state.debug_mode && chunk.collision.get(idx).copied().unwrap_or(false) {
-                                self.draw_collision_indicator(screen_x, screen_y);
+                                self.draw_collision_indicator(screen_x, screen_y, state.camera.zoom);
                             }
                         }
                     }
@@ -658,43 +677,43 @@ impl Renderer {
                     }
 
                     // Draw tile sprite (or fallback to colored tile)
-                    self.draw_tile_sprite(screen_x, screen_y, tile_id);
+                    self.draw_tile_sprite(screen_x, screen_y, tile_id, state.camera.zoom);
 
                     // Draw collision indicator in debug mode
                     if state.debug_mode && tilemap.collision.get(idx).copied().unwrap_or(false) {
-                        self.draw_collision_indicator(screen_x, screen_y);
+                        self.draw_collision_indicator(screen_x, screen_y, state.camera.zoom);
                     }
                 }
             }
         }
     }
 
-    fn draw_collision_indicator(&self, screen_x: f32, screen_y: f32) {
-        let half_w = TILE_WIDTH / 4.0;
-        let half_h = TILE_HEIGHT / 4.0;
+    fn draw_collision_indicator(&self, screen_x: f32, screen_y: f32, zoom: f32) {
+        let half_w = TILE_WIDTH * zoom / 4.0;
+        let half_h = TILE_HEIGHT * zoom / 4.0;
         draw_rectangle_lines(
             screen_x - half_w,
             screen_y - half_h,
             half_w * 2.0,
             half_h * 2.0,
-            2.0,
+            2.0 * zoom,
             Color::from_rgba(255, 0, 0, 150),
         );
     }
 
-    fn draw_isometric_object(&self, screen_x: f32, screen_y: f32, tile_id: u32) {
+    fn draw_isometric_object(&self, screen_x: f32, screen_y: f32, tile_id: u32, zoom: f32) {
         // Draw shadow ellipse for objects
-        draw_ellipse(screen_x, screen_y + 4.0, 24.0, 16.0, 0.0, Color::from_rgba(0, 0, 0, 50));
+        draw_ellipse(screen_x, screen_y + 4.0 * zoom, 24.0 * zoom, 16.0 * zoom, 0.0, Color::from_rgba(0, 0, 0, 50));
 
         // Draw object tile sprite (slightly elevated)
-        let elevated_y = screen_y - TILE_HEIGHT * 0.25;
-        self.draw_tile_sprite(screen_x, elevated_y, tile_id);
+        let elevated_y = screen_y - TILE_HEIGHT * zoom * 0.25;
+        self.draw_tile_sprite(screen_x, elevated_y, tile_id, zoom);
     }
 
-    fn draw_isometric_tile(&self, screen_x: f32, screen_y: f32, color: Color) {
+    fn draw_isometric_tile(&self, screen_x: f32, screen_y: f32, color: Color, zoom: f32) {
         // Draw a diamond-shaped tile
-        let half_w = TILE_WIDTH / 2.0;
-        let half_h = TILE_HEIGHT / 2.0;
+        let half_w = TILE_WIDTH * zoom / 2.0;
+        let half_h = TILE_HEIGHT * zoom / 2.0;
 
         // Diamond vertices (clockwise from top)
         let top = (screen_x, screen_y - half_h);
@@ -733,11 +752,11 @@ impl Renderer {
         // Get the center of that tile in screen space
         // Offset by half_h to align with where entities visually stand on the tile
         let (center_x, center_y) = world_to_screen(tile_x + 0.5, tile_y + 0.5, camera);
-        let center_y = center_y - TILE_HEIGHT / 2.0;
+        let center_y = center_y - TILE_HEIGHT * camera.zoom / 2.0;
 
-        // Tile dimensions (half-sizes for diamond corners)
-        let half_w = TILE_WIDTH / 2.0;
-        let half_h = TILE_HEIGHT / 2.0;
+        // Tile dimensions (half-sizes for diamond corners), scaled by zoom
+        let half_w = TILE_WIDTH * camera.zoom / 2.0;
+        let half_h = TILE_HEIGHT * camera.zoom / 2.0;
 
         // Diamond corners (isometric tile shape)
         let top = (center_x, center_y - half_h);
@@ -751,21 +770,22 @@ impl Renderer {
         let color = Color::from_rgba(255, 255, 0, alpha);
 
         // Draw yellow diamond outline
-        draw_line(top.0, top.1, right.0, right.1, 2.0, color);
-        draw_line(right.0, right.1, bottom.0, bottom.1, 2.0, color);
-        draw_line(bottom.0, bottom.1, left.0, left.1, 2.0, color);
-        draw_line(left.0, left.1, top.0, top.1, 2.0, color);
+        let line_width = 2.0 * camera.zoom;
+        draw_line(top.0, top.1, right.0, right.1, line_width, color);
+        draw_line(right.0, right.1, bottom.0, bottom.1, line_width, color);
+        draw_line(bottom.0, bottom.1, left.0, left.1, line_width, color);
+        draw_line(left.0, left.1, top.0, top.1, line_width, color);
     }
 
     /// Draw corner indicators for the hovered tile
     fn render_tile_hover(&self, tile_x: i32, tile_y: i32, camera: &Camera) {
         // Get the center of the tile in screen space
         let (center_x, center_y) = world_to_screen(tile_x as f32 + 0.5, tile_y as f32 + 0.5, camera);
-        let center_y = center_y - TILE_HEIGHT / 2.0;
+        let center_y = center_y - TILE_HEIGHT * camera.zoom / 2.0;
 
-        // Tile dimensions (half-sizes for diamond corners)
-        let half_w = TILE_WIDTH / 2.0;
-        let half_h = TILE_HEIGHT / 2.0;
+        // Tile dimensions (half-sizes for diamond corners), scaled by zoom
+        let half_w = TILE_WIDTH * camera.zoom / 2.0;
+        let half_h = TILE_HEIGHT * camera.zoom / 2.0;
 
         // Diamond corners (isometric tile shape)
         let top = (center_x, center_y - half_h);
@@ -778,26 +798,32 @@ impl Renderer {
 
         // Thin white lines with some transparency
         let color = Color::from_rgba(255, 255, 255, 180);
+        let line_width = 1.0 * camera.zoom;
 
         // Top corner
-        draw_line(top.0, top.1, top.0 + (left.0 - top.0) * t, top.1 + (left.1 - top.1) * t, 1.0, color);
-        draw_line(top.0, top.1, top.0 + (right.0 - top.0) * t, top.1 + (right.1 - top.1) * t, 1.0, color);
+        draw_line(top.0, top.1, top.0 + (left.0 - top.0) * t, top.1 + (left.1 - top.1) * t, line_width, color);
+        draw_line(top.0, top.1, top.0 + (right.0 - top.0) * t, top.1 + (right.1 - top.1) * t, line_width, color);
 
         // Right corner
-        draw_line(right.0, right.1, right.0 + (top.0 - right.0) * t, right.1 + (top.1 - right.1) * t, 1.0, color);
-        draw_line(right.0, right.1, right.0 + (bottom.0 - right.0) * t, right.1 + (bottom.1 - right.1) * t, 1.0, color);
+        draw_line(right.0, right.1, right.0 + (top.0 - right.0) * t, right.1 + (top.1 - right.1) * t, line_width, color);
+        draw_line(right.0, right.1, right.0 + (bottom.0 - right.0) * t, right.1 + (bottom.1 - right.1) * t, line_width, color);
 
         // Bottom corner
-        draw_line(bottom.0, bottom.1, bottom.0 + (right.0 - bottom.0) * t, bottom.1 + (right.1 - bottom.1) * t, 1.0, color);
-        draw_line(bottom.0, bottom.1, bottom.0 + (left.0 - bottom.0) * t, bottom.1 + (left.1 - bottom.1) * t, 1.0, color);
+        draw_line(bottom.0, bottom.1, bottom.0 + (right.0 - bottom.0) * t, bottom.1 + (right.1 - bottom.1) * t, line_width, color);
+        draw_line(bottom.0, bottom.1, bottom.0 + (left.0 - bottom.0) * t, bottom.1 + (left.1 - bottom.1) * t, line_width, color);
 
         // Left corner
-        draw_line(left.0, left.1, left.0 + (bottom.0 - left.0) * t, left.1 + (bottom.1 - left.1) * t, 1.0, color);
-        draw_line(left.0, left.1, left.0 + (top.0 - left.0) * t, left.1 + (top.1 - left.1) * t, 1.0, color);
+        draw_line(left.0, left.1, left.0 + (bottom.0 - left.0) * t, left.1 + (bottom.1 - left.1) * t, line_width, color);
+        draw_line(left.0, left.1, left.0 + (top.0 - left.0) * t, left.1 + (top.1 - left.1) * t, line_width, color);
     }
 
     fn render_player(&self, player: &Player, is_local: bool, is_selected: bool, camera: &Camera) {
         let (screen_x, screen_y) = world_to_screen(player.x, player.y, camera);
+        let zoom = camera.zoom;
+
+        // Scaled sprite dimensions
+        let scaled_sprite_width = SPRITE_WIDTH * zoom;
+        let scaled_sprite_height = SPRITE_HEIGHT * zoom;
 
         // Dead players are faded
         let alpha = if player.is_dead { 100 } else { 255 };
@@ -808,7 +834,7 @@ impl Renderer {
         }
 
         // Draw shadow under player
-        draw_ellipse(screen_x, screen_y, 16.0, 7.0, 0.0, Color::from_rgba(0, 0, 0, 60));
+        draw_ellipse(screen_x, screen_y, 16.0 * zoom, 7.0 * zoom, 0.0, Color::from_rgba(0, 0, 0, 60));
 
         // Try to render sprite based on player's appearance, fall back to colored circle
         if let Some(sprite) = self.get_player_sprite(&player.gender, &player.skin) {
@@ -823,8 +849,8 @@ impl Renderer {
             };
 
             // Position sprite so feet are at screen_y
-            let draw_x = screen_x - SPRITE_WIDTH / 2.0;
-            let draw_y = screen_y - SPRITE_HEIGHT + 8.0; // Offset to align feet with tile
+            let draw_x = screen_x - scaled_sprite_width / 2.0;
+            let draw_y = screen_y - scaled_sprite_height + 8.0 * zoom; // Offset to align feet with tile
 
             draw_texture_ex(
                 sprite,
@@ -833,7 +859,7 @@ impl Renderer {
                 tint,
                 DrawTextureParams {
                     source: Some(Rect::new(src_x, src_y, src_w, src_h)),
-                    dest_size: Some(Vec2::new(SPRITE_WIDTH, SPRITE_HEIGHT)),
+                    dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
                     flip_x: coords.flip_h,
                     ..Default::default()
                 },
@@ -849,7 +875,7 @@ impl Renderer {
                         tint, // Same tint as player
                         DrawTextureParams {
                             source: Some(Rect::new(src_x, src_y, src_w, src_h)),
-                            dest_size: Some(Vec2::new(SPRITE_WIDTH, SPRITE_HEIGHT)),
+                            dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
                             flip_x: coords.flip_h,
                             ..Default::default()
                         },
@@ -867,7 +893,7 @@ impl Renderer {
                         tint, // Same tint as player
                         DrawTextureParams {
                             source: Some(Rect::new(src_x, src_y, src_w, src_h)),
-                            dest_size: Some(Vec2::new(SPRITE_WIDTH, SPRITE_HEIGHT)),
+                            dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
                             flip_x: coords.flip_h,
                             ..Default::default()
                         },
@@ -888,25 +914,25 @@ impl Renderer {
                 alpha,
             );
 
-            let radius = 12.0;
+            let radius = 12.0 * zoom;
             draw_circle(screen_x, screen_y - radius, radius, color);
 
             // Direction indicator
             let (dx, dy) = player.direction.to_unit_vector();
-            let indicator_len = 15.0;
+            let indicator_len = 15.0 * zoom;
             draw_line(
                 screen_x,
                 screen_y - radius,
                 screen_x + dx * indicator_len,
                 screen_y - radius + dy * indicator_len * 0.5, // Flatten for isometric
-                2.0,
+                2.0 * zoom,
                 WHITE,
             );
         }
 
         // Player name (positioned just above head)
         let has_sprite = self.get_player_sprite(&player.gender, &player.skin).is_some();
-        let name_y_offset = if has_sprite { SPRITE_HEIGHT - 8.0 } else { 24.0 };
+        let name_y_offset = if has_sprite { scaled_sprite_height - 8.0 * zoom } else { 24.0 * zoom };
 
         // Build display name with optional (GM) suffix
         let name_width = self.measure_text_sharp(&player.name, 16.0).width;
@@ -961,12 +987,13 @@ impl Renderer {
 
     fn render_npc(&self, npc: &Npc, is_selected: bool, camera: &Camera) {
         let (screen_x, screen_y) = world_to_screen(npc.x, npc.y, camera);
+        let zoom = camera.zoom;
 
         // Don't render dead NPCs (or render them faded)
         if npc.state == NpcState::Dead {
             // Draw faded corpse
             let fade_color = Color::from_rgba(50, 80, 50, 100);
-            draw_circle(screen_x, screen_y - 8.0, 16.0, fade_color);
+            draw_circle(screen_x, screen_y - 8.0 * zoom, 16.0 * zoom, fade_color);
             return;
         }
 
@@ -994,23 +1021,23 @@ impl Renderer {
 
         // Wobble animation based on movement
         let wobble = (macroquad::time::get_time() * 4.0 + npc.animation_frame as f64).sin() as f32;
-        let radius = 10.0 + wobble * 1.5;
-        let height_offset = 8.0 + wobble * 2.0;
+        let radius = (10.0 + wobble * 1.5) * zoom;
+        let height_offset = (8.0 + wobble * 2.0) * zoom;
 
         // Draw shadow
-        draw_ellipse(screen_x, screen_y, 16.0, 6.0, 0.0, Color::from_rgba(0, 0, 0, 60));
+        draw_ellipse(screen_x, screen_y, 16.0 * zoom, 6.0 * zoom, 0.0, Color::from_rgba(0, 0, 0, 60));
 
         // Draw NPC body (oval blob) - TODO: use sprites based on entity_type
         draw_ellipse(screen_x, screen_y - height_offset, radius, radius * 0.7, 0.0, base_color);
 
         // Highlight
-        draw_ellipse(screen_x - 3.0, screen_y - height_offset - 2.0, radius * 0.3, radius * 0.2, 0.0, highlight_color);
+        draw_ellipse(screen_x - 3.0 * zoom, screen_y - height_offset - 2.0 * zoom, radius * 0.3, radius * 0.2, 0.0, highlight_color);
 
         // Interaction indicator for friendly NPCs (yellow exclamation mark above head)
         if !npc.is_hostile() {
             let pulse = (macroquad::time::get_time() * 2.0).sin() as f32 * 0.2 + 0.8;
-            let indicator_y = screen_y - height_offset - radius - 25.0;
-            self.draw_text_sharp("!", screen_x - 3.0, indicator_y, 16.0, Color::from_rgba(255, 220, 50, (pulse * 255.0) as u8));
+            let indicator_y = screen_y - height_offset - radius - 25.0 * zoom;
+            self.draw_text_sharp("!", screen_x - 3.0 * zoom, indicator_y, 16.0, Color::from_rgba(255, 220, 50, (pulse * 255.0) as u8));
         }
 
         // NPC name with level
@@ -1019,17 +1046,17 @@ impl Renderer {
         self.draw_text_sharp(
             &name,
             screen_x - name_width / 2.0,
-            screen_y - height_offset - radius - 5.0,
+            screen_y - height_offset - radius - 5.0 * zoom,
             16.0,
             name_color,
         );
 
         // Health bar (only show for hostile NPCs or when damaged)
         if npc.is_hostile() || npc.hp < npc.max_hp {
-            let bar_width = 28.0;
-            let bar_height = 3.0;
+            let bar_width = 28.0 * zoom;
+            let bar_height = 3.0 * zoom;
             let bar_x = screen_x - bar_width / 2.0;
-            let bar_y = screen_y - height_offset - radius - 18.0;
+            let bar_y = screen_y - height_offset - radius - 18.0 * zoom;
 
             // Background
             draw_rectangle(bar_x, bar_y, bar_width, bar_height, DARKGRAY);
@@ -1049,42 +1076,46 @@ impl Renderer {
 
     fn render_ground_item(&self, item: &GroundItem, camera: &Camera, state: &GameState) {
         let (screen_x, screen_y) = world_to_screen(item.x, item.y, camera);
+        let zoom = camera.zoom;
 
         // Bobbing animation
         let time = macroquad::time::get_time();
-        let bob = ((time - item.animation_time) * 3.0).sin() as f32 * 2.0;
+        let bob = ((time - item.animation_time) * 3.0).sin() as f32 * 2.0 * zoom;
 
         // Draw shadow
-        draw_ellipse(screen_x, screen_y, 8.0, 4.0, 0.0, Color::from_rgba(0, 0, 0, 40));
+        draw_ellipse(screen_x, screen_y, 8.0 * zoom, 4.0 * zoom, 0.0, Color::from_rgba(0, 0, 0, 40));
 
         let item_def = state.item_registry.get_or_placeholder(&item.item_id);
-        let item_y = screen_y - 8.0 - bob;
+        let item_y = screen_y - 8.0 * zoom - bob;
 
         // Try to use item sprite, fall back to colored rectangle
         if let Some(texture) = self.item_sprites.get(&item.item_id) {
             // Use full texture, centered on the ground position
-            let icon_width = texture.width();
-            let icon_height = texture.height();
+            let icon_width = texture.width() * zoom;
+            let icon_height = texture.height() * zoom;
 
             draw_texture_ex(
                 texture,
                 screen_x - icon_width / 2.0,
                 item_y - icon_height,
                 WHITE,
-                DrawTextureParams::default(),
+                DrawTextureParams {
+                    dest_size: Some(Vec2::new(icon_width, icon_height)),
+                    ..Default::default()
+                },
             );
         } else {
             // Fallback to colored rectangle
             let color = item_def.category_color();
-            draw_rectangle(screen_x - 6.0, item_y - 6.0, 16.0, 12.0, color);
-            draw_rectangle_lines(screen_x - 6.0, item_y - 6.0, 16.0, 12.0, 1.0, WHITE);
+            draw_rectangle(screen_x - 6.0 * zoom, item_y - 6.0 * zoom, 16.0 * zoom, 12.0 * zoom, color);
+            draw_rectangle_lines(screen_x - 6.0 * zoom, item_y - 6.0 * zoom, 16.0 * zoom, 12.0 * zoom, 1.0, WHITE);
         }
 
         // Draw quantity if > 1
         if item.quantity > 1 {
             let qty_text = format!("x{}", item.quantity);
             let text_width = self.measure_text_sharp(&qty_text, 16.0).width;
-            self.draw_text_sharp(&qty_text, screen_x - text_width / 2.0, item_y + 14.0, 16.0, WHITE);
+            self.draw_text_sharp(&qty_text, screen_x - text_width / 2.0, item_y + 14.0 * zoom, 16.0, WHITE);
         }
     }
 
@@ -2285,48 +2316,97 @@ impl Renderer {
                 255
             };
 
+            // Pop-in scale animation (starts big, settles to normal)
+            let scale = if age < 0.3 {
+                // Ease out: start at 1.3x, settle to 1.0x
+                let t = age / 0.3;
+                1.3 - 0.3 * t * t
+            } else {
+                1.0
+            };
+
             // Float up slightly
             let float_offset = (age * 10.0).min(30.0);
 
             // Position at top-center
-            let y = 120.0 - float_offset;
+            let base_y = 120.0 - float_offset;
 
-            // "QUEST COMPLETE!" banner
-            let title = "QUEST COMPLETE!";
-            let title_width = self.measure_text_sharp(title, 32.0).width;
-            let x = (screen_width() - title_width) / 2.0;
+            // Use quest complete sprite if available
+            if let Some(texture) = &self.quest_complete_texture {
+                let tex_width = texture.width() * scale;
+                let tex_height = texture.height() * scale;
+                let x = (screen_width() - tex_width) / 2.0;
+                let y = base_y - tex_height / 2.0;
 
-            // Outline
-            let outline_color = Color::from_rgba(0, 0, 0, alpha);
-            for ox in [-2.0, 2.0] {
-                for oy in [-2.0, 2.0] {
-                    self.draw_text_sharp(title, x + ox, y + oy, 32.0, outline_color);
+                draw_texture_ex(
+                    texture,
+                    x,
+                    y,
+                    Color::from_rgba(255, 255, 255, alpha),
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(tex_width, tex_height)),
+                        ..Default::default()
+                    },
+                );
+
+                // Quest name (below the sprite)
+                let name_width = self.measure_text_sharp(&event.quest_name, 16.0).width;
+                self.draw_text_sharp(
+                    &event.quest_name,
+                    (screen_width() - name_width) / 2.0,
+                    y + tex_height + 8.0,
+                    16.0,
+                    Color::from_rgba(255, 255, 255, alpha),
+                );
+
+                // Rewards
+                let rewards = format!("+{} EXP  +{} Gold", event.exp_reward, event.gold_reward);
+                let rewards_width = self.measure_text_sharp(&rewards, 16.0).width;
+                self.draw_text_sharp(
+                    &rewards,
+                    (screen_width() - rewards_width) / 2.0,
+                    y + tex_height + 28.0,
+                    16.0,
+                    Color::from_rgba(100, 255, 100, alpha),
+                );
+            } else {
+                // Fallback to text rendering if texture not loaded
+                let title = "QUEST COMPLETE!";
+                let title_width = self.measure_text_sharp(title, 32.0).width;
+                let x = (screen_width() - title_width) / 2.0;
+
+                // Outline
+                let outline_color = Color::from_rgba(0, 0, 0, alpha);
+                for ox in [-2.0, 2.0] {
+                    for oy in [-2.0, 2.0] {
+                        self.draw_text_sharp(title, x + ox, base_y + oy, 32.0, outline_color);
+                    }
                 }
+
+                // Main text (gold)
+                self.draw_text_sharp(title, x, base_y, 32.0, Color::from_rgba(255, 215, 0, alpha));
+
+                // Quest name
+                let name_width = self.measure_text_sharp(&event.quest_name, 16.0).width;
+                self.draw_text_sharp(
+                    &event.quest_name,
+                    (screen_width() - name_width) / 2.0,
+                    base_y + 25.0,
+                    16.0,
+                    Color::from_rgba(255, 255, 255, alpha),
+                );
+
+                // Rewards
+                let rewards = format!("+{} EXP  +{} Gold", event.exp_reward, event.gold_reward);
+                let rewards_width = self.measure_text_sharp(&rewards, 16.0).width;
+                self.draw_text_sharp(
+                    &rewards,
+                    (screen_width() - rewards_width) / 2.0,
+                    base_y + 45.0,
+                    16.0,
+                    Color::from_rgba(100, 255, 100, alpha),
+                );
             }
-
-            // Main text (gold)
-            self.draw_text_sharp(title, x, y, 32.0, Color::from_rgba(255, 215, 0, alpha));
-
-            // Quest name
-            let name_width = self.measure_text_sharp(&event.quest_name, 16.0).width;
-            self.draw_text_sharp(
-                &event.quest_name,
-                (screen_width() - name_width) / 2.0,
-                y + 25.0,
-                16.0,
-                Color::from_rgba(255, 255, 255, alpha),
-            );
-
-            // Rewards
-            let rewards = format!("+{} EXP  +{} Gold", event.exp_reward, event.gold_reward);
-            let rewards_width = self.measure_text_sharp(&rewards, 16.0).width;
-            self.draw_text_sharp(
-                &rewards,
-                (screen_width() - rewards_width) / 2.0,
-                y + 45.0,
-                16.0,
-                Color::from_rgba(100, 255, 100, alpha),
-            );
         }
     }
 
