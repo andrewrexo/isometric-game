@@ -50,7 +50,6 @@ const SLOT_SELECTED_BORDER: Color = Color::new(0.855, 0.737, 0.502, 1.0); // rgb
 const SLOT_DRAG_SOURCE: Color = Color::new(0.314, 0.392, 0.627, 0.706); // rgba(80, 100, 160, 180)
 
 // Equipment section
-const EQUIP_BG: Color = Color::new(0.094, 0.094, 0.133, 1.0);           // rgba(24, 24, 34, 255)
 const EQUIP_SLOT_EMPTY: Color = Color::new(0.110, 0.110, 0.165, 1.0);   // rgba(28, 28, 42, 255)
 const EQUIP_ACCENT: Color = Color::new(0.424, 0.345, 0.580, 1.0);       // rgba(108, 88, 148, 255)
 
@@ -77,15 +76,15 @@ const CATEGORY_MATERIAL: Color = Color::new(0.620, 0.620, 0.659, 1.0);   // rgba
 const CATEGORY_QUEST: Color = Color::new(1.0, 0.824, 0.314, 1.0);        // rgba(255, 210, 80, 255)
 
 // Layout constants
-const INV_WIDTH: f32 = 420.0;
+const INV_WIDTH: f32 = 460.0;
 const INV_HEIGHT: f32 = 360.0;
 const HEADER_HEIGHT: f32 = 40.0;
 const FOOTER_HEIGHT: f32 = 30.0;
 const GRID_PADDING: f32 = 15.0;
 const INV_SLOT_SIZE: f32 = 48.0;
 const SLOT_SPACING: f32 = 4.0;
-const EQUIP_PANEL_WIDTH: f32 = 110.0;
-const EQUIP_SLOT_SIZE: f32 = 44.0;  // Smaller to fit 5 slots
+const EQUIP_PANEL_WIDTH: f32 = 150.0;
+const EQUIP_SLOT_SIZE: f32 = 38.0;  // Smaller to fit 3-column body layout
 const EQUIP_SLOT_SPACING: f32 = 4.0;
 const FRAME_THICKNESS: f32 = 4.0;
 const CORNER_ACCENT_SIZE: f32 = 8.0;
@@ -115,6 +114,8 @@ pub struct Renderer {
     font: BitmapFont,
     /// Quest complete banner texture
     quest_complete_texture: Option<Texture2D>,
+    /// Gold nugget icon for inventory
+    gold_nugget_texture: Option<Texture2D>,
 }
 
 impl Renderer {
@@ -248,6 +249,19 @@ impl Renderer {
             }
         };
 
+        // Load gold nugget icon for inventory
+        let gold_nugget_texture = match load_texture("assets/ui/gold_nugget.png").await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                log::info!("Loaded gold nugget texture: {}x{}", tex.width(), tex.height());
+                Some(tex)
+            }
+            Err(e) => {
+                log::warn!("Failed to load gold nugget texture: {}", e);
+                None
+            }
+        };
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
@@ -258,6 +272,7 @@ impl Renderer {
             object_sprites,
             font,
             quest_complete_texture,
+            gold_nugget_texture,
         }
     }
 
@@ -1743,6 +1758,26 @@ impl Renderer {
                     draw_rectangle(center_x - 10.0, center_y + 6.0, 9.0, 4.0, icon_color);
                     draw_rectangle(center_x + 1.0, center_y + 6.0, 9.0, 4.0, icon_color);
                 },
+                "ring" => {
+                    // Ring silhouette (circular band)
+                    draw_rectangle(center_x - 6.0, center_y - 8.0, 12.0, 4.0, icon_color);
+                    draw_rectangle(center_x - 8.0, center_y - 4.0, 4.0, 8.0, icon_color);
+                    draw_rectangle(center_x + 4.0, center_y - 4.0, 4.0, 8.0, icon_color);
+                    draw_rectangle(center_x - 6.0, center_y + 4.0, 12.0, 4.0, icon_color);
+                    // Gem on top
+                    draw_rectangle(center_x - 3.0, center_y - 12.0, 6.0, 6.0, icon_color);
+                },
+                "gloves" => {
+                    // Glove silhouette (hand shape)
+                    draw_rectangle(center_x - 8.0, center_y - 2.0, 16.0, 12.0, icon_color);
+                    // Fingers
+                    draw_rectangle(center_x - 8.0, center_y - 10.0, 3.0, 10.0, icon_color);
+                    draw_rectangle(center_x - 4.0, center_y - 12.0, 3.0, 12.0, icon_color);
+                    draw_rectangle(center_x, center_y - 12.0, 3.0, 12.0, icon_color);
+                    draw_rectangle(center_x + 4.0, center_y - 10.0, 3.0, 10.0, icon_color);
+                    // Thumb
+                    draw_rectangle(center_x + 8.0, center_y - 4.0, 4.0, 8.0, icon_color);
+                },
                 _ => {}
             }
         }
@@ -1782,13 +1817,27 @@ impl Renderer {
         // Gold display (right side)
         let gold_text = format!("{}g", state.inventory.gold);
         let gold_width = self.measure_text_sharp(&gold_text, 16.0).width;
-        let coin_x = header_x + header_w - 12.0 - gold_width - 22.0;
+        
+        // Nugget icon size and spacing
+        let icon_size = 12.0;
+        let icon_margin = 4.0;
+        let coin_x = header_x + header_w - 12.0 - gold_width - icon_size - icon_margin;
 
-        // Coin icon (simple gold square)
-        // draw_rectangle(coin_x, header_y + 12.0, 16.0, 16.0, TEXT_GOLD);
-        // draw_rectangle(coin_x + 2.0, header_y + 14.0, 12.0, 12.0, Color::new(0.784, 0.627, 0.235, 1.0));
+        // Gold nugget icon
+        if let Some(texture) = &self.gold_nugget_texture {
+            draw_texture_ex(
+                texture,
+                coin_x,
+                header_y + (HEADER_HEIGHT - icon_size) / 2.0 + 1.0, // Center vertically in header
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(vec2(icon_size, icon_size)),
+                    ..Default::default()
+                },
+            );
+        }
 
-        self.draw_text_sharp(&gold_text, coin_x + 20.0, header_y + 26.0, 16.0, TEXT_GOLD);
+        self.draw_text_sharp(&gold_text, coin_x + icon_size + icon_margin, header_y + 26.0, 16.0, TEXT_GOLD);
 
         // ===== INVENTORY GRID (left side) =====
         let content_y = inv_y + FRAME_THICKNESS + HEADER_HEIGHT + 10.0;
@@ -1865,31 +1914,37 @@ impl Renderer {
         let equip_y = content_y;
         let equip_panel_w = EQUIP_PANEL_WIDTH - 20.0;
 
-        // Equipment panel background
-        draw_rectangle(equip_x, equip_y, equip_panel_w, divider_bottom - divider_top, EQUIP_BG);
-
         // Equipment header
         self.draw_text_sharp("GEAR", equip_x + (equip_panel_w - self.measure_text_sharp("GEAR", 16.0).width) / 2.0, equip_y + 16.0, 16.0, TEXT_TITLE);
 
         // Decorative line under header
         draw_line(equip_x + 2.0, equip_y + 22.0, equip_x + equip_panel_w - 2.0, equip_y + 22.0, 1.0, HEADER_BORDER);
 
-        // Equipment slots - arranged vertically: Head, Body, Weapon, Back, Feet
-        let slot_x = equip_x + (equip_panel_w - EQUIP_SLOT_SIZE) / 2.0;
-        let first_slot_y = equip_y + 28.0;
+        // Equipment slots - arranged in body-shaped layout:
+        //      [Head]           <- row 0, col 1
+        // [Back][Body][Weapon]  <- row 1
+        // [Gloves]   [Ring]     <- row 2, cols 0 and 2
+        //      [Feet]           <- row 3, col 1
         let slot_step = EQUIP_SLOT_SIZE + EQUIP_SLOT_SPACING;
+        let grid_width = 3.0 * EQUIP_SLOT_SIZE + 2.0 * EQUIP_SLOT_SPACING;
+        let grid_start_x = equip_x + (equip_panel_w - grid_width) / 2.0;
+        let grid_start_y = equip_y + 28.0;
 
-        // Define all equipment slots
-        let equipment_slots = [
-            ("head", "Head", 0),
-            ("body", "Armor", 1),
-            ("weapon", "Weapon", 2),
-            ("back", "Back", 3),
-            ("feet", "Boots", 4),
+        // Define all equipment slots with (slot_type, col, row)
+        // col: 0=left, 1=center, 2=right
+        let equipment_slots: [(&str, i32, i32); 7] = [
+            ("head", 1, 0),     // Center top
+            ("back", 0, 1),     // Left middle
+            ("body", 1, 1),     // Center middle
+            ("weapon", 2, 1),   // Right middle
+            ("gloves", 0, 2),   // Left lower
+            ("ring", 2, 2),     // Right lower
+            ("feet", 1, 3),     // Center bottom
         ];
 
-        for (slot_type, label, index) in equipment_slots.iter() {
-            let slot_y = first_slot_y + (*index as f32) * slot_step;
+        for (slot_type, col, row) in equipment_slots.iter() {
+            let slot_x = grid_start_x + (*col as f32) * slot_step;
+            let slot_y = grid_start_y + (*row as f32) * slot_step;
 
             // Register slot bounds
             let bounds = Rect::new(slot_x, slot_y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE);
@@ -1907,6 +1962,8 @@ impl Renderer {
                     "weapon" => p.equipped_weapon.is_some(),
                     "back" => p.equipped_back.is_some(),
                     "feet" => p.equipped_feet.is_some(),
+                    "ring" => p.equipped_ring.is_some(),
+                    "gloves" => p.equipped_gloves.is_some(),
                     _ => false,
                 }
             }).unwrap_or(false);
@@ -1923,6 +1980,8 @@ impl Renderer {
                         "weapon" => local_player.equipped_weapon.as_ref(),
                         "back" => local_player.equipped_back.as_ref(),
                         "feet" => local_player.equipped_feet.as_ref(),
+                        "ring" => local_player.equipped_ring.as_ref(),
+                        "gloves" => local_player.equipped_gloves.as_ref(),
                         _ => None,
                     };
                     if let Some(id) = item_id {
@@ -2226,7 +2285,7 @@ impl Renderer {
         let line_height = 20.0;
         let font_size = 16.0;
         let small_font_size = 16.0;  // Use 16pt for all text (native size)
-        let max_tooltip_width = 280.0;
+        let max_tooltip_width = 200.0;
         let text_width_limit = max_tooltip_width - padding * 2.0;
 
         // Prepare text strings for measurement
@@ -2281,9 +2340,11 @@ impl Renderer {
         let has_equipment = item_def.equipment.is_some();
 
         if has_description {
+            total_h += 2.0; // Small gap
             total_h += desc_lines.len() as f32 * line_height;
         }
         if has_equipment {
+            total_h += 2.0; // Small gap
             if let Some(ref equip) = item_def.equipment {
                 if equip.damage_bonus != 0 {
                     total_h += line_height;
@@ -2346,6 +2407,7 @@ impl Renderer {
 
         // Description section (if any)
         if has_description {
+            y += 2.0;
             // Description text
             for line in &desc_lines {
                 self.draw_text_sharp(line, tooltip_x + padding, y, small_font_size, TEXT_DIM);
@@ -2355,6 +2417,7 @@ impl Renderer {
 
         // Equipment stats section
         if let Some(ref equip) = item_def.equipment {
+            y += 2.0;
             // Stat colors
             let stat_green = Color::new(0.392, 0.784, 0.392, 1.0);  // rgba(100, 200, 100)
             let stat_red = Color::new(1.0, 0.392, 0.392, 1.0);      // rgba(255, 100, 100)

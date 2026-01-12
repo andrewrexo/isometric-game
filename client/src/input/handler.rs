@@ -132,8 +132,13 @@ impl InputHandler {
                                         if let Some(local_id) = &state.local_player_id.clone() {
                                             if let Some(player) = state.players.get_mut(local_id) {
                                                 match slot_type.as_str() {
+                                                    "head" => player.equipped_head = None,
                                                     "body" => player.equipped_body = None,
+                                                    "weapon" => player.equipped_weapon = None,
+                                                    "back" => player.equipped_back = None,
                                                     "feet" => player.equipped_feet = None,
+                                                    "ring" => player.equipped_ring = None,
+                                                    "gloves" => player.equipped_gloves = None,
                                                     _ => {}
                                                 }
                                             }
@@ -170,8 +175,13 @@ impl InputHandler {
                                         if let Some(local_id) = &state.local_player_id.clone() {
                                             if let Some(player) = state.players.get_mut(local_id) {
                                                 match target_slot_type.as_str() {
+                                                    "head" => player.equipped_head = Some(drag.item_id.clone()),
                                                     "body" => player.equipped_body = Some(drag.item_id.clone()),
+                                                    "weapon" => player.equipped_weapon = Some(drag.item_id.clone()),
+                                                    "back" => player.equipped_back = Some(drag.item_id.clone()),
                                                     "feet" => player.equipped_feet = Some(drag.item_id.clone()),
+                                                    "ring" => player.equipped_ring = Some(drag.item_id.clone()),
+                                                    "gloves" => player.equipped_gloves = Some(drag.item_id.clone()),
                                                     _ => {}
                                                 }
                                             }
@@ -252,8 +262,13 @@ impl InputHandler {
                     UiElementId::EquipmentSlot(slot_type) => {
                         // Check if equipment slot has an item
                         let equipped_item = match slot_type.as_str() {
+                            "head" => state.get_local_player().and_then(|p| p.equipped_head.clone()),
                             "body" => state.get_local_player().and_then(|p| p.equipped_body.clone()),
+                            "weapon" => state.get_local_player().and_then(|p| p.equipped_weapon.clone()),
+                            "back" => state.get_local_player().and_then(|p| p.equipped_back.clone()),
                             "feet" => state.get_local_player().and_then(|p| p.equipped_feet.clone()),
+                            "ring" => state.get_local_player().and_then(|p| p.equipped_ring.clone()),
+                            "gloves" => state.get_local_player().and_then(|p| p.equipped_gloves.clone()),
                             _ => None,
                         };
                         if let Some(item_id) = equipped_item {
@@ -748,8 +763,13 @@ impl InputHandler {
                     if mouse_right_clicked {
                         // Right-click on equipment slot opens context menu (if something is equipped)
                         let has_item = match slot_type.as_str() {
+                            "head" => state.get_local_player().and_then(|p| p.equipped_head.as_ref()).is_some(),
                             "body" => state.get_local_player().and_then(|p| p.equipped_body.as_ref()).is_some(),
+                            "weapon" => state.get_local_player().and_then(|p| p.equipped_weapon.as_ref()).is_some(),
+                            "back" => state.get_local_player().and_then(|p| p.equipped_back.as_ref()).is_some(),
                             "feet" => state.get_local_player().and_then(|p| p.equipped_feet.as_ref()).is_some(),
+                            "ring" => state.get_local_player().and_then(|p| p.equipped_ring.as_ref()).is_some(),
+                            "gloves" => state.get_local_player().and_then(|p| p.equipped_gloves.as_ref()).is_some(),
                             _ => false,
                         };
                         if has_item {
