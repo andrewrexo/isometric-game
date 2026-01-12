@@ -337,6 +337,8 @@ pub struct ClientItemDef {
     pub category: String, // "consumable", "material", "equipment", "quest"
     pub max_stack: i32,
     pub description: String,
+    pub base_price: i32,
+    pub sellable: bool,
     // Equipment-specific fields (None for non-equipment items)
     pub equipment_slot: Option<String>,
     pub level_required: Option<i32>,
@@ -1052,6 +1054,8 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     imap.push((Value::String("category".into()), Value::String(i.category.clone().into())));
                     imap.push((Value::String("maxStack".into()), Value::Integer((i.max_stack as i64).into())));
                     imap.push((Value::String("description".into()), Value::String(i.description.clone().into())));
+                    imap.push((Value::String("basePrice".into()), Value::Integer((i.base_price as i64).into())));
+                    imap.push((Value::String("sellable".into()), Value::Boolean(i.sellable)));
                     // Add equipment fields if present
                     if let Some(ref slot) = i.equipment_slot {
                         imap.push((Value::String("equipment_slot".into()), Value::String(slot.clone().into())));

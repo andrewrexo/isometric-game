@@ -104,6 +104,8 @@ pub struct Renderer {
     pub(crate) quest_complete_texture: Option<Texture2D>,
     /// Gold nugget icon for inventory
     pub(crate) gold_nugget_texture: Option<Texture2D>,
+    /// Circular stone backdrop for shop item icons
+    pub(crate) circular_stone_texture: Option<Texture2D>,
 }
 
 impl Renderer {
@@ -250,6 +252,19 @@ impl Renderer {
             }
         };
 
+        // Load circular stone backdrop for shop item icons
+        let circular_stone_texture = match load_texture("assets/ui/circular_stone.png").await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                log::info!("Loaded circular stone texture: {}x{}", tex.width(), tex.height());
+                Some(tex)
+            }
+            Err(e) => {
+                log::warn!("Failed to load circular stone texture: {}", e);
+                None
+            }
+        };
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
@@ -261,6 +276,7 @@ impl Renderer {
             font,
             quest_complete_texture,
             gold_nugget_texture,
+            circular_stone_texture,
         }
     }
 

@@ -207,7 +207,7 @@ impl Renderer {
             // Draw item if present (hide if being dragged)
             if let Some(slot) = &state.inventory.slots[i] {
                 if !is_dragging {
-                    self.draw_item_icon(&slot.item_id, x, y, INV_SLOT_SIZE, INV_SLOT_SIZE, state);
+                    self.draw_item_icon(&slot.item_id, x, y, INV_SLOT_SIZE, INV_SLOT_SIZE, state, false);
 
                     // Quantity badge (bottom-left with shadow)
                     if slot.quantity > 1 {
@@ -313,7 +313,7 @@ impl Renderer {
                         _ => None,
                     };
                     if let Some(id) = item_id {
-                        self.draw_item_icon(id, slot_x, slot_y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, state);
+                        self.draw_item_icon(id, slot_x, slot_y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, state, false);
                     }
                 }
             }
@@ -332,17 +332,37 @@ impl Renderer {
         self.draw_text_sharp("Drag to move", footer_x + 270.0, footer_y + 20.0, 16.0, Color::new(0.314, 0.314, 0.353, 1.0));
     }
 
-    pub(crate) fn draw_item_icon(&self, item_id: &str, x: f32, y: f32, slot_width: f32, slot_height: f32, state: &GameState) {
+    pub(crate) fn draw_item_icon(&self, item_id: &str, x: f32, y: f32, slot_width: f32, slot_height: f32, state: &GameState, with_backdrop: bool) {
+        // Draw circular stone backdrop if requested
+        if with_backdrop {
+            if let Some(backdrop) = &self.circular_stone_texture {
+                let backdrop_width = backdrop.width();
+                let backdrop_height = backdrop.height();
+                let backdrop_offset_x = (slot_width - backdrop_width) / 2.0;
+                let backdrop_offset_y = (slot_height - backdrop_height) / 2.0;
+
+                draw_texture_ex(
+                    backdrop,
+                    x + backdrop_offset_x,
+                    y + backdrop_offset_y,
+                    WHITE,
+                    DrawTextureParams::default(),
+                );
+            }
+        }
+
         if let Some(texture) = self.item_sprites.get(item_id) {
             let icon_width = texture.width();
             let icon_height = texture.height();
             let offset_x = (slot_width - icon_width) / 2.0;
+            // If drawing with backdrop, bring up Y by 1px
+            let y_draw = if with_backdrop { y - 1.0 } else { y };
             let offset_y = (slot_height - icon_height) / 2.0;
 
             draw_texture_ex(
                 texture,
                 x + offset_x,
-                y + offset_y,
+                y_draw + offset_y,
                 WHITE,
                 DrawTextureParams::default(),
             );
@@ -377,7 +397,7 @@ impl Renderer {
         draw_line(x + 1.0, y + 1.0, x + 1.0, y + slot_size - 1.0, 2.0, SLOT_INNER_SHADOW);
 
         // Draw the item icon centered on cursor
-        self.draw_item_icon(&drag.item_id, x, y, slot_size, slot_size, state);
+        self.draw_item_icon(&drag.item_id, x, y, slot_size, slot_size, state, false);
 
         // Draw quantity if > 1 (with shadow)
         if drag.quantity > 1 {

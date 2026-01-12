@@ -65,7 +65,7 @@ impl Renderer {
             // Draw item if present (hide if being dragged)
             if let Some(slot) = &state.inventory.slots[i] {
                 if !is_dragging {
-                    self.draw_item_icon(&slot.item_id, x, y, slot_size, slot_size, state);
+                    self.draw_item_icon(&slot.item_id, x, y, slot_size, slot_size, state, false);
 
                     // Quantity badge (bottom-left with shadow)
                     if slot.quantity > 1 {

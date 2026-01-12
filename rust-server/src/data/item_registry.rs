@@ -118,6 +118,8 @@ impl ItemRegistry {
                     category: format!("{:?}", item.category).to_lowercase(),
                     max_stack: item.max_stack,
                     description: item.description.clone(),
+                    base_price: item.base_price,
+                    sellable: item.sellable,
                     equipment_slot,
                     level_required,
                     damage_bonus,

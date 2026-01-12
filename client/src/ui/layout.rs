@@ -35,14 +35,16 @@ pub enum UiElementId {
     GroundItem(String), // item instance ID
 
     // Shop
-    ShopSubTab(usize), // 0=Buy, 1=Sell
     ShopBuyItem(usize),
     ShopSellItem(usize),
     ShopBuyScrollArea,
     ShopSellScrollArea,
-    ShopQuantityMinus,
-    ShopQuantityPlus,
-    ShopConfirmButton,
+    ShopBuyQuantityMinus,
+    ShopBuyQuantityPlus,
+    ShopBuyConfirmButton,
+    ShopSellQuantityMinus,
+    ShopSellQuantityPlus,
+    ShopSellConfirmButton,
 }
 
 /// A single interactive UI element with its bounds

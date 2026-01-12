@@ -98,6 +98,17 @@ pub const EQUIP_SLOT_SPACING: f32 = 4.0;
 pub const FRAME_THICKNESS: f32 = 4.0;
 pub const CORNER_ACCENT_SIZE: f32 = 8.0;
 
+// Tab Button Constants (standardized across panels)
+pub const TAB_HEIGHT: f32 = 28.0;
+pub const TAB_FONT_SIZE: f32 = 16.0;
+
+// Item Row Constants
+pub const ITEM_ICON_SIZE: f32 = 32.0;
+pub const ITEM_TEXT_OFFSET: f32 = 48.0;  // icon padding (8) + icon size (32) + gap (8)
+
+// Transaction Bar Constants
+pub const TRANSACTION_BAR_HEIGHT: f32 = 100.0;
+
 // ============================================================================
 // Shared Types
 // ============================================================================

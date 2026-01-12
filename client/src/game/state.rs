@@ -167,7 +167,8 @@ pub struct UiState {
     pub shop_main_tab: usize, // 0=Recipes, 1=Shop
     pub shop_selected_buy_index: usize,
     pub shop_selected_sell_index: usize,
-    pub shop_transaction_quantity: i32,
+    pub shop_buy_quantity: i32,
+    pub shop_sell_quantity: i32,
     pub shop_buy_scroll: f32,  // Scroll offset for buy list (pixels)
     pub shop_sell_scroll: f32, // Scroll offset for sell list (pixels)
     // Escape menu state
@@ -209,7 +210,8 @@ impl Default for UiState {
             shop_main_tab: 0,
             shop_selected_buy_index: 0,
             shop_selected_sell_index: 0,
-            shop_transaction_quantity: 1,
+            shop_buy_quantity: 1,
+            shop_sell_quantity: 1,
             shop_buy_scroll: 0.0,
             shop_sell_scroll: 0.0,
             escape_menu_open: false,

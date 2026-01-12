@@ -38,33 +38,11 @@ impl Renderer {
             draw_rectangle(dot_x - 1.5, header_y + HEADER_HEIGHT - 1.5, 3.0, 3.0, FRAME_ACCENT);
         }
 
-        // Main tabs: Recipes / Shop
+        // Main tabs: Shop / Crafting
         let main_tab_y = header_y + 6.0;
-        let main_tab_height = 24.0;
-        let main_tab_width = 90.0;
+        let main_tab_height = TAB_HEIGHT;
+        let main_tab_width = 100.0;
         let mut main_tab_x = header_x + 12.0;
-
-        // Recipes Tab
-        let is_recipes_selected = state.ui_state.shop_main_tab == 0;
-        let recipes_bounds = Rect::new(main_tab_x, main_tab_y, main_tab_width, main_tab_height);
-        layout.add(UiElementId::MainTab(0), recipes_bounds);
-
-        let is_recipes_hovered = matches!(hovered, Some(UiElementId::MainTab(0)));
-        let (recipes_bg, recipes_border) = if is_recipes_selected {
-            (SLOT_HOVER_BG, SLOT_SELECTED_BORDER)
-        } else if is_recipes_hovered {
-            (Color::new(0.141, 0.141, 0.188, 1.0), SLOT_HOVER_BORDER)
-        } else {
-            (SLOT_BG_EMPTY, SLOT_BORDER)
-        };
-
-        draw_rectangle(main_tab_x, main_tab_y, main_tab_width, main_tab_height, recipes_border);
-        draw_rectangle(main_tab_x + 1.0, main_tab_y + 1.0, main_tab_width - 2.0, main_tab_height - 2.0, recipes_bg);
-
-        let recipes_text_color = if is_recipes_selected { TEXT_TITLE } else if is_recipes_hovered { TEXT_NORMAL } else { TEXT_DIM };
-        self.draw_text_sharp("Recipes", main_tab_x + 18.0, main_tab_y + 17.0, 16.0, recipes_text_color);
-
-        main_tab_x += main_tab_width + 4.0;
 
         // Shop Tab
         let is_shop_selected = state.ui_state.shop_main_tab == 1;
@@ -84,7 +62,33 @@ impl Renderer {
         draw_rectangle(main_tab_x + 1.0, main_tab_y + 1.0, main_tab_width - 2.0, main_tab_height - 2.0, shop_bg);
 
         let shop_text_color = if is_shop_selected { TEXT_TITLE } else if is_shop_hovered { TEXT_NORMAL } else { TEXT_DIM };
-        self.draw_text_sharp("Shop", main_tab_x + 24.0, main_tab_y + 17.0, 16.0, shop_text_color);
+        let shop_dims = self.measure_text_sharp("Shop", TAB_FONT_SIZE);
+        let shop_text_x = main_tab_x + (main_tab_width - shop_dims.width) / 2.0;
+        self.draw_text_sharp("Shop", shop_text_x, main_tab_y + 19.0, TAB_FONT_SIZE, shop_text_color);
+
+        main_tab_x += main_tab_width + 4.0;
+
+        // Crafting Tab (formerly Recipes)
+        let is_recipes_selected = state.ui_state.shop_main_tab == 0;
+        let recipes_bounds = Rect::new(main_tab_x, main_tab_y, main_tab_width, main_tab_height);
+        layout.add(UiElementId::MainTab(0), recipes_bounds);
+
+        let is_recipes_hovered = matches!(hovered, Some(UiElementId::MainTab(0)));
+        let (recipes_bg, recipes_border) = if is_recipes_selected {
+            (SLOT_HOVER_BG, SLOT_SELECTED_BORDER)
+        } else if is_recipes_hovered {
+            (Color::new(0.141, 0.141, 0.188, 1.0), SLOT_HOVER_BORDER)
+        } else {
+            (SLOT_BG_EMPTY, SLOT_BORDER)
+        };
+
+        draw_rectangle(main_tab_x, main_tab_y, main_tab_width, main_tab_height, recipes_border);
+        draw_rectangle(main_tab_x + 1.0, main_tab_y + 1.0, main_tab_width - 2.0, main_tab_height - 2.0, recipes_bg);
+
+        let recipes_text_color = if is_recipes_selected { TEXT_TITLE } else if is_recipes_hovered { TEXT_NORMAL } else { TEXT_DIM };
+        let recipes_dims = self.measure_text_sharp("Crafting", TAB_FONT_SIZE);
+        let recipes_text_x = main_tab_x + (main_tab_width - recipes_dims.width) / 2.0;
+        self.draw_text_sharp("Crafting", recipes_text_x, main_tab_y + 19.0, TAB_FONT_SIZE, recipes_text_color);
 
         self.draw_text_sharp("[E] Close", header_x + header_w - 80.0, header_y + 26.0, 16.0, TEXT_DIM);
 
@@ -196,7 +200,7 @@ impl Renderer {
         draw_line(list_x + 2.0, list_y + 2.0, list_x + list_width - 2.0, list_y + 2.0, 2.0, SLOT_INNER_SHADOW);
         draw_line(list_x + 2.0, list_y + 2.0, list_x + 2.0, list_y + list_height - 2.0, 2.0, SLOT_INNER_SHADOW);
 
-        self.draw_text_sharp("Recipes", list_x + 8.0, list_y + 18.0, 16.0, TEXT_TITLE);
+        self.draw_text_sharp("Blueprints", list_x + 8.0, list_y + 18.0, 16.0, TEXT_TITLE);
         draw_line(list_x + 6.0, list_y + 24.0, list_x + list_width - 6.0, list_y + 24.0, 1.0, HEADER_BORDER);
 
         let line_height = 28.0;
