@@ -27,8 +27,8 @@ const MAP_HEIGHT: u32 = 32;
 const STARTING_HP: i32 = 100;
 
 // Combat constants
-const ATTACK_RANGE: f32 = 1.5; // Maximum distance to attack (in tiles)
-const ATTACK_COOLDOWN_MS: u64 = 800; // 1 second between attacks
+const ATTACK_RANGE: i32 = 1; // Maximum distance to attack (in tiles)
+const ATTACK_COOLDOWN_MS: u64 = 700; // Slightly shorter than client (800ms) to account for network latency
 const BASE_DAMAGE: i32 = 10; // Base damage per attack
 
 // ============================================================================

@@ -27,3 +27,7 @@ Thumbs.db
 .env.local
 
 /client/assets/sprites/objects
+
+# Tiled map maker projects
+*.new.json
+*.tmj
