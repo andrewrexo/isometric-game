@@ -1586,12 +1586,12 @@ impl Renderer {
             self.render_dialogue(dialogue, hovered, &mut layout);
         }
 
-        // Render item tooltip last so it appears on top of everything
-        self.render_item_tooltip(state);
-
         // Render context menu on top of everything
         if let Some(ref context_menu) = state.ui_state.context_menu {
             self.render_context_menu(context_menu, state, &mut layout);
+        } else {
+            // Only render item tooltip if context menu is not open
+            self.render_item_tooltip(state);
         }
 
         // Render dragged item at cursor (on top of everything)
@@ -1828,7 +1828,7 @@ impl Renderer {
             draw_texture_ex(
                 texture,
                 coin_x,
-                header_y + (HEADER_HEIGHT - icon_size) / 2.0 + 1.0, // Center vertically in header
+                header_y + (HEADER_HEIGHT - icon_size) / 2.0 + 2.0, // Center vertically in header
                 WHITE,
                 DrawTextureParams {
                     dest_size: Some(vec2(icon_size, icon_size)),
@@ -1892,11 +1892,15 @@ impl Renderer {
 
             // Show slot number badge for first 5 (quick slots)
             if i < 5 {
-                let num_x = x + INV_SLOT_SIZE - 14.0;
-                let num_y = y + 2.0;
-                // Small dark badge background
-                draw_rectangle(num_x - 2.0, num_y, 14.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.5));
-                self.draw_text_sharp(&(i + 1).to_string(), num_x, num_y + 14.0, 16.0, TEXT_DIM);
+                let num_text = (i + 1).to_string();
+                let text_w = self.measure_text_sharp(&num_text, 16.0).width;
+                let badge_w = text_w + 2.0; // 1px left + 1px right
+                let badge_h = 13.0; // Tight height
+                let num_x = x + INV_SLOT_SIZE - badge_w - 1.0;
+                let num_y = y + 1.0;
+                // Small dark badge background with 1px padding
+                draw_rectangle(num_x, num_y, badge_w, badge_h, Color::new(0.0, 0.0, 0.0, 0.5));
+                self.draw_text_sharp(&num_text, num_x + 1.0, num_y + 11.0, 16.0, TEXT_DIM);
             }
         }
 
@@ -2009,105 +2013,184 @@ impl Renderer {
     }
 
     fn render_quest_log(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let panel_width = 350.0;
-        let panel_height = 400.0;
+        let panel_width = 380.0;
+        let panel_height = 420.0;
         let panel_x = (screen_width() - panel_width) / 2.0;
         let panel_y = (screen_height() - panel_height) / 2.0;
 
         // Semi-transparent overlay
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 100));
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.588));
 
-        // Panel background
-        draw_rectangle(panel_x, panel_y, panel_width, panel_height, Color::from_rgba(30, 30, 40, 240));
-        draw_rectangle_lines(panel_x, panel_y, panel_width, panel_height, 2.0, Color::from_rgba(100, 100, 120, 255));
+        // Draw themed panel frame with corner accents
+        self.draw_panel_frame(panel_x, panel_y, panel_width, panel_height);
+        self.draw_corner_accents(panel_x, panel_y, panel_width, panel_height);
+
+        // ===== HEADER SECTION =====
+        let header_x = panel_x + FRAME_THICKNESS;
+        let header_y = panel_y + FRAME_THICKNESS;
+        let header_w = panel_width - FRAME_THICKNESS * 2.0;
+
+        // Header background
+        draw_rectangle(header_x, header_y, header_w, HEADER_HEIGHT, HEADER_BG);
+
+        // Header bottom separator with decorative dots
+        draw_line(header_x + 10.0, header_y + HEADER_HEIGHT, header_x + header_w - 10.0, header_y + HEADER_HEIGHT, 2.0, HEADER_BORDER);
+
+        let dot_spacing = 50.0;
+        let num_dots = ((header_w - 40.0) / dot_spacing) as i32;
+        let start_dot_x = header_x + 20.0;
+        for i in 0..num_dots {
+            let dot_x = start_dot_x + i as f32 * dot_spacing;
+            draw_rectangle(dot_x - 1.5, header_y + HEADER_HEIGHT - 1.5, 3.0, 3.0, FRAME_ACCENT);
+        }
 
         // Title
-        let title = "Quest Log";
-        self.draw_text_sharp(title, panel_x + 15.0, panel_y + 28.0, 16.0, Color::from_rgba(255, 220, 100, 255));
+        self.draw_text_sharp("QUEST LOG", header_x + 12.0, header_y + 26.0, 16.0, TEXT_TITLE);
 
-        // Separator line
-        draw_line(panel_x + 10.0, panel_y + 40.0, panel_x + panel_width - 10.0, panel_y + 40.0, 1.0, GRAY);
+        // Close hint (right side)
+        self.draw_text_sharp("[Q] Close", header_x + header_w - 80.0, header_y + 26.0, 16.0, TEXT_DIM);
 
-        let mut y = panel_y + 60.0;
-        let line_height = 20.0;
+        // ===== CONTENT AREA =====
+        let content_x = panel_x + FRAME_THICKNESS + 8.0;
+        let content_y = panel_y + FRAME_THICKNESS + HEADER_HEIGHT + 8.0;
+        let content_w = panel_width - FRAME_THICKNESS * 2.0 - 16.0;
+        let content_h = panel_height - FRAME_THICKNESS * 2.0 - HEADER_HEIGHT - FOOTER_HEIGHT - 16.0;
+
+        // Quest list panel with inset effect
+        draw_rectangle(content_x, content_y, content_w, content_h, SLOT_BORDER);
+        draw_rectangle(content_x + 1.0, content_y + 1.0, content_w - 2.0, content_h - 2.0, SLOT_BG_EMPTY);
+
+        // Inner shadow (top/left)
+        draw_line(content_x + 2.0, content_y + 2.0, content_x + content_w - 2.0, content_y + 2.0, 2.0, SLOT_INNER_SHADOW);
+        draw_line(content_x + 2.0, content_y + 2.0, content_x + 2.0, content_y + content_h - 2.0, 2.0, SLOT_INNER_SHADOW);
+
+        let mut y = content_y + 10.0;
+        let line_height = 17.0;
+        let objective_spacing = 16.0;
 
         if state.ui_state.active_quests.is_empty() {
-            self.draw_text_sharp("No active quests", panel_x + 20.0, y, 16.0, GRAY);
-            self.draw_text_sharp("Talk to NPCs with ! above their heads", panel_x + 20.0, y + line_height, 16.0, DARKGRAY);
+            // Empty state with themed styling
+            self.draw_text_sharp("No Active Quests", content_x + 12.0, y + 10.0, 16.0, TEXT_DIM);
+            y += line_height + 8.0;
+            self.draw_text_sharp("Talk to NPCs with", content_x + 12.0, y + 10.0, 16.0, Color::new(0.392, 0.392, 0.431, 1.0));
+            self.draw_text_sharp("!", content_x + 140.0, y + 10.0, 16.0, TEXT_GOLD);
+            self.draw_text_sharp("above their heads", content_x + 155.0, y + 10.0, 16.0, Color::new(0.392, 0.392, 0.431, 1.0));
         } else {
             for (quest_idx, quest) in state.ui_state.active_quests.iter().enumerate() {
-                let quest_start_y = y;
+                // Calculate entry height: padding + title + spacing + objectives + bottom padding
+                let entry_padding = 6.0;
+                let title_height = line_height;
+                let objectives_height = quest.objectives.len() as f32 * objective_spacing;
+                let entry_height = entry_padding + title_height + 2.0 + objectives_height + entry_padding;
+
+                let entry_start_y = y;
+
+                // Check if we're about to overflow the panel
+                if y + entry_height > content_y + content_h - 20.0 {
+                    let remaining = state.ui_state.active_quests.len() - quest_idx;
+                    if remaining > 0 {
+                        self.draw_text_sharp(&format!("...and {} more quests", remaining), content_x + 12.0, y, 16.0, TEXT_DIM);
+                    }
+                    break;
+                }
 
                 // Register quest entry bounds for hover detection
-                let entry_height = line_height + 5.0 + (quest.objectives.len() as f32 * line_height);
-                let bounds = Rect::new(panel_x + 10.0, quest_start_y - 5.0, panel_width - 20.0, entry_height);
+                let bounds = Rect::new(content_x + 4.0, entry_start_y, content_w - 8.0, entry_height);
                 layout.add(UiElementId::QuestLogEntry(quest_idx), bounds);
 
                 // Check if this quest is hovered
                 let is_hovered = matches!(hovered, Some(UiElementId::QuestLogEntry(idx)) if *idx == quest_idx);
 
-                // Draw highlight background if hovered
+                // Draw quest entry background with slot-like styling
                 if is_hovered {
-                    draw_rectangle(panel_x + 10.0, quest_start_y - 5.0, panel_width - 20.0, entry_height, Color::from_rgba(50, 50, 70, 100));
+                    draw_rectangle(content_x + 4.0, entry_start_y, content_w - 8.0, entry_height, SLOT_HOVER_BORDER);
+                    draw_rectangle(content_x + 5.0, entry_start_y + 1.0, content_w - 10.0, entry_height - 2.0, SLOT_HOVER_BG);
                 }
 
-                // Quest name with icon
-                let name_color = if is_hovered { Color::from_rgba(255, 240, 150, 255) } else { WHITE };
-                self.draw_text_sharp("*", panel_x + 15.0, y, 16.0, Color::from_rgba(255, 220, 100, 255));
-                self.draw_text_sharp(&quest.name, panel_x + 30.0, y, 16.0, name_color);
-                y += line_height + 5.0;
+                // Move y inside the entry box with padding
+                y += entry_padding;
 
-                // Objectives
+                // Quest name with star icon
+                let name_color = if is_hovered { TEXT_TITLE } else { TEXT_NORMAL };
+                self.draw_text_sharp("*", content_x + 12.0, y + 12.0, 16.0, TEXT_GOLD);
+                self.draw_text_sharp(&quest.name, content_x + 28.0, y + 12.0, 16.0, name_color);
+                y += title_height + 4.0;
+
+                // Objectives with styled checkmarks
                 for obj in &quest.objectives {
-                    let (check_char, status_color) = if obj.completed {
-                        ("v", Color::from_rgba(100, 255, 100, 255))
+                    let (check_icon, status_color) = if obj.completed {
+                        ("[+]", Color::new(0.392, 0.784, 0.392, 1.0))
                     } else {
-                        ("o", Color::from_rgba(180, 180, 180, 255))
+                        ("[ ]", Color::new(0.502, 0.502, 0.541, 1.0))
                     };
 
-                    self.draw_text_sharp(check_char, panel_x + 25.0, y, 16.0, status_color);
+                    self.draw_text_sharp(check_icon, content_x + 20.0, y + 12.0, 16.0, status_color);
 
                     let obj_text = format!("{} ({}/{})", obj.description, obj.current, obj.target);
-                    self.draw_text_sharp(&obj_text, panel_x + 40.0, y, 16.0, status_color);
-                    y += line_height;
+                    let text_color = if obj.completed {
+                        Color::new(0.392, 0.627, 0.392, 1.0)
+                    } else {
+                        TEXT_DIM
+                    };
+                    self.draw_text_sharp(&obj_text, content_x + 52.0, y + 12.0, 16.0, text_color);
+                    y += objective_spacing;
                 }
 
-                y += 10.0; // Space between quests
+                // Move past bottom padding
+                y += entry_padding;
 
-                // Check if we're about to overflow the panel
-                if y > panel_y + panel_height - 50.0 {
-                    let remaining = state.ui_state.active_quests.len().saturating_sub(1);
-                    if remaining > 0 {
-                        self.draw_text_sharp(&format!("...and {} more quests", remaining), panel_x + 20.0, y, 16.0, GRAY);
-                    }
-                    break;
+                // Decorative separator between quests
+                if quest_idx < state.ui_state.active_quests.len() - 1 {
+                    draw_line(content_x + 20.0, y + 2.0, content_x + content_w - 20.0, y + 2.0, 1.0, SLOT_BORDER);
+                    y += 8.0;
                 }
             }
         }
 
-        // Close hint at bottom
-        self.draw_text_sharp("Press Q to close", panel_x + 15.0, panel_y + panel_height - 20.0, 16.0, GRAY);
+        // ===== FOOTER SECTION =====
+        let footer_x = panel_x + FRAME_THICKNESS;
+        let footer_y = panel_y + panel_height - FRAME_THICKNESS - FOOTER_HEIGHT;
+        let footer_w = panel_width - FRAME_THICKNESS * 2.0;
+
+        // Footer background
+        draw_rectangle(footer_x, footer_y, footer_w, FOOTER_HEIGHT, FOOTER_BG);
+
+        // Footer top separator
+        draw_line(footer_x + 10.0, footer_y, footer_x + footer_w - 10.0, footer_y, 1.0, HEADER_BORDER);
+
+        // Help hints
+        self.draw_text_sharp("[Q] Close", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
+
+        // Quest count on the right
+        let quest_count = state.ui_state.active_quests.len();
+        let count_text = format!("{} Active", quest_count);
+        let count_width = self.measure_text_sharp(&count_text, 16.0).width;
+        self.draw_text_sharp(&count_text, footer_x + footer_w - count_width - 10.0, footer_y + 20.0, 16.0, FRAME_MID);
     }
 
     fn render_quick_slots(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let slot_size = INV_SLOT_SIZE;
+        // Smaller slot size for quick bar (6px less than inventory)
+        let slot_size = INV_SLOT_SIZE - 6.0;
         let padding = SLOT_SPACING;
         let total_width = 5.0 * (slot_size + padding) - padding;
 
         // Add some padding for the background panel
-        let panel_padding = 6.0;
+        let panel_padding = 5.0;
         let panel_width = total_width + panel_padding * 2.0;
         let panel_height = slot_size + panel_padding * 2.0;
 
         let panel_x = (screen_width() - panel_width) / 2.0;
-        let panel_y = screen_height() - panel_height - 12.0;
+        let panel_y = screen_height() - panel_height - 10.0;
 
-        // Draw subtle background panel
-        draw_rectangle(panel_x - 1.0, panel_y - 1.0, panel_width + 2.0, panel_height + 2.0, FRAME_OUTER);
-        draw_rectangle(panel_x, panel_y, panel_width, panel_height, PANEL_BG_MID);
+        // Draw semi-transparent background panel
+        let frame_outer_alpha = Color::new(FRAME_OUTER.r, FRAME_OUTER.g, FRAME_OUTER.b, 0.7);
+        let panel_bg_alpha = Color::new(PANEL_BG_MID.r, PANEL_BG_MID.g, PANEL_BG_MID.b, 0.75);
+        draw_rectangle(panel_x - 1.0, panel_y - 1.0, panel_width + 2.0, panel_height + 2.0, frame_outer_alpha);
+        draw_rectangle(panel_x, panel_y, panel_width, panel_height, panel_bg_alpha);
 
-        // Inner highlight
-        draw_line(panel_x + 1.0, panel_y + 1.0, panel_x + panel_width - 1.0, panel_y + 1.0, 1.0, FRAME_MID);
+        // Inner highlight (also semi-transparent)
+        let frame_mid_alpha = Color::new(FRAME_MID.r, FRAME_MID.g, FRAME_MID.b, 0.6);
+        draw_line(panel_x + 1.0, panel_y + 1.0, panel_x + panel_width - 1.0, panel_y + 1.0, 1.0, frame_mid_alpha);
 
         let start_x = panel_x + panel_padding;
         let start_y = panel_y + panel_padding;
@@ -2154,10 +2237,15 @@ impl Renderer {
             }
 
             // Slot number badge (top-right)
-            let num_x = x + slot_size - 14.0;
-            let num_y = y + 2.0;
-            draw_rectangle(num_x - 2.0, num_y, 14.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.5));
-            self.draw_text_sharp(&(i + 1).to_string(), num_x, num_y + 14.0, 16.0, TEXT_NORMAL);
+            let num_text = (i + 1).to_string();
+            let text_w = self.measure_text_sharp(&num_text, 16.0).width;
+            let badge_w = text_w + 2.0; // 1px left + 1px right
+            let badge_h = 13.0; // Tight height
+            let num_x = x + slot_size - badge_w - 1.0;
+            let num_y = y + 1.0;
+            // Small dark badge background with 1px padding
+            draw_rectangle(num_x, num_y, badge_w, badge_h, Color::new(0.0, 0.0, 0.0, 0.5));
+            self.draw_text_sharp(&num_text, num_x + 1.0, num_y + 11.0, 16.0, TEXT_NORMAL);
         }
     }
 
@@ -2468,6 +2556,7 @@ impl Renderer {
     /// Render the right-click context menu for items
     fn render_context_menu(&self, menu: &ContextMenu, state: &GameState, layout: &mut UiLayout) {
         let padding = 8.0;
+        let header_height = 24.0;
         let option_height = 28.0;
         let menu_width = 120.0;
 
@@ -2488,170 +2577,256 @@ impl Renderer {
             options.push(("Drop", UiElementId::ContextMenuOption(options.len())));
         }
 
-        let menu_height = padding * 2.0 + options.len() as f32 * option_height;
+        let content_height = options.len() as f32 * option_height + padding;
+        let menu_height = header_height + content_height + padding;
 
-        // Position menu at cursor, but keep on screen
-        let mut menu_x = menu.x;
-        let mut menu_y = menu.y;
+        // Position menu at cursor, but keep on screen (pixel-aligned)
+        let mut menu_x = menu.x.floor();
+        let mut menu_y = menu.y.floor();
 
         if menu_x + menu_width > screen_width() {
-            menu_x = screen_width() - menu_width - 5.0;
+            menu_x = (screen_width() - menu_width - 5.0).floor();
         }
         if menu_y + menu_height > screen_height() {
-            menu_y = screen_height() - menu_height - 5.0;
+            menu_y = (screen_height() - menu_height - 5.0).floor();
         }
 
-        // Background
-        draw_rectangle(menu_x, menu_y, menu_width, menu_height, Color::from_rgba(30, 30, 40, 245));
-        draw_rectangle_lines(menu_x, menu_y, menu_width, menu_height, 1.0, Color::from_rgba(100, 100, 120, 255));
+        // ===== PANEL FRAME =====
+        // Outer border
+        draw_rectangle(menu_x - 2.0, menu_y - 2.0, menu_width + 4.0, menu_height + 4.0, FRAME_OUTER);
+        // Mid frame
+        draw_rectangle(menu_x - 1.0, menu_y - 1.0, menu_width + 2.0, menu_height + 2.0, FRAME_MID);
+        // Main background
+        draw_rectangle(menu_x, menu_y, menu_width, menu_height, PANEL_BG_MID);
 
-        // Draw options
+        // ===== HEADER =====
+        draw_rectangle(menu_x, menu_y, menu_width, header_height, HEADER_BG);
+        draw_line(menu_x, menu_y + header_height, menu_x + menu_width, menu_y + header_height, 1.0, HEADER_BORDER);
+
+        // Header title
+        self.draw_text_sharp("Options", (menu_x + 8.0).floor(), (menu_y + 17.0).floor(), 14.0, TEXT_TITLE);
+
+        // Small accent dots on header
+        draw_rectangle((menu_x + menu_width - 18.0).floor(), (menu_y + 10.0).floor(), 3.0, 3.0, FRAME_ACCENT);
+        draw_rectangle((menu_x + menu_width - 12.0).floor(), (menu_y + 10.0).floor(), 3.0, 3.0, FRAME_ACCENT);
+
+        // ===== OPTIONS =====
         let (mouse_x, mouse_y) = mouse_position();
-        let mut y = menu_y + padding;
+        let mut y = (menu_y + header_height + padding).floor();
 
-        for (i, (label, element_id)) in options.iter().enumerate() {
-            let option_bounds = Rect::new(menu_x + 2.0, y, menu_width - 4.0, option_height - 2.0);
+        for (_i, (label, element_id)) in options.iter().enumerate() {
+            let option_bounds = Rect::new((menu_x + 4.0).floor(), y, menu_width - 8.0, option_height - 4.0);
             layout.add(element_id.clone(), option_bounds);
 
             // Check hover
             let is_hovered = mouse_x >= option_bounds.x && mouse_x <= option_bounds.x + option_bounds.w
                 && mouse_y >= option_bounds.y && mouse_y <= option_bounds.y + option_bounds.h;
 
-            // Hover highlight
             if is_hovered {
-                draw_rectangle(option_bounds.x, option_bounds.y, option_bounds.w, option_bounds.h, Color::from_rgba(60, 60, 80, 255));
+                // Hover background
+                draw_rectangle(option_bounds.x, option_bounds.y, option_bounds.w, option_bounds.h, SLOT_HOVER_BG);
             }
 
             // Label
-            let text_color = if is_hovered { WHITE } else { LIGHTGRAY };
-            self.draw_text_sharp(label, menu_x + padding, y + 18.0, 16.0, text_color);
+            let text_color = if is_hovered { TEXT_TITLE } else { TEXT_NORMAL };
+            self.draw_text_sharp(label, (option_bounds.x + 10.0).floor(), (y + 16.0).floor(), 15.0, text_color);
 
             y += option_height;
         }
+
+        // Bottom inner shadow
+        draw_line(menu_x + 1.0, menu_y + menu_height - 1.0, menu_x + menu_width - 1.0, menu_y + menu_height - 1.0, 1.0, FRAME_OUTER);
     }
 
     /// Render the escape menu (settings and disconnect)
     fn render_escape_menu(&self, state: &GameState, layout: &mut UiLayout) {
         // Semi-transparent overlay
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 150));
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.5));
 
-        let menu_width = 280.0;
-        let menu_height = 220.0;
-        let menu_x = (screen_width() - menu_width) / 2.0;
-        let menu_y = (screen_height() - menu_height) / 2.0;
+        let menu_width = 260.0;
+        let menu_height = 200.0;
+        let menu_x = ((screen_width() - menu_width) / 2.0).floor();
+        let menu_y = ((screen_height() - menu_height) / 2.0).floor();
 
-        // Background
-        draw_rectangle(menu_x, menu_y, menu_width, menu_height, Color::from_rgba(30, 30, 40, 245));
-        draw_rectangle_lines(menu_x, menu_y, menu_width, menu_height, 2.0, Color::from_rgba(100, 100, 120, 255));
+        // ===== PANEL FRAME =====
+        self.draw_panel_frame(menu_x, menu_y, menu_width, menu_height);
+        self.draw_corner_accents(menu_x, menu_y, menu_width, menu_height);
 
-        // Title
-        let title = "Menu";
-        let title_width = self.measure_text_sharp(title, 20.0).width;
-        self.draw_text_sharp(title, menu_x + (menu_width - title_width) / 2.0, menu_y + 35.0, 20.0, WHITE);
+        // ===== HEADER =====
+        let header_height = 32.0;
+        draw_rectangle(menu_x + FRAME_THICKNESS, menu_y + FRAME_THICKNESS,
+                      menu_width - FRAME_THICKNESS * 2.0, header_height, HEADER_BG);
+        draw_line(menu_x + FRAME_THICKNESS, menu_y + FRAME_THICKNESS + header_height,
+                 menu_x + menu_width - FRAME_THICKNESS, menu_y + FRAME_THICKNESS + header_height, 1.0, HEADER_BORDER);
 
-        // Camera Zoom section
-        self.draw_text_sharp("Camera Zoom", menu_x + 20.0, menu_y + 70.0, 16.0, LIGHTGRAY);
+        // Title centered in header
+        let title = "MENU";
+        let title_width = self.measure_text_sharp(title, 16.0).width;
+        self.draw_text_sharp(title, (menu_x + (menu_width - title_width) / 2.0).floor(),
+                            (menu_y + FRAME_THICKNESS + 22.0).floor(), 16.0, TEXT_TITLE);
 
-        let button_width = 100.0;
-        let button_height = 36.0;
-        let button_y = menu_y + 85.0;
-        let button_spacing = 20.0;
-        let buttons_total_width = button_width * 2.0 + button_spacing;
-        let buttons_start_x = menu_x + (menu_width - buttons_total_width) / 2.0;
+        // Decorative dots
+        draw_rectangle(menu_x + FRAME_THICKNESS + 10.0, menu_y + FRAME_THICKNESS + 14.0, 3.0, 3.0, FRAME_ACCENT);
+        draw_rectangle(menu_x + FRAME_THICKNESS + 16.0, menu_y + FRAME_THICKNESS + 14.0, 3.0, 3.0, FRAME_ACCENT);
+        draw_rectangle(menu_x + menu_width - FRAME_THICKNESS - 13.0, menu_y + FRAME_THICKNESS + 14.0, 3.0, 3.0, FRAME_ACCENT);
+        draw_rectangle(menu_x + menu_width - FRAME_THICKNESS - 19.0, menu_y + FRAME_THICKNESS + 14.0, 3.0, 3.0, FRAME_ACCENT);
+
+        // ===== CONTENT AREA =====
+        let content_x = menu_x + FRAME_THICKNESS + 12.0;
+        let content_y = menu_y + FRAME_THICKNESS + header_height + 12.0;
+        let content_width = menu_width - FRAME_THICKNESS * 2.0 - 24.0;
+
+        // Camera Zoom label
+        self.draw_text_sharp("Camera Zoom", content_x.floor(), (content_y + 12.0).floor(), 14.0, TEXT_DIM);
 
         // Get current mouse position for hover detection
         let (mouse_x, mouse_y) = mouse_position();
 
+        // Zoom buttons
+        let button_width = 90.0;
+        let button_height = 30.0;
+        let button_y = content_y + 22.0;
+        let button_spacing = 16.0;
+        let buttons_total_width = button_width * 2.0 + button_spacing;
+        let buttons_start_x = menu_x + (menu_width - buttons_total_width) / 2.0;
+
+        // Helper to draw themed button
+        let draw_zoom_button = |btn_x: f32, btn_y: f32, text: &str, is_selected: bool, is_hovered: bool, renderer: &Self| {
+            let (bg_color, border_color) = if is_selected {
+                (Color::new(0.180, 0.200, 0.145, 1.0), FRAME_ACCENT) // Selected: greenish tint with gold border
+            } else if is_hovered {
+                (SLOT_HOVER_BG, SLOT_BORDER)
+            } else {
+                (SLOT_BG_EMPTY, SLOT_BORDER)
+            };
+
+            // Button border and background
+            draw_rectangle(btn_x, btn_y, button_width, button_height, border_color);
+            draw_rectangle(btn_x + 1.0, btn_y + 1.0, button_width - 2.0, button_height - 2.0, bg_color);
+
+            // Inner highlight
+            if is_selected || is_hovered {
+                draw_line(btn_x + 2.0, btn_y + 2.0, btn_x + button_width - 2.0, btn_y + 2.0, 1.0, FRAME_INNER);
+            }
+
+            // Text centered
+            let text_width = renderer.measure_text_sharp(text, 15.0).width;
+            let text_color = if is_selected { TEXT_TITLE } else { TEXT_NORMAL };
+            renderer.draw_text_sharp(text, (btn_x + (button_width - text_width) / 2.0).floor(),
+                                    (btn_y + 20.0).floor(), 15.0, text_color);
+        };
+
         // 1x Zoom button
-        let zoom_1x_bounds = Rect::new(buttons_start_x, button_y, button_width, button_height);
+        let zoom_1x_bounds = Rect::new(buttons_start_x.floor(), button_y.floor(), button_width, button_height);
         layout.add(UiElementId::EscapeMenuZoom1x, zoom_1x_bounds);
         let is_1x_hovered = mouse_x >= zoom_1x_bounds.x && mouse_x <= zoom_1x_bounds.x + zoom_1x_bounds.w
             && mouse_y >= zoom_1x_bounds.y && mouse_y <= zoom_1x_bounds.y + zoom_1x_bounds.h;
         let is_1x_selected = (state.camera.zoom - 1.0).abs() < 0.1;
-        let bg_1x = if is_1x_selected {
-            Color::from_rgba(60, 100, 60, 255)
-        } else if is_1x_hovered {
-            Color::from_rgba(70, 70, 90, 255)
-        } else {
-            Color::from_rgba(50, 50, 60, 255)
-        };
-        draw_rectangle(zoom_1x_bounds.x, zoom_1x_bounds.y, zoom_1x_bounds.w, zoom_1x_bounds.h, bg_1x);
-        draw_rectangle_lines(zoom_1x_bounds.x, zoom_1x_bounds.y, zoom_1x_bounds.w, zoom_1x_bounds.h, 1.0, if is_1x_selected { GREEN } else { GRAY });
-        let text_1x = "1x";
-        let text_1x_width = self.measure_text_sharp(text_1x, 16.0).width;
-        self.draw_text_sharp(text_1x, zoom_1x_bounds.x + (button_width - text_1x_width) / 2.0, zoom_1x_bounds.y + 24.0, 16.0, WHITE);
+        draw_zoom_button(zoom_1x_bounds.x, zoom_1x_bounds.y, "1x Zoom", is_1x_selected, is_1x_hovered, self);
 
         // 2x Zoom button
-        let zoom_2x_bounds = Rect::new(buttons_start_x + button_width + button_spacing, button_y, button_width, button_height);
+        let zoom_2x_bounds = Rect::new((buttons_start_x + button_width + button_spacing).floor(), button_y.floor(), button_width, button_height);
         layout.add(UiElementId::EscapeMenuZoom2x, zoom_2x_bounds);
         let is_2x_hovered = mouse_x >= zoom_2x_bounds.x && mouse_x <= zoom_2x_bounds.x + zoom_2x_bounds.w
             && mouse_y >= zoom_2x_bounds.y && mouse_y <= zoom_2x_bounds.y + zoom_2x_bounds.h;
         let is_2x_selected = (state.camera.zoom - 2.0).abs() < 0.1;
-        let bg_2x = if is_2x_selected {
-            Color::from_rgba(60, 100, 60, 255)
-        } else if is_2x_hovered {
-            Color::from_rgba(70, 70, 90, 255)
-        } else {
-            Color::from_rgba(50, 50, 60, 255)
-        };
-        draw_rectangle(zoom_2x_bounds.x, zoom_2x_bounds.y, zoom_2x_bounds.w, zoom_2x_bounds.h, bg_2x);
-        draw_rectangle_lines(zoom_2x_bounds.x, zoom_2x_bounds.y, zoom_2x_bounds.w, zoom_2x_bounds.h, 1.0, if is_2x_selected { GREEN } else { GRAY });
-        let text_2x = "2x";
-        let text_2x_width = self.measure_text_sharp(text_2x, 16.0).width;
-        self.draw_text_sharp(text_2x, zoom_2x_bounds.x + (button_width - text_2x_width) / 2.0, zoom_2x_bounds.y + 24.0, 16.0, WHITE);
+        draw_zoom_button(zoom_2x_bounds.x, zoom_2x_bounds.y, "2x Zoom", is_2x_selected, is_2x_hovered, self);
 
-        // Disconnect button
-        let disconnect_width = 180.0;
-        let disconnect_height = 40.0;
-        let disconnect_x = menu_x + (menu_width - disconnect_width) / 2.0;
-        let disconnect_y = menu_y + menu_height - disconnect_height - 30.0;
+        // ===== DISCONNECT BUTTON =====
+        let disconnect_width = 160.0;
+        let disconnect_height = 32.0;
+        let disconnect_x = (menu_x + (menu_width - disconnect_width) / 2.0).floor();
+        let disconnect_y = (menu_y + menu_height - FRAME_THICKNESS - disconnect_height - 28.0).floor();
         let disconnect_bounds = Rect::new(disconnect_x, disconnect_y, disconnect_width, disconnect_height);
         layout.add(UiElementId::EscapeMenuDisconnect, disconnect_bounds);
         let is_disconnect_hovered = mouse_x >= disconnect_bounds.x && mouse_x <= disconnect_bounds.x + disconnect_bounds.w
             && mouse_y >= disconnect_bounds.y && mouse_y <= disconnect_bounds.y + disconnect_bounds.h;
-        let bg_disconnect = if is_disconnect_hovered {
-            Color::from_rgba(120, 50, 50, 255)
-        } else {
-            Color::from_rgba(80, 40, 40, 255)
-        };
-        draw_rectangle(disconnect_bounds.x, disconnect_bounds.y, disconnect_bounds.w, disconnect_bounds.h, bg_disconnect);
-        draw_rectangle_lines(disconnect_bounds.x, disconnect_bounds.y, disconnect_bounds.w, disconnect_bounds.h, 1.0, Color::from_rgba(180, 80, 80, 255));
-        let disconnect_text = "Disconnect";
-        let disconnect_text_width = self.measure_text_sharp(disconnect_text, 16.0).width;
-        self.draw_text_sharp(disconnect_text, disconnect_bounds.x + (disconnect_width - disconnect_text_width) / 2.0, disconnect_bounds.y + 26.0, 16.0, WHITE);
 
-        // Hint text
-        let hint = "Press ESC to close";
-        let hint_width = self.measure_text_sharp(hint, 16.0).width;
-        self.draw_text_sharp(hint, menu_x + (menu_width - hint_width) / 2.0, menu_y + menu_height - 10.0, 16.0, GRAY);
+        // Red-tinted disconnect button
+        let disconnect_bg = if is_disconnect_hovered {
+            Color::new(0.35, 0.15, 0.15, 1.0)
+        } else {
+            Color::new(0.25, 0.12, 0.12, 1.0)
+        };
+        let disconnect_border = Color::new(0.5, 0.2, 0.2, 1.0);
+
+        draw_rectangle(disconnect_x, disconnect_y, disconnect_width, disconnect_height, disconnect_border);
+        draw_rectangle(disconnect_x + 1.0, disconnect_y + 1.0, disconnect_width - 2.0, disconnect_height - 2.0, disconnect_bg);
+
+        if is_disconnect_hovered {
+            draw_line(disconnect_x + 2.0, disconnect_y + 2.0, disconnect_x + disconnect_width - 2.0, disconnect_y + 2.0, 1.0,
+                     Color::new(0.6, 0.3, 0.3, 1.0));
+        }
+
+        let disconnect_text = "Disconnect";
+        let disconnect_text_width = self.measure_text_sharp(disconnect_text, 15.0).width;
+        let disconnect_text_color = if is_disconnect_hovered { Color::new(1.0, 0.8, 0.8, 1.0) } else { Color::new(0.85, 0.7, 0.7, 1.0) };
+        self.draw_text_sharp(disconnect_text, (disconnect_x + (disconnect_width - disconnect_text_width) / 2.0).floor(),
+                            (disconnect_y + 21.0).floor(), 15.0, disconnect_text_color);
+
+        // ===== FOOTER HINT =====
+        let hint = "[Esc] Close";
+        let hint_width = self.measure_text_sharp(hint, 14.0).width;
+        self.draw_text_sharp(hint, (menu_x + (menu_width - hint_width) / 2.0).floor(),
+                            (menu_y + menu_height - FRAME_THICKNESS - 8.0).floor(), 14.0, TEXT_DIM);
     }
 
     /// Render the dialogue box for NPC conversations
     fn render_dialogue(&self, dialogue: &ActiveDialogue, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
         // Semi-transparent overlay to focus attention
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 100));
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.45));
 
-        let box_width = 600.0;
-        let box_height = 200.0 + (dialogue.choices.len() as f32 * 30.0);
+        let box_width = 620.0;
+        // Calculate choice area: choices + separator + footer hint
+        let choice_area_height = if dialogue.choices.is_empty() {
+            0.0
+        } else {
+            dialogue.choices.len() as f32 * 32.0 + 36.0  // choices + footer space
+        };
+        let box_height = 120.0 + choice_area_height;  // Reduced base height
         let box_x = (screen_width() - box_width) / 2.0;
-        let box_y = screen_height() - box_height - 80.0;
+        let box_y = screen_height() - box_height - 60.0;
 
-        // Main dialogue box
-        draw_rectangle(box_x, box_y, box_width, box_height, Color::from_rgba(20, 20, 30, 240));
-        draw_rectangle_lines(box_x, box_y, box_width, box_height, 2.0, Color::from_rgba(100, 100, 120, 255));
+        // Draw themed panel frame with corner accents
+        self.draw_panel_frame(box_x, box_y, box_width, box_height);
+        self.draw_corner_accents(box_x, box_y, box_width, box_height);
 
-        // Speaker name with highlight
-        let speaker_box_width = self.measure_text_sharp(&dialogue.speaker, 16.0).width + 20.0;
-        draw_rectangle(box_x + 15.0, box_y - 12.0, speaker_box_width, 24.0, Color::from_rgba(60, 60, 80, 255));
-        draw_rectangle_lines(box_x + 15.0, box_y - 12.0, speaker_box_width, 24.0, 1.0, Color::from_rgba(100, 100, 120, 255));
-        self.draw_text_sharp(&dialogue.speaker, box_x + 25.0, box_y + 5.0, 16.0, Color::from_rgba(255, 220, 100, 255));
+        // ===== SPEAKER NAME TAB =====
+        let speaker_text = dialogue.speaker.to_uppercase();
+        let speaker_width = self.measure_text_sharp(&speaker_text, 16.0).width + 28.0;
+        let speaker_x = box_x + 20.0;
+        let speaker_y = box_y - 8.0;
+        let speaker_h = 26.0;
+
+        // Speaker tab with beveled effect
+        draw_rectangle(speaker_x - 1.0, speaker_y - 1.0, speaker_width + 2.0, speaker_h + 2.0, FRAME_OUTER);
+        draw_rectangle(speaker_x, speaker_y, speaker_width, speaker_h, HEADER_BG);
+        draw_rectangle(speaker_x + 1.0, speaker_y + 1.0, speaker_width - 2.0, speaker_h - 2.0, Color::new(0.165, 0.149, 0.188, 1.0));
+
+        // Speaker tab inner highlight
+        draw_line(speaker_x + 2.0, speaker_y + 2.0, speaker_x + speaker_width - 2.0, speaker_y + 2.0, 1.0, FRAME_INNER);
+
+        // Speaker name in gold
+        self.draw_text_sharp(&speaker_text, speaker_x + 14.0, speaker_y + 18.0, 16.0, TEXT_TITLE);
+
+        // Small decorative accent on speaker tab corners
+        draw_rectangle(speaker_x, speaker_y, 3.0, 1.0, FRAME_ACCENT);
+        draw_rectangle(speaker_x + speaker_width - 3.0, speaker_y, 3.0, 1.0, FRAME_ACCENT);
+
+        // ===== DIALOGUE CONTENT AREA =====
+        let content_x = box_x + FRAME_THICKNESS + 12.0;
+        let content_y = box_y + FRAME_THICKNESS + 20.0;
+        let content_width = box_width - FRAME_THICKNESS * 2.0 - 24.0;
+
+        // Decorative line under speaker area
+        draw_line(content_x, content_y, content_x + content_width, content_y, 1.0, HEADER_BORDER);
 
         // Dialogue text with word wrap
-        let text_x = box_x + 20.0;
-        let text_y = box_y + 40.0;
-        let max_line_width = box_width - 40.0;
+        let text_x = content_x;
+        let text_y = content_y + 24.0;
+        let max_line_width = content_width;
 
-        // Simple word wrap
+        // Word wrap the dialogue text
         let words: Vec<&str> = dialogue.text.split_whitespace().collect();
         let mut current_line = String::new();
         let mut line_y = text_y;
@@ -2665,7 +2840,7 @@ impl Renderer {
 
             let line_width = self.measure_text_sharp(&test_line, 16.0).width;
             if line_width > max_line_width && !current_line.is_empty() {
-                self.draw_text_sharp(&current_line, text_x, line_y, 16.0, WHITE);
+                self.draw_text_sharp(&current_line, text_x, line_y, 16.0, TEXT_NORMAL);
                 line_y += 22.0;
                 current_line = word.to_string();
             } else {
@@ -2673,58 +2848,91 @@ impl Renderer {
             }
         }
         if !current_line.is_empty() {
-            self.draw_text_sharp(&current_line, text_x, line_y, 16.0, WHITE);
+            self.draw_text_sharp(&current_line, text_x, line_y, 16.0, TEXT_NORMAL);
         }
 
-        // Choices
+        // ===== CHOICES / CONTINUE =====
         if dialogue.choices.is_empty() {
-            // No choices - show continue hint (clickable area)
-            let hint = "Click or press [Enter] to continue...";
-            let hint_width = self.measure_text_sharp(hint, 16.0).width;
-            let hint_x = box_x + box_width - hint_width - 20.0;
-            let hint_y = box_y + box_height - 20.0;
+            // No choices - show continue button
+            let hint = "[ Continue ]";
+            let hint_width = self.measure_text_sharp(hint, 16.0).width + 20.0;
+            let hint_x = box_x + box_width - hint_width - FRAME_THICKNESS - 15.0;
+            let hint_y = box_y + box_height - FRAME_THICKNESS - 32.0;
 
             // Register continue area for click detection
-            let bounds = Rect::new(hint_x - 5.0, hint_y - 16.0, hint_width + 10.0, 22.0);
+            let bounds = Rect::new(hint_x, hint_y, hint_width, 24.0);
             layout.add(UiElementId::DialogueContinue, bounds);
 
             let is_hovered = matches!(hovered, Some(UiElementId::DialogueContinue));
-            let hint_color = if is_hovered { WHITE } else { GRAY };
-            self.draw_text_sharp(hint, hint_x, hint_y, 16.0, hint_color);
+
+            // Continue button with bevel
+            let (btn_bg, btn_border) = if is_hovered {
+                (Color::new(0.235, 0.204, 0.141, 1.0), FRAME_ACCENT)
+            } else {
+                (Color::new(0.157, 0.141, 0.110, 1.0), FRAME_MID)
+            };
+
+            draw_rectangle(hint_x, hint_y, hint_width, 24.0, btn_border);
+            draw_rectangle(hint_x + 1.0, hint_y + 1.0, hint_width - 2.0, 22.0, btn_bg);
+
+            if is_hovered {
+                draw_line(hint_x + 2.0, hint_y + 2.0, hint_x + hint_width - 2.0, hint_y + 2.0, 1.0, FRAME_INNER);
+            }
+
+            let text_color = if is_hovered { TEXT_TITLE } else { TEXT_NORMAL };
+            self.draw_text_sharp(hint, hint_x + 10.0, hint_y + 17.0, 16.0, text_color);
+
+            // Keyboard hint
+            self.draw_text_sharp("[Enter]", box_x + FRAME_THICKNESS + 15.0, hint_y + 17.0, 16.0, TEXT_DIM);
         } else {
-            // Render choices
-            let choice_start_y = box_y + box_height - 30.0 - (dialogue.choices.len() as f32 * 30.0);
+            // ===== CHOICE BUTTONS =====
+            let choice_start_y = box_y + FRAME_THICKNESS + 70.0;
+            let choice_btn_height = 26.0;
+            let choice_spacing = 32.0;
 
             for (i, choice) in dialogue.choices.iter().enumerate() {
-                let choice_y = choice_start_y + (i as f32 * 30.0);
-                let choice_text = format!("[{}] {}", i + 1, choice.text);
+                let choice_y = choice_start_y + (i as f32 * choice_spacing);
+                let choice_width = content_width;
+                let choice_x = content_x;
 
                 // Register choice bounds for click detection
-                let bounds = Rect::new(text_x - 5.0, choice_y - 16.0, max_line_width, 26.0);
+                let bounds = Rect::new(choice_x, choice_y, choice_width, choice_btn_height);
                 layout.add(UiElementId::DialogueChoice(i), bounds);
 
                 // Check if this choice is hovered
                 let is_hovered = matches!(hovered, Some(UiElementId::DialogueChoice(idx)) if *idx == i);
 
-                // Choice background with hover effect
-                let bg_color = if is_hovered {
-                    Color::from_rgba(70, 70, 100, 255)
+                // Choice button with slot-like styling
+                let (bg_color, border_color) = if is_hovered {
+                    (SLOT_HOVER_BG, SLOT_SELECTED_BORDER)
                 } else {
-                    Color::from_rgba(50, 50, 70, 200)
+                    (SLOT_BG_EMPTY, SLOT_BORDER)
                 };
-                draw_rectangle(text_x - 5.0, choice_y - 16.0, max_line_width, 26.0, bg_color);
 
-                // Choice text with hover effect
-                let text_color = if is_hovered {
-                    WHITE
-                } else {
-                    Color::from_rgba(200, 200, 255, 255)
-                };
-                self.draw_text_sharp(&choice_text, text_x, choice_y, 16.0, text_color);
+                // Draw choice button with bevel
+                draw_rectangle(choice_x, choice_y, choice_width, choice_btn_height, border_color);
+                draw_rectangle(choice_x + 1.0, choice_y + 1.0, choice_width - 2.0, choice_btn_height - 2.0, bg_color);
+
+                // Inner highlight when hovered
+                if is_hovered {
+                    draw_line(choice_x + 2.0, choice_y + 2.0, choice_x + choice_width - 2.0, choice_y + 2.0, 1.0, FRAME_INNER);
+                    draw_line(choice_x + 2.0, choice_y + 2.0, choice_x + 2.0, choice_y + choice_btn_height - 2.0, 1.0, FRAME_INNER);
+                }
+
+                // Choice number badge
+                let num_text = format!("[{}]", i + 1);
+                let num_color = if is_hovered { TEXT_GOLD } else { FRAME_MID };
+                self.draw_text_sharp(&num_text, choice_x + 8.0, choice_y + 18.0, 16.0, num_color);
+
+                // Choice text
+                let text_color = if is_hovered { TEXT_TITLE } else { TEXT_NORMAL };
+                self.draw_text_sharp(&choice.text, choice_x + 40.0, choice_y + 18.0, 16.0, text_color);
             }
 
-            // Hint (updated to mention clicking)
-            self.draw_text_sharp("Click or press [1-4] to select | [Esc] to close", box_x + 20.0, box_y + box_height - 15.0, 16.0, GRAY);
+            // Help hints anchored to bottom of dialogue box
+            let hint_y = box_y + box_height - FRAME_THICKNESS - 10.0;
+            self.draw_text_sharp("[1-4] Select", content_x, hint_y, 16.0, TEXT_DIM);
+            self.draw_text_sharp("[Esc] Close", content_x + content_width - 75.0, hint_y, 16.0, TEXT_DIM);
         }
     }
 
@@ -2886,7 +3094,7 @@ impl Renderer {
         }
     }
 
-    /// Render the crafting panel (shop UI)
+    /// Render the crafting panel (shop UI) - Medieval Fantasy Theme
     fn render_crafting(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
         let panel_width = 650.0;
         let panel_height = 450.0;
@@ -2894,18 +3102,40 @@ impl Renderer {
         let panel_y = (screen_height() - panel_height) / 2.0;
 
         // Semi-transparent overlay
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 150));
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.588));
 
-        // Panel background
-        draw_rectangle(panel_x, panel_y, panel_width, panel_height, Color::from_rgba(30, 30, 45, 245));
-        draw_rectangle_lines(panel_x, panel_y, panel_width, panel_height, 2.0, Color::from_rgba(100, 100, 140, 255));
+        // Draw themed panel frame with corner accents
+        self.draw_panel_frame(panel_x, panel_y, panel_width, panel_height);
+        self.draw_corner_accents(panel_x, panel_y, panel_width, panel_height);
 
-        // Title
-        self.draw_text_sharp("CRAFTING", panel_x + 15.0, panel_y + 28.0, 16.0, Color::from_rgba(255, 220, 100, 255));
-        self.draw_text_sharp("[E] Close", panel_x + panel_width - 80.0, panel_y + 25.0, 16.0, GRAY);
+        // ===== HEADER SECTION =====
+        let header_x = panel_x + FRAME_THICKNESS;
+        let header_y = panel_y + FRAME_THICKNESS;
+        let header_w = panel_width - FRAME_THICKNESS * 2.0;
 
-        // Separator
-        draw_line(panel_x + 10.0, panel_y + 40.0, panel_x + panel_width - 10.0, panel_y + 40.0, 1.0, GRAY);
+        // Header background
+        draw_rectangle(header_x, header_y, header_w, HEADER_HEIGHT, HEADER_BG);
+
+        // Header bottom separator with decorative dots
+        draw_line(header_x + 10.0, header_y + HEADER_HEIGHT, header_x + header_w - 10.0, header_y + HEADER_HEIGHT, 2.0, HEADER_BORDER);
+
+        let dot_spacing = 60.0;
+        let num_dots = ((header_w - 40.0) / dot_spacing) as i32;
+        let start_dot_x = header_x + 20.0;
+        for i in 0..num_dots {
+            let dot_x = start_dot_x + i as f32 * dot_spacing;
+            draw_rectangle(dot_x - 1.5, header_y + HEADER_HEIGHT - 1.5, 3.0, 3.0, FRAME_ACCENT);
+        }
+
+        // Title with anvil icon (simple shape)
+        self.draw_text_sharp("CRAFTING", header_x + 12.0, header_y + 26.0, 16.0, TEXT_TITLE);
+
+        // Close hint (right side)
+        self.draw_text_sharp("[E] Close", header_x + header_w - 80.0, header_y + 26.0, 16.0, TEXT_DIM);
+
+        // ===== CONTENT AREA =====
+        let content_y = panel_y + FRAME_THICKNESS + HEADER_HEIGHT + 8.0;
+        let content_height = panel_height - FRAME_THICKNESS * 2.0 - HEADER_HEIGHT - FOOTER_HEIGHT - 16.0;
 
         // Get unique categories
         let categories: Vec<&str> = {
@@ -2918,18 +3148,18 @@ impl Renderer {
         };
 
         if categories.is_empty() {
-            self.draw_text_sharp("No recipes available", panel_x + 20.0, panel_y + 80.0, 16.0, GRAY);
+            self.draw_text_sharp("No recipes available", panel_x + 20.0, content_y + 40.0, 16.0, TEXT_DIM);
             return;
         }
 
-        // Category tabs
-        let tab_y = panel_y + 55.0;
+        // ===== CATEGORY TABS =====
+        let tab_y = content_y;
         let tab_height = 28.0;
-        let mut tab_x = panel_x + 15.0;
+        let mut tab_x = panel_x + FRAME_THICKNESS + 10.0;
 
         for (i, category) in categories.iter().enumerate() {
             let is_selected = i == state.ui_state.crafting_selected_category;
-            let tab_width = self.measure_text_sharp(category, 16.0).width + 20.0;
+            let tab_width = self.measure_text_sharp(category, 16.0).width + 24.0;
 
             // Register tab bounds for click detection
             let bounds = Rect::new(tab_x, tab_y, tab_width, tab_height);
@@ -2938,29 +3168,34 @@ impl Renderer {
             // Check if this tab is hovered
             let is_hovered = matches!(hovered, Some(UiElementId::CraftingCategoryTab(idx)) if *idx == i);
 
-            let bg_color = if is_selected {
-                Color::from_rgba(70, 70, 100, 255)
+            // Tab background with bevel effect
+            let (bg_color, border_color) = if is_selected {
+                (SLOT_HOVER_BG, SLOT_SELECTED_BORDER)
             } else if is_hovered {
-                Color::from_rgba(60, 60, 85, 255)
+                (Color::new(0.141, 0.141, 0.188, 1.0), SLOT_HOVER_BORDER)
             } else {
-                Color::from_rgba(50, 50, 70, 255)
+                (SLOT_BG_EMPTY, SLOT_BORDER)
             };
-            let text_color = if is_selected || is_hovered { WHITE } else { LIGHTGRAY };
 
-            draw_rectangle(tab_x, tab_y, tab_width, tab_height, bg_color);
+            // Draw tab with bevel
+            draw_rectangle(tab_x, tab_y, tab_width, tab_height, border_color);
+            draw_rectangle(tab_x + 1.0, tab_y + 1.0, tab_width - 2.0, tab_height - 2.0, bg_color);
+
+            // Inner bevel highlight (top/left)
             if is_selected {
-                draw_rectangle_lines(tab_x, tab_y, tab_width, tab_height, 1.0, WHITE);
-            } else if is_hovered {
-                draw_rectangle_lines(tab_x, tab_y, tab_width, tab_height, 1.0, LIGHTGRAY);
+                draw_line(tab_x + 2.0, tab_y + 2.0, tab_x + tab_width - 2.0, tab_y + 2.0, 1.0, FRAME_INNER);
+                draw_line(tab_x + 2.0, tab_y + 2.0, tab_x + 2.0, tab_y + tab_height - 2.0, 1.0, FRAME_INNER);
             }
 
             // Capitalize first letter
             let display_name: String = category.chars().enumerate()
-                .map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c })
+                .map(|(idx, c)| if idx == 0 { c.to_ascii_uppercase() } else { c })
                 .collect();
-            self.draw_text_sharp(&display_name, tab_x + 10.0, tab_y + 19.0, 16.0, text_color);
 
-            tab_x += tab_width + 5.0;
+            let text_color = if is_selected { TEXT_TITLE } else if is_hovered { TEXT_NORMAL } else { TEXT_DIM };
+            self.draw_text_sharp(&display_name, tab_x + 12.0, tab_y + 19.0, 16.0, text_color);
+
+            tab_x += tab_width + 4.0;
         }
 
         // Get recipes for current category
@@ -2969,92 +3204,120 @@ impl Renderer {
             .filter(|r| r.category == current_category)
             .collect();
 
-        // Split panel: left = recipe list, right = details
+        // ===== RECIPE LIST (left side) =====
         let list_width = 220.0;
-        let list_x = panel_x + 15.0;
-        let content_y = tab_y + tab_height + 15.0;
-        let content_height = panel_height - (content_y - panel_y) - 40.0;
+        let list_x = panel_x + FRAME_THICKNESS + 10.0;
+        let list_y = tab_y + tab_height + 10.0;
+        let list_height = content_height - tab_height - 18.0;
 
-        // Recipe list background
-        draw_rectangle(list_x, content_y, list_width, content_height, Color::from_rgba(25, 25, 35, 255));
-        draw_rectangle_lines(list_x, content_y, list_width, content_height, 1.0, Color::from_rgba(70, 70, 90, 255));
+        // Recipe list panel with inset effect
+        draw_rectangle(list_x, list_y, list_width, list_height, SLOT_BORDER);
+        draw_rectangle(list_x + 1.0, list_y + 1.0, list_width - 2.0, list_height - 2.0, SLOT_BG_EMPTY);
 
-        // Recipe list
-        let line_height = 26.0;
-        let mut y = content_y + 5.0;
+        // Inner shadow (top/left)
+        draw_line(list_x + 2.0, list_y + 2.0, list_x + list_width - 2.0, list_y + 2.0, 2.0, SLOT_INNER_SHADOW);
+        draw_line(list_x + 2.0, list_y + 2.0, list_x + 2.0, list_y + list_height - 2.0, 2.0, SLOT_INNER_SHADOW);
+
+        // Recipe list header
+        self.draw_text_sharp("Recipes", list_x + 8.0, list_y + 18.0, 16.0, TEXT_TITLE);
+        draw_line(list_x + 6.0, list_y + 24.0, list_x + list_width - 6.0, list_y + 24.0, 1.0, HEADER_BORDER);
+
+        // Recipe items
+        let line_height = 28.0;
+        let mut y = list_y + 32.0;
 
         for (i, recipe) in recipes.iter().enumerate() {
-            if y > content_y + content_height - line_height {
+            if y > list_y + list_height - line_height {
                 break;
             }
 
             let is_selected = i == state.ui_state.crafting_selected_recipe;
 
             // Register recipe item bounds for click detection
-            let bounds = Rect::new(list_x + 2.0, y, list_width - 4.0, line_height - 2.0);
-            layout.add(UiElementId::CraftingRecipeItem(i), bounds);
+            let item_bounds = Rect::new(list_x + 4.0, y, list_width - 8.0, line_height - 2.0);
+            layout.add(UiElementId::CraftingRecipeItem(i), item_bounds);
 
             // Check if this recipe is hovered
             let is_hovered = matches!(hovered, Some(UiElementId::CraftingRecipeItem(idx)) if *idx == i);
 
+            // Draw item background with slot-like styling
             if is_selected {
-                draw_rectangle(list_x + 2.0, y, list_width - 4.0, line_height - 2.0, Color::from_rgba(60, 80, 120, 255));
+                draw_rectangle(list_x + 4.0, y, list_width - 8.0, line_height - 2.0, SLOT_SELECTED_BORDER);
+                draw_rectangle(list_x + 5.0, y + 1.0, list_width - 10.0, line_height - 4.0, SLOT_HOVER_BG);
             } else if is_hovered {
-                draw_rectangle(list_x + 2.0, y, list_width - 4.0, line_height - 2.0, Color::from_rgba(50, 65, 100, 255));
+                draw_rectangle(list_x + 4.0, y, list_width - 8.0, line_height - 2.0, SLOT_HOVER_BORDER);
+                draw_rectangle(list_x + 5.0, y + 1.0, list_width - 10.0, line_height - 4.0, Color::new(0.125, 0.125, 0.173, 1.0));
             }
 
-            let marker = if is_selected { ">" } else { " " };
-            let text_color = if is_selected || is_hovered { WHITE } else { LIGHTGRAY };
+            let text_color = if is_selected { TEXT_TITLE } else if is_hovered { TEXT_NORMAL } else { TEXT_DIM };
 
-            self.draw_text_sharp(&format!("{} {}", marker, recipe.display_name), list_x + 8.0, y + 18.0, 16.0, text_color);
+            // Recipe name with selection indicator
+            let prefix = if is_selected { "> " } else { "  " };
+            self.draw_text_sharp(&format!("{}{}", prefix, recipe.display_name), list_x + 8.0, y + 19.0, 16.0, text_color);
 
-            // Level indicator
+            // Level indicator (bronze colored)
             if recipe.level_required > 1 {
                 let level_text = format!("Lv{}", recipe.level_required);
                 let level_width = self.measure_text_sharp(&level_text, 16.0).width;
-                self.draw_text_sharp(&level_text, list_x + list_width - level_width - 10.0, y + 16.0, 16.0, GRAY);
+                self.draw_text_sharp(&level_text, list_x + list_width - level_width - 12.0, y + 17.0, 16.0, FRAME_MID);
             }
 
             y += line_height;
         }
 
-        // Detail panel
-        let detail_x = list_x + list_width + 15.0;
-        let detail_width = panel_width - list_width - 45.0;
+        // ===== DETAIL PANEL (right side) =====
+        let detail_x = list_x + list_width + 12.0;
+        let detail_width = panel_width - list_width - FRAME_THICKNESS * 2.0 - 32.0;
+        let detail_y = list_y;
+        let detail_height = list_height;
+
+        // Detail panel with inset effect
+        draw_rectangle(detail_x, detail_y, detail_width, detail_height, SLOT_BORDER);
+        draw_rectangle(detail_x + 1.0, detail_y + 1.0, detail_width - 2.0, detail_height - 2.0, Color::new(0.094, 0.094, 0.125, 1.0));
+
+        // Inner shadow
+        draw_line(detail_x + 2.0, detail_y + 2.0, detail_x + detail_width - 2.0, detail_y + 2.0, 2.0, SLOT_INNER_SHADOW);
+        draw_line(detail_x + 2.0, detail_y + 2.0, detail_x + 2.0, detail_y + detail_height - 2.0, 2.0, SLOT_INNER_SHADOW);
 
         if let Some(recipe) = recipes.get(state.ui_state.crafting_selected_recipe) {
-            // Recipe name
-            self.draw_text_sharp(&recipe.display_name, detail_x, content_y + 22.0, 16.0, WHITE);
+            // Recipe name (gold title)
+            self.draw_text_sharp(&recipe.display_name, detail_x + 12.0, detail_y + 24.0, 16.0, TEXT_TITLE);
 
-            // Description (wrapped to fit detail panel width)
+            // Decorative separator
+            draw_line(detail_x + 10.0, detail_y + 32.0, detail_x + detail_width - 10.0, detail_y + 32.0, 1.0, HEADER_BORDER);
+
+            // Description
             let desc_height = self.draw_text_wrapped(
                 &recipe.description,
-                detail_x,
-                content_y + 45.0,
+                detail_x + 12.0,
+                detail_y + 48.0,
                 16.0,
-                LIGHTGRAY,
-                detail_width - 10.0,  // Leave some padding
-                20.0,  // Line height
+                TEXT_NORMAL,
+                detail_width - 24.0,
+                20.0,
             );
 
-            // Track vertical offset after description
-            let mut section_y = content_y + 45.0 + desc_height + 5.0;
+            let mut section_y = detail_y + 48.0 + desc_height + 10.0;
 
             // Level requirement
             if recipe.level_required > 1 {
-                let level_color = if let Some(player) = state.get_local_player() {
-                    if player.level >= recipe.level_required { GREEN } else { RED }
+                let (level_color, level_icon) = if let Some(player) = state.get_local_player() {
+                    if player.level >= recipe.level_required {
+                        (Color::new(0.392, 0.784, 0.392, 1.0), "[OK]")
+                    } else {
+                        (Color::new(0.784, 0.314, 0.314, 1.0), "[!!]")
+                    }
                 } else {
-                    GRAY
+                    (TEXT_DIM, "[??]")
                 };
-                self.draw_text_sharp(&format!("Requires Level {}", recipe.level_required), detail_x, section_y, 16.0, level_color);
+                self.draw_text_sharp(&format!("{} Requires Level {}", level_icon, recipe.level_required), detail_x + 12.0, section_y, 16.0, level_color);
                 section_y += 25.0;
             }
 
-            // Ingredients section
-            self.draw_text_sharp("Ingredients:", detail_x, section_y, 16.0, Color::from_rgba(200, 200, 200, 255));
+            // Ingredients section header
+            self.draw_text_sharp("Materials Required:", detail_x + 12.0, section_y, 16.0, FRAME_INNER);
+            section_y += 22.0;
 
-            let mut y = section_y + 20.0;
             let mut can_craft = true;
 
             for ingredient in &recipe.ingredients {
@@ -3067,61 +3330,90 @@ impl Renderer {
                 }
 
                 let (marker, color) = if has_enough {
-                    ("[v]", Color::from_rgba(100, 255, 100, 255))
+                    ("[+]", Color::new(0.392, 0.784, 0.392, 1.0))
                 } else {
-                    ("[x]", Color::from_rgba(255, 100, 100, 255))
+                    ("[-]", Color::new(0.784, 0.314, 0.314, 1.0))
                 };
 
-                // Look up display name from item registry
                 let display_name = state.item_registry.get_display_name(&ingredient.item_id);
                 let text = format!("{} {} ({}/{})", marker, display_name, have_count, need_count);
-                self.draw_text_sharp(&text, detail_x + 10.0, y, 16.0, color);
-                y += 20.0;
+                self.draw_text_sharp(&text, detail_x + 20.0, section_y, 16.0, color);
+                section_y += 20.0;
             }
 
             // Results section
-            y += 10.0;
-            self.draw_text_sharp("Creates:", detail_x, y, 16.0, Color::from_rgba(200, 200, 200, 255));
-            y += 20.0;
+            section_y += 12.0;
+            self.draw_text_sharp("Creates:", detail_x + 12.0, section_y, 16.0, FRAME_INNER);
+            section_y += 22.0;
 
             for result in &recipe.results {
-                // Look up display name from item registry
                 let display_name = state.item_registry.get_display_name(&result.item_id);
                 let text = format!("  {} x{}", display_name, result.count);
-                self.draw_text_sharp(&text, detail_x + 10.0, y, 16.0, Color::from_rgba(150, 200, 255, 255));
-                y += 20.0;
+                self.draw_text_sharp(&text, detail_x + 20.0, section_y, 16.0, CATEGORY_EQUIPMENT);
+                section_y += 20.0;
             }
 
-            // Craft button
-            let craft_y = content_y + content_height - 25.0;
-            let btn_width = if can_craft { 120.0 } else { 140.0 };
+            // ===== CRAFT BUTTON =====
+            let btn_y = detail_y + detail_height - 38.0;
+            let btn_width = 140.0;
+            let btn_x = detail_x + (detail_width - btn_width) / 2.0;
 
-            // Register craft button bounds for click detection (only if can craft)
+            // Register craft button bounds
             if can_craft {
-                let bounds = Rect::new(detail_x, craft_y, btn_width, 24.0);
+                let bounds = Rect::new(btn_x, btn_y, btn_width, 28.0);
                 layout.add(UiElementId::CraftingButton, bounds);
             }
 
-            // Check if craft button is hovered
             let is_btn_hovered = can_craft && matches!(hovered, Some(UiElementId::CraftingButton));
 
             if can_craft {
-                let btn_color = if is_btn_hovered {
-                    Color::from_rgba(70, 160, 70, 255)
+                // Active button with gold theme
+                let (btn_bg, btn_border) = if is_btn_hovered {
+                    (Color::new(0.282, 0.235, 0.157, 1.0), FRAME_ACCENT)
                 } else {
-                    Color::from_rgba(50, 120, 50, 255)
+                    (Color::new(0.188, 0.157, 0.110, 1.0), FRAME_MID)
                 };
-                draw_rectangle(detail_x, craft_y, btn_width, 24.0, btn_color);
-                draw_rectangle_lines(detail_x, craft_y, btn_width, 24.0, 1.0, GREEN);
-                self.draw_text_sharp("Craft", detail_x + 42.0, craft_y + 17.0, 16.0, WHITE);
+
+                // Button with bevel
+                draw_rectangle(btn_x, btn_y, btn_width, 28.0, btn_border);
+                draw_rectangle(btn_x + 1.0, btn_y + 1.0, btn_width - 2.0, 26.0, btn_bg);
+
+                // Highlight edge
+                draw_line(btn_x + 2.0, btn_y + 2.0, btn_x + btn_width - 2.0, btn_y + 2.0, 1.0, FRAME_INNER);
+                draw_line(btn_x + 2.0, btn_y + 2.0, btn_x + 2.0, btn_y + 26.0, 1.0, FRAME_INNER);
+
+                let craft_text = "[ CRAFT ]";
+                let text_w = self.measure_text_sharp(craft_text, 16.0).width;
+                self.draw_text_sharp(craft_text, btn_x + (btn_width - text_w) / 2.0, btn_y + 19.0, 16.0, TEXT_TITLE);
             } else {
-                draw_rectangle(detail_x, craft_y, btn_width, 24.0, Color::from_rgba(80, 50, 50, 255));
-                self.draw_text_sharp("Missing Materials", detail_x + 10.0, craft_y + 17.0, 16.0, RED);
+                // Disabled button
+                draw_rectangle(btn_x, btn_y, btn_width, 28.0, SLOT_BORDER);
+                draw_rectangle(btn_x + 1.0, btn_y + 1.0, btn_width - 2.0, 26.0, Color::new(0.125, 0.094, 0.094, 1.0));
+
+                let text = "Missing Materials";
+                let text_w = self.measure_text_sharp(text, 16.0).width;
+                self.draw_text_sharp(text, btn_x + (btn_width - text_w) / 2.0, btn_y + 19.0, 16.0, Color::new(0.502, 0.314, 0.314, 1.0));
             }
+        } else {
+            // No recipe selected
+            self.draw_text_sharp("Select a recipe", detail_x + 12.0, detail_y + 24.0, 16.0, TEXT_DIM);
         }
 
-        // Navigation hints at bottom (updated to mention clicking)
-        self.draw_text_sharp("Click or [A/D] Category   [W/S] Select   Click or [Enter/C] Craft   [E/Esc] Close",
-            panel_x + 15.0, panel_y + panel_height - 15.0, 16.0, GRAY);
+        // ===== FOOTER SECTION =====
+        let footer_x = panel_x + FRAME_THICKNESS;
+        let footer_y = panel_y + panel_height - FRAME_THICKNESS - FOOTER_HEIGHT;
+        let footer_w = panel_width - FRAME_THICKNESS * 2.0;
+
+        // Footer background
+        draw_rectangle(footer_x, footer_y, footer_w, FOOTER_HEIGHT, FOOTER_BG);
+
+        // Footer top separator
+        draw_line(footer_x + 10.0, footer_y, footer_x + footer_w - 10.0, footer_y, 1.0, HEADER_BORDER);
+
+        // Help hints
+        self.draw_text_sharp("[A/D] Category", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
+        self.draw_text_sharp("[W/S] Select", footer_x + 130.0, footer_y + 20.0, 16.0, TEXT_DIM);
+        self.draw_text_sharp("[C] Craft", footer_x + 250.0, footer_y + 20.0, 16.0, TEXT_DIM);
+        self.draw_text_sharp("[E] Close", footer_x + footer_w - 80.0, footer_y + 20.0, 16.0, TEXT_DIM);
     }
 }

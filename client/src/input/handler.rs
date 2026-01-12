@@ -287,6 +287,45 @@ impl InputHandler {
         }
 
         // Handle context menu interactions first
+        if let Some(ref menu) = state.ui_state.context_menu {
+            // Auto-hide context menu when mouse leaves its bounds
+            let padding = 8.0;
+            let header_height = 24.0;
+            let option_height = 28.0;
+            let menu_width = 120.0;
+
+            // Calculate number of options (same logic as render_context_menu)
+            let num_options = if menu.is_equipment {
+                1 // Unequip only
+            } else {
+                let is_equippable = state.inventory.slots.get(menu.slot_index)
+                    .and_then(|s| s.as_ref())
+                    .map(|slot| {
+                        let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                        item_def.equipment.is_some()
+                    })
+                    .unwrap_or(false);
+                if is_equippable { 2 } else { 1 } // Equip+Drop or just Drop
+            };
+
+            let content_height = num_options as f32 * option_height + padding;
+            let menu_height = header_height + content_height + padding;
+
+            let menu_x = menu.x.floor();
+            let menu_y = menu.y.floor();
+
+            // Add some margin for easier interaction
+            let margin = 4.0;
+            let is_mouse_inside = mx >= menu_x - margin
+                && mx <= menu_x + menu_width + margin
+                && my >= menu_y - margin
+                && my <= menu_y + menu_height + margin;
+
+            if !is_mouse_inside {
+                state.ui_state.context_menu = None;
+            }
+        }
+
         if state.ui_state.context_menu.is_some() {
             if let Some(ref element) = clicked_element {
                 if mouse_clicked {
