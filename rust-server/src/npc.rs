@@ -285,31 +285,64 @@ impl Npc {
             return false;
         }
 
-        // Move one tile (cardinal directions only for cleaner movement)
-        let (move_x, move_y) = if dx.abs() > dy.abs() {
-            (dx.signum(), 0)
-        } else if dy != 0 {
-            (0, dy.signum())
+        // Build list of candidate moves in priority order
+        let mut candidates: Vec<(i32, i32)> = Vec::with_capacity(4);
+
+        // Primary direction: move along axis with greater distance
+        if dx.abs() > dy.abs() {
+            candidates.push((dx.signum(), 0)); // Primary: horizontal
+            if dy != 0 {
+                candidates.push((0, dy.signum())); // Secondary: vertical toward target
+            }
+        } else if dy.abs() > dx.abs() {
+            candidates.push((0, dy.signum())); // Primary: vertical
+            if dx != 0 {
+                candidates.push((dx.signum(), 0)); // Secondary: horizontal toward target
+            }
         } else {
-            (dx.signum(), 0)
-        };
-
-        let new_x = self.x + move_x;
-        let new_y = self.y + move_y;
-
-        // Check if target tile is occupied by another NPC
-        if occupied_tiles.iter().any(|(ox, oy)| *ox == new_x && *oy == new_y) {
-            return false;
+            // Equal distance on both axes - try both
+            if dx != 0 {
+                candidates.push((dx.signum(), 0));
+            }
+            if dy != 0 {
+                candidates.push((0, dy.signum()));
+            }
         }
 
-        self.x = new_x;
-        self.y = new_y;
-        self.last_move_time = current_time;
+        // Add perpendicular moves as last resort (to go around obstacles)
+        // These don't move us closer but allow pathfinding around blockers
+        if dy == 0 && dx != 0 {
+            // Moving horizontally, try vertical sidesteps
+            candidates.push((0, 1));
+            candidates.push((0, -1));
+        } else if dx == 0 && dy != 0 {
+            // Moving vertically, try horizontal sidesteps
+            candidates.push((1, 0));
+            candidates.push((-1, 0));
+        }
 
-        // Update facing direction
-        self.direction = crate::game::Direction::from_velocity(move_x as f32, move_y as f32);
+        // Try each candidate move
+        for (move_x, move_y) in candidates {
+            let new_x = self.x + move_x;
+            let new_y = self.y + move_y;
 
-        true
+            // Check if tile is occupied by another NPC
+            if occupied_tiles.iter().any(|(ox, oy)| *ox == new_x && *oy == new_y) {
+                continue; // Try next candidate
+            }
+
+            // Found a valid move
+            self.x = new_x;
+            self.y = new_y;
+            self.last_move_time = current_time;
+
+            // Update facing direction
+            self.direction = crate::game::Direction::from_velocity(move_x as f32, move_y as f32);
+
+            return true;
+        }
+
+        false // All moves blocked
     }
 
     /// Update NPC AI state and movement
