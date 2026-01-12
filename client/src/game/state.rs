@@ -284,7 +284,7 @@ impl GameState {
             camera: Camera::default(),
             ui_state: UiState::default(),
             server_tick: 0,
-            debug_mode: true,
+            debug_mode: false,
             hovered_tile: None,
             auto_path: None,
         }

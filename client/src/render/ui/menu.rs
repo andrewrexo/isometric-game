@@ -13,7 +13,7 @@ impl Renderer {
         draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.5));
 
         let menu_width = 260.0;
-        let menu_height = 200.0;
+        let menu_height = 300.0;
         let menu_x = ((screen_width() - menu_width) / 2.0).floor();
         let menu_y = ((screen_height() - menu_height) / 2.0).floor();
 
@@ -99,6 +99,17 @@ impl Renderer {
             && mouse_y >= zoom_2x_bounds.y && mouse_y <= zoom_2x_bounds.y + zoom_2x_bounds.h;
         let is_2x_selected = (state.camera.zoom - 2.0).abs() < 0.1;
         draw_zoom_button(zoom_2x_bounds.x, zoom_2x_bounds.y, "2x Zoom", is_2x_selected, is_2x_hovered, self);
+
+        // ===== CONTROLS SECTION =====
+        let controls_y = button_y + button_height + 20.0;
+        self.draw_text_sharp("Controls", content_x.floor(), (controls_y + 12.0).floor(), 16.0, TEXT_DIM);
+
+        let controls_text_y = controls_y + 28.0;
+        self.draw_text_sharp("WASD: Move", content_x.floor(), (controls_text_y).floor(), 16.0, TEXT_NORMAL);
+        self.draw_text_sharp("Space: Attack", content_x.floor(), (controls_text_y + 16.0).floor(), 16.0, TEXT_NORMAL);
+        self.draw_text_sharp("I: Inventory  E: Interact", content_x.floor(), (controls_text_y + 32.0).floor(), 16.0, TEXT_NORMAL);
+        self.draw_text_sharp("Q: Quests  F: Pickup", content_x.floor(), (controls_text_y + 48.0).floor(), 16.0, TEXT_NORMAL);
+        self.draw_text_sharp("F3: Debug", content_x.floor(), (controls_text_y + 64.0).floor(), 16.0, TEXT_NORMAL);
 
         // ===== DISCONNECT BUTTON =====
         let disconnect_width = 160.0;

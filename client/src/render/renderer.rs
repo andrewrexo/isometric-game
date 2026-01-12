@@ -1483,9 +1483,6 @@ impl Renderer {
 
             // Hint
             self.draw_text_sharp("Press Enter to send, Escape to cancel", input_x, input_y + input_height + 12.0, 16.0, GRAY);
-        } else {
-            // Controls hint (only show when chat is closed)
-            self.draw_text_sharp("WASD: Move | Space: Attack | I: Inventory | E: Interact | Q: Quests | F: Pickup | F3: Debug", 16.0, screen_height() - 10.0, 16.0, LIGHTGRAY);
         }
     }
 
