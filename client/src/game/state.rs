@@ -143,6 +143,10 @@ pub struct DoubleClickState {
 pub struct UiState {
     pub chat_open: bool,
     pub chat_input: String,
+    pub chat_cursor: usize,        // Cursor position in chat_input (character index)
+    pub chat_scroll_offset: usize, // Scroll offset for long messages (character index)
+    pub chat_key_repeat_time: f64, // Last time a repeated key action fired
+    pub chat_key_initial_delay: bool, // Whether we're still in initial delay
     pub chat_messages: Vec<ChatMessage>,
     pub inventory_open: bool,
     // Quest UI state
@@ -174,6 +178,10 @@ impl Default for UiState {
         Self {
             chat_open: false,
             chat_input: String::new(),
+            chat_cursor: 0,
+            chat_scroll_offset: 0,
+            chat_key_repeat_time: 0.0,
+            chat_key_initial_delay: true,
             chat_messages: Vec::new(),
             inventory_open: false,
             active_dialogue: None,

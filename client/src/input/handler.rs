@@ -636,10 +636,26 @@ impl InputHandler {
 
         // Handle chat input mode
         if state.ui_state.chat_open {
+            // Helper to convert character index to byte index
+            let char_to_byte_index = |s: &str, char_idx: usize| -> usize {
+                s.char_indices()
+                    .nth(char_idx)
+                    .map(|(byte_idx, _)| byte_idx)
+                    .unwrap_or(s.len())
+            };
+
+            // Key repeat timing constants
+            const INITIAL_DELAY: f64 = 0.4; // 400ms before repeat starts
+            const REPEAT_RATE: f64 = 0.035; // ~28 repeats per second
+
+            let current_time = macroquad::time::get_time();
+
             // Escape cancels chat
             if is_key_pressed(KeyCode::Escape) {
                 state.ui_state.chat_open = false;
                 state.ui_state.chat_input.clear();
+                state.ui_state.chat_cursor = 0;
+                state.ui_state.chat_scroll_offset = 0;
                 return commands;
             }
 
@@ -651,23 +667,94 @@ impl InputHandler {
                 }
                 state.ui_state.chat_open = false;
                 state.ui_state.chat_input.clear();
+                state.ui_state.chat_cursor = 0;
+                state.ui_state.chat_scroll_offset = 0;
                 return commands;
             }
 
-            // Backspace removes last character
-            if is_key_pressed(KeyCode::Backspace) {
-                state.ui_state.chat_input.pop();
+            let char_count = state.ui_state.chat_input.chars().count();
+
+            // Check if any repeatable key is held
+            let repeatable_keys = [KeyCode::Left, KeyCode::Right, KeyCode::Backspace, KeyCode::Delete];
+            let any_repeatable_held = repeatable_keys.iter().any(|k| is_key_down(*k));
+
+            // Reset repeat state if no repeatable keys held
+            if !any_repeatable_held {
+                state.ui_state.chat_key_initial_delay = true;
             }
 
-            // Capture typed characters
+            // Helper to check if we should fire a key action (initial press or repeat)
+            let should_fire = |key: KeyCode, state: &mut GameState, current_time: f64| -> bool {
+                if is_key_pressed(key) {
+                    // Initial press - always fire and start repeat timer
+                    state.ui_state.chat_key_repeat_time = current_time;
+                    state.ui_state.chat_key_initial_delay = true;
+                    return true;
+                } else if is_key_down(key) {
+                    // Key held - check repeat timing
+                    let delay = if state.ui_state.chat_key_initial_delay { INITIAL_DELAY } else { REPEAT_RATE };
+                    if current_time - state.ui_state.chat_key_repeat_time >= delay {
+                        state.ui_state.chat_key_repeat_time = current_time;
+                        state.ui_state.chat_key_initial_delay = false;
+                        return true;
+                    }
+                }
+                false
+            };
+
+            // Arrow key navigation (drain char queue after to prevent ghost characters)
+            if should_fire(KeyCode::Left, state, current_time) {
+                if state.ui_state.chat_cursor > 0 {
+                    state.ui_state.chat_cursor -= 1;
+                }
+                while get_char_pressed().is_some() {}
+            }
+            if should_fire(KeyCode::Right, state, current_time) {
+                let char_count = state.ui_state.chat_input.chars().count();
+                if state.ui_state.chat_cursor < char_count {
+                    state.ui_state.chat_cursor += 1;
+                }
+                while get_char_pressed().is_some() {}
+            }
+            // Home/End for quick navigation (no repeat needed)
+            if is_key_pressed(KeyCode::Home) {
+                state.ui_state.chat_cursor = 0;
+                while get_char_pressed().is_some() {}
+            }
+            if is_key_pressed(KeyCode::End) {
+                state.ui_state.chat_cursor = char_count;
+                while get_char_pressed().is_some() {}
+            }
+
+            // Backspace removes character before cursor
+            if should_fire(KeyCode::Backspace, state, current_time) {
+                if state.ui_state.chat_cursor > 0 {
+                    let byte_idx = char_to_byte_index(&state.ui_state.chat_input, state.ui_state.chat_cursor - 1);
+                    state.ui_state.chat_input.remove(byte_idx);
+                    state.ui_state.chat_cursor -= 1;
+                }
+            }
+
+            // Delete removes character at cursor
+            if should_fire(KeyCode::Delete, state, current_time) {
+                let char_count = state.ui_state.chat_input.chars().count();
+                if state.ui_state.chat_cursor < char_count {
+                    let byte_idx = char_to_byte_index(&state.ui_state.chat_input, state.ui_state.chat_cursor);
+                    state.ui_state.chat_input.remove(byte_idx);
+                }
+            }
+
+            // Capture typed characters - insert at cursor position
             while let Some(c) = get_char_pressed() {
-                // Filter control characters
-                if c.is_control() {
+                // Filter control characters and non-printable special chars (like arrow key ghosts)
+                if c.is_control() || !c.is_ascii_graphic() && !c.is_ascii_whitespace() && !c.is_alphanumeric() {
                     continue;
                 }
-                // Limit chat message length
-                if state.ui_state.chat_input.len() < 200 {
-                    state.ui_state.chat_input.push(c);
+                // Limit chat message length (by character count)
+                if state.ui_state.chat_input.chars().count() < 200 {
+                    let byte_idx = char_to_byte_index(&state.ui_state.chat_input, state.ui_state.chat_cursor);
+                    state.ui_state.chat_input.insert(byte_idx, c);
+                    state.ui_state.chat_cursor += 1;
                 }
             }
 
@@ -678,6 +765,8 @@ impl InputHandler {
         if is_key_pressed(KeyCode::Enter) {
             state.ui_state.chat_open = true;
             state.ui_state.chat_input.clear();
+            state.ui_state.chat_cursor = 0;
+            state.ui_state.chat_scroll_offset = 0;
             // Drain any accumulated characters from the queue
             while get_char_pressed().is_some() {}
             return commands;

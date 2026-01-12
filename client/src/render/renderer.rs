@@ -1370,15 +1370,23 @@ impl Renderer {
         let status_width = self.measure_text_sharp(status_text, 16.0).width;
         self.draw_text_sharp(status_text, screen_width() - status_width - 16.0, screen_height() - 10.0, 16.0, status_color);
 
-        // Chat messages (bottom-left)
+        // Chat messages (bottom-left) with text wrapping
         let chat_x = 10.0;
         let chat_y = screen_height() - 30.0;
         let line_height = 18.0;
+        let max_chat_width = 400.0;
+        let font_size = 16.0;
 
-        for (i, msg) in state.ui_state.chat_messages.iter().rev().take(5).enumerate() {
-            let y = chat_y - (i as f32 * line_height);
+        let mut current_y = chat_y;
+        for msg in state.ui_state.chat_messages.iter().rev().take(5) {
             let text = format!("{}: {}", msg.sender_name, msg.text);
-            self.draw_text_sharp(&text, chat_x, y, 16.0, WHITE);
+            let wrapped_lines = self.wrap_text(&text, max_chat_width, font_size);
+
+            // Draw lines from bottom to top (reversed)
+            for line in wrapped_lines.iter().rev() {
+                self.draw_text_sharp(line, chat_x, current_y, font_size, WHITE);
+                current_y -= line_height;
+            }
         }
 
         // Local player stats panel (top-right) - Name, HP/XP bars
@@ -1458,23 +1466,85 @@ impl Renderer {
             let input_y = screen_height() - 50.0;
             let input_width = 400.0;
             let input_height = 24.0;
+            let text_padding = 5.0;
+            let text_area_width = input_width - text_padding * 2.0 - 12.0; // Extra margin for scroll indicators
+            let font_size = 16.0;
 
             // Background
             draw_rectangle(input_x, input_y, input_width, input_height, Color::from_rgba(0, 0, 0, 180));
             draw_rectangle_lines(input_x, input_y, input_width, input_height, 1.0, WHITE);
 
-            // Text
-            let display_text = format!("{}", state.ui_state.chat_input);
-            self.draw_text_sharp(&display_text, input_x + 5.0, input_y + 17.0, 16.0, WHITE);
+            let input_text = &state.ui_state.chat_input;
+            let cursor_pos = state.ui_state.chat_cursor;
+            let char_count = input_text.chars().count();
 
-            // Blinking cursor
+            // Calculate how many chars fit by measuring actual text width
+            let measure_chars_that_fit = |text: &str, max_width: f32| -> usize {
+                let chars: Vec<char> = text.chars().collect();
+                for i in (1..=chars.len()).rev() {
+                    let substr: String = chars[..i].iter().collect();
+                    if self.measure_text_sharp(&substr, font_size).width <= max_width {
+                        return i;
+                    }
+                }
+                0
+            };
+
+            // Determine scroll offset to keep cursor visible
+            let scroll_offset = if self.measure_text_sharp(input_text, font_size).width <= text_area_width {
+                // Text fits entirely, no scroll needed
+                0
+            } else {
+                // Find offset that keeps cursor visible
+                // Start by trying to show text ending at cursor
+                let text_to_cursor: String = input_text.chars().take(cursor_pos).collect();
+                let cursor_text_width = self.measure_text_sharp(&text_to_cursor, font_size).width;
+
+                if cursor_text_width <= text_area_width {
+                    // Cursor is visible from start
+                    0
+                } else {
+                    // Need to scroll - find how many chars to skip to show cursor
+                    let chars: Vec<char> = input_text.chars().collect();
+                    let mut offset = 0;
+                    for i in 0..cursor_pos {
+                        let visible: String = chars[i..cursor_pos].iter().collect();
+                        if self.measure_text_sharp(&visible, font_size).width <= text_area_width {
+                            offset = i;
+                            break;
+                        }
+                    }
+                    offset
+                }
+            };
+
+            // Get visible portion of text that fits
+            let chars_from_offset: String = input_text.chars().skip(scroll_offset).collect();
+            let visible_char_count = measure_chars_that_fit(&chars_from_offset, text_area_width);
+            let visible_text: String = input_text.chars().skip(scroll_offset).take(visible_char_count).collect();
+            let visible_end = scroll_offset + visible_char_count;
+
+            // Draw visible text
+            self.draw_text_sharp(&visible_text, input_x + text_padding, input_y + 17.0, font_size, WHITE);
+
+            // Draw scroll indicators if text is clipped
+            if scroll_offset > 0 {
+                self.draw_text_sharp("<", input_x + 1.0, input_y + 17.0, font_size, GRAY);
+            }
+            if visible_end < char_count {
+                self.draw_text_sharp(">", input_x + input_width - 10.0, input_y + 17.0, font_size, GRAY);
+            }
+
+            // Blinking cursor at correct position within visible text
             let cursor_blink = (macroquad::time::get_time() * 2.0) as i32 % 2 == 0;
             if cursor_blink {
-                let text_width = self.measure_text_sharp(&display_text, 16.0).width;
+                let cursor_visible_pos = cursor_pos.saturating_sub(scroll_offset);
+                let text_before_cursor: String = visible_text.chars().take(cursor_visible_pos).collect();
+                let cursor_x = self.measure_text_sharp(&text_before_cursor, font_size).width;
                 draw_line(
-                    input_x + 5.0 + text_width + 2.0,
+                    input_x + text_padding + cursor_x + 1.0,
                     input_y + 4.0,
-                    input_x + 5.0 + text_width + 2.0,
+                    input_x + text_padding + cursor_x + 1.0,
                     input_y + input_height - 4.0,
                     1.0,
                     WHITE,
@@ -1482,7 +1552,7 @@ impl Renderer {
             }
 
             // Hint
-            self.draw_text_sharp("Press Enter to send, Escape to cancel", input_x, input_y + input_height + 12.0, 16.0, GRAY);
+            self.draw_text_sharp("Press Enter to send, Escape to cancel", input_x, input_y + input_height + 12.0, 16.0, LIGHTGRAY);
         }
     }
 
@@ -1640,6 +1710,7 @@ impl Renderer {
     /// Render a dragged item following the cursor
 
     /// Word-wrap text to fit within a given width (approximate, assumes ~8px per char at size 16)
+    /// Prefers breaking on word boundaries, but will break long words if necessary
     pub(crate) fn wrap_text(&self, text: &str, max_width: f32, font_size: f32) -> Vec<String> {
         let char_width = font_size * 0.5; // Approximate character width
         let max_chars = (max_width / char_width) as usize;
@@ -1651,10 +1722,35 @@ impl Renderer {
         let mut lines = Vec::new();
         let mut current_line = String::new();
 
+        // Helper to break a long word into chunks that fit
+        let break_long_word = |word: &str, max_len: usize| -> Vec<String> {
+            let chars: Vec<char> = word.chars().collect();
+            chars.chunks(max_len)
+                .map(|chunk| chunk.iter().collect())
+                .collect()
+        };
+
         for word in text.split_whitespace() {
-            if current_line.is_empty() {
+            // If word itself is too long, break it up
+            if word.chars().count() > max_chars {
+                // First, push current line if not empty
+                if !current_line.is_empty() {
+                    lines.push(current_line);
+                    current_line = String::new();
+                }
+                // Break the long word into chunks
+                let chunks = break_long_word(word, max_chars);
+                for (i, chunk) in chunks.iter().enumerate() {
+                    if i < chunks.len() - 1 {
+                        lines.push(chunk.clone());
+                    } else {
+                        // Last chunk becomes the new current line
+                        current_line = chunk.clone();
+                    }
+                }
+            } else if current_line.is_empty() {
                 current_line = word.to_string();
-            } else if current_line.len() + 1 + word.len() <= max_chars {
+            } else if current_line.chars().count() + 1 + word.chars().count() <= max_chars {
                 current_line.push(' ');
                 current_line.push_str(word);
             } else {
