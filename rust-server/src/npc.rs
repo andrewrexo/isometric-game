@@ -255,9 +255,23 @@ impl Npc {
         (x1 - x2).abs().max((y1 - y2).abs())
     }
 
+    /// Check if target is within attack range AND in a cardinal direction (not diagonal)
+    fn is_in_attack_range(x1: i32, y1: i32, x2: i32, y2: i32, range: i32) -> bool {
+        let dx = (x1 - x2).abs();
+        let dy = (y1 - y2).abs();
+        // Must be cardinal (one axis is 0) and within range
+        (dx == 0 || dy == 0) && (dx + dy) <= range
+    }
+
     /// Try to move one tile toward target position (grid-based)
     /// Returns true if moved
-    fn try_move_toward(&mut self, target_x: i32, target_y: i32, current_time: u64) -> bool {
+    fn try_move_toward(
+        &mut self,
+        target_x: i32,
+        target_y: i32,
+        current_time: u64,
+        occupied_tiles: &[(i32, i32)],
+    ) -> bool {
         // Check movement cooldown
         if current_time - self.last_move_time < self.get_move_cooldown_ms() {
             return false;
@@ -280,8 +294,16 @@ impl Npc {
             (dx.signum(), 0)
         };
 
-        self.x += move_x;
-        self.y += move_y;
+        let new_x = self.x + move_x;
+        let new_y = self.y + move_y;
+
+        // Check if target tile is occupied by another NPC
+        if occupied_tiles.iter().any(|(ox, oy)| *ox == new_x && *oy == new_y) {
+            return false;
+        }
+
+        self.x = new_x;
+        self.y = new_y;
         self.last_move_time = current_time;
 
         // Update facing direction
@@ -296,6 +318,7 @@ impl Npc {
         &mut self,
         _delta: f32, // Not used for grid movement
         players: &[(String, i32, i32, i32)], // (id, x, y, hp) - grid positions
+        other_npc_positions: &[(i32, i32)],  // positions of other NPCs (excluding self)
         current_time: u64,
     ) -> Option<(String, i32)> {
         if self.state == NpcState::Dead {
@@ -345,19 +368,18 @@ impl Npc {
                 });
 
                 if let Some((tx, ty)) = target_pos {
-                    let dist = Self::grid_distance(self.x, self.y, tx, ty);
                     let spawn_dist = Self::grid_distance(self.x, self.y, self.spawn_x, self.spawn_y);
 
                     if spawn_dist > self.get_chase_range() {
                         // Too far from spawn, return home
                         self.state = NpcState::Returning;
                         self.target_id = None;
-                    } else if dist <= self.get_attack_range() {
-                        // In attack range
+                    } else if Self::is_in_attack_range(self.x, self.y, tx, ty, self.get_attack_range()) {
+                        // In attack range (cardinal direction only)
                         self.state = NpcState::Attacking;
                     } else {
                         // Move toward target (one tile at a time)
-                        self.try_move_toward(tx, ty, current_time);
+                        self.try_move_toward(tx, ty, current_time, other_npc_positions);
                     }
                 } else {
                     // Target lost (died or disconnected)
@@ -375,10 +397,8 @@ impl Npc {
                 });
 
                 if let Some((target_id, tx, ty)) = target_info {
-                    let dist = Self::grid_distance(self.x, self.y, tx, ty);
-
-                    if dist > self.get_attack_range() {
-                        // Target moved out of range, chase again
+                    if !Self::is_in_attack_range(self.x, self.y, tx, ty, self.get_attack_range()) {
+                        // Target moved out of range or not in cardinal direction, chase again
                         self.state = NpcState::Chasing;
                     } else {
                         // Face target
@@ -410,7 +430,7 @@ impl Npc {
                     self.state = NpcState::Idle;
                 } else {
                     // Move toward spawn (one tile at a time)
-                    self.try_move_toward(self.spawn_x, self.spawn_y, current_time);
+                    self.try_move_toward(self.spawn_x, self.spawn_y, current_time, other_npc_positions);
                 }
             }
 

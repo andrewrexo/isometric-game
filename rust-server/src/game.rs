@@ -2741,16 +2741,38 @@ impl GameRoom {
         let mut npc_attacks: Vec<(String, String, i32)> = Vec::new(); // (npc_id, target_id, damage)
         {
             let mut npcs = self.npcs.write().await;
+
+            // Collect NPC positions for collision detection (only alive NPCs)
+            let mut npc_positions: std::collections::HashMap<String, (i32, i32)> = npcs
+                .values()
+                .filter(|n| n.is_alive())
+                .map(|n| (n.id.clone(), (n.x, n.y)))
+                .collect();
+
             for npc in npcs.values_mut() {
                 // Check for respawn
                 if npc.ready_to_respawn(current_time) {
                     npc.respawn();
                     respawned_npcs.push((npc.id.clone(), npc.x, npc.y));
+                    // Update position in collision map
+                    npc_positions.insert(npc.id.clone(), (npc.x, npc.y));
                 }
 
+                // Get positions of other NPCs (excluding self) for collision detection
+                let other_npc_positions: Vec<(i32, i32)> = npc_positions
+                    .iter()
+                    .filter(|(id, _)| *id != &npc.id)
+                    .map(|(_, pos)| *pos)
+                    .collect();
+
                 // Run NPC AI update
-                if let Some((target_id, damage)) = npc.update(delta_time, &player_positions, current_time) {
+                if let Some((target_id, damage)) = npc.update(delta_time, &player_positions, &other_npc_positions, current_time) {
                     npc_attacks.push((npc.id.clone(), target_id, damage));
+                }
+
+                // Update position in collision map after movement
+                if npc.is_alive() {
+                    npc_positions.insert(npc.id.clone(), (npc.x, npc.y));
                 }
 
                 // Add to updates (all NPCs including dead ones for client awareness)
