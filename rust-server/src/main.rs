@@ -34,6 +34,7 @@ mod item;
 mod npc;
 mod protocol;
 mod quest;
+mod shop;
 mod tilemap;
 mod world;
 
@@ -1040,6 +1041,12 @@ async fn handle_client_message(
         }
         ClientMessage::SwapSlots { from_slot, to_slot } => {
             room.handle_swap_slots(player_id, from_slot, to_slot).await;
+        }
+        ClientMessage::ShopBuy { npc_id, item_id, quantity } => {
+            room.handle_shop_buy(player_id, &npc_id, &item_id, quantity).await;
+        }
+        ClientMessage::ShopSell { npc_id, item_id, quantity } => {
+            room.handle_shop_sell(player_id, &npc_id, &item_id, quantity).await;
         }
         // Auth and Register are handled via HTTP endpoints, not WebSocket
         ClientMessage::Auth { .. } | ClientMessage::Register { .. } => {}

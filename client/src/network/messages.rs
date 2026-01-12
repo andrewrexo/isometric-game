@@ -66,6 +66,12 @@ pub enum ClientMessage {
 
     #[serde(rename = "swapSlots")]
     SwapSlots { from_slot: u8, to_slot: u8 },
+
+    #[serde(rename = "shopBuy")]
+    ShopBuy { npc_id: String, item_id: String, quantity: u32 },
+
+    #[serde(rename = "shopSell")]
+    ShopSell { npc_id: String, item_id: String, quantity: u32 },
 }
 
 impl ClientMessage {
@@ -163,6 +169,18 @@ impl ClientMessage {
                 data.insert("from_slot".into(), Value::Integer((*from_slot as i64).into()));
                 data.insert("to_slot".into(), Value::Integer((*to_slot as i64).into()));
                 "swapSlots"
+            }
+            ClientMessage::ShopBuy { npc_id, item_id, quantity } => {
+                data.insert("npcId".into(), Value::String(npc_id.clone().into()));
+                data.insert("itemId".into(), Value::String(item_id.clone().into()));
+                data.insert("quantity".into(), Value::Integer((*quantity as i64).into()));
+                "shopBuy"
+            }
+            ClientMessage::ShopSell { npc_id, item_id, quantity } => {
+                data.insert("npcId".into(), Value::String(npc_id.clone().into()));
+                data.insert("itemId".into(), Value::String(item_id.clone().into()));
+                data.insert("quantity".into(), Value::Integer((*quantity as i64).into()));
+                "shopSell"
             }
         };
 

@@ -109,6 +109,9 @@ impl Renderer {
             let is_hovered = matches!(hovered, Some(UiElementId::GroundItem(id)) if id == item_id);
 
             if is_hovered {
+                // Draw tile hover effect
+                self.render_tile_hover(item.x as i32, item.y as i32, &state.camera);
+
                 // Get item definition for display name
                 let item_def = state.item_registry.get_or_placeholder(&item.item_id);
 

@@ -9,3 +9,4 @@ pub mod crafting;
 pub mod tooltip;
 pub mod context_menu;
 pub mod menu;
+pub mod shop;

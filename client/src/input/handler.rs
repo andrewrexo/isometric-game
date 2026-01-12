@@ -1,7 +1,8 @@
 use macroquad::prelude::*;
-use crate::game::{GameState, ContextMenu, DragState, DragSource, PathState, pathfinding};
+use crate::game::{GameState, ContextMenu, DragState, DragSource, PathState, pathfinding, ShopSubTab};
 use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
+use crate::network::messages::ClientMessage;
 
 /// Input commands that can be sent to the server
 #[derive(Debug, Clone)]
@@ -26,6 +27,9 @@ pub enum InputCommand {
     // Inventory commands
     DropItem { slot_index: u8, quantity: u32 },
     SwapSlots { from_slot: u8, to_slot: u8 },
+    // Shop commands
+    ShopBuy { npc_id: String, item_id: String, quantity: u32 },
+    ShopSell { npc_id: String, item_id: String, quantity: u32 },
 }
 
 /// Cardinal directions for isometric movement (no diagonals)
@@ -538,6 +542,10 @@ impl InputHandler {
             // Handle mouse clicks on crafting elements
             if let Some(ref element) = clicked_element {
                 match element {
+                    UiElementId::MainTab(idx) => {
+                        state.ui_state.shop_main_tab = *idx;
+                        return commands;
+                    }
                     UiElementId::CraftingCategoryTab(idx) => {
                         if *idx != state.ui_state.crafting_selected_category {
                             state.ui_state.crafting_selected_category = *idx;
@@ -569,6 +577,63 @@ impl InputHandler {
                         }
                         return commands;
                     }
+                    UiElementId::ShopSubTab(idx) => {
+                        state.ui_state.shop_sub_tab = if *idx == 0 { ShopSubTab::Buy } else { ShopSubTab::Sell };
+                        state.ui_state.shop_selected_buy_index = 0;
+                        state.ui_state.shop_selected_sell_index = 0;
+                        state.ui_state.shop_transaction_quantity = 1;
+                        return commands;
+                    }
+                    UiElementId::ShopBuyItem(idx) => {
+                        state.ui_state.shop_selected_buy_index = *idx;
+                        state.ui_state.shop_transaction_quantity = 1;
+                        return commands;
+                    }
+                    UiElementId::ShopSellItem(idx) => {
+                        state.ui_state.shop_selected_sell_index = *idx;
+                        state.ui_state.shop_transaction_quantity = 1;
+                        return commands;
+                    }
+                    UiElementId::ShopQuantityMinus => {
+                        if state.ui_state.shop_transaction_quantity > 1 {
+                            state.ui_state.shop_transaction_quantity -= 1;
+                        }
+                        return commands;
+                    }
+                    UiElementId::ShopQuantityPlus => {
+                        state.ui_state.shop_transaction_quantity += 1;
+                        return commands;
+                    }
+                    UiElementId::ShopConfirmButton => {
+                        if let Some(ref shop_data) = state.ui_state.shop_data {
+                            if let Some(ref npc_id) = state.ui_state.shop_npc_id {
+                                match state.ui_state.shop_sub_tab {
+                                    ShopSubTab::Buy => {
+                                        if let Some(stock_item) = shop_data.stock.get(state.ui_state.shop_selected_buy_index) {
+                                            commands.push(InputCommand::ShopBuy {
+                                                npc_id: npc_id.clone(),
+                                                item_id: stock_item.item_id.clone(),
+                                                quantity: state.ui_state.shop_transaction_quantity as u32,
+                                            });
+                                        }
+                                    }
+                                    ShopSubTab::Sell => {
+                                        let inventory_items: Vec<_> = state.inventory.slots.iter()
+                                            .filter_map(|slot| slot.as_ref())
+                                            .collect();
+                                        if let Some(inv_slot) = inventory_items.get(state.ui_state.shop_selected_sell_index) {
+                                            commands.push(InputCommand::ShopSell {
+                                                npc_id: npc_id.clone(),
+                                                item_id: inv_slot.item_id.clone(),
+                                                quantity: state.ui_state.shop_transaction_quantity as u32,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return commands;
+                    }
                     _ => {}
                 }
             }
@@ -577,56 +642,213 @@ impl InputHandler {
             if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::E) {
                 state.ui_state.crafting_open = false;
                 state.ui_state.crafting_npc_id = None;
+                state.ui_state.shop_data = None;
                 return commands;
             }
 
-            // Get unique categories from recipes
-            let categories: Vec<&str> = {
-                let mut cats: Vec<&str> = state.recipe_definitions.iter()
-                    .map(|r| r.category.as_str())
+            // Q/E switch between main tabs
+            if is_key_pressed(KeyCode::Q) {
+                state.ui_state.shop_main_tab = 0; // Recipes
+            }
+            if is_key_pressed(KeyCode::E) && !is_key_down(KeyCode::LeftControl) && !is_key_down(KeyCode::RightControl) {
+                // Don't switch to shop tab if Ctrl+E (close) was intended
+                // But allow E to open shop tab if not closing
+            }
+
+            if state.ui_state.shop_main_tab == 0 {
+                // Recipes tab keyboard controls
+                // Get unique categories from recipes
+                let categories: Vec<&str> = {
+                    let mut cats: Vec<&str> = state.recipe_definitions.iter()
+                        .map(|r| r.category.as_str())
+                        .collect();
+                    cats.sort();
+                    cats.dedup();
+                    cats
+                };
+
+                // Left/Right navigate categories
+                if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
+                    if state.ui_state.crafting_selected_category > 0 {
+                        state.ui_state.crafting_selected_category -= 1;
+                        state.ui_state.crafting_selected_recipe = 0;
+                    }
+                }
+                if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D) {
+                    if state.ui_state.crafting_selected_category < categories.len().saturating_sub(1) {
+                        state.ui_state.crafting_selected_category += 1;
+                        state.ui_state.crafting_selected_recipe = 0;
+                    }
+                }
+
+                // Get recipes for current category
+                let current_category = categories.get(state.ui_state.crafting_selected_category).copied().unwrap_or("consumables");
+                let recipes_in_category: Vec<&crate::game::RecipeDefinition> = state.recipe_definitions.iter()
+                    .filter(|r| r.category == current_category)
                     .collect();
-                cats.sort();
-                cats.dedup();
-                cats
-            };
 
-            // Left/Right navigate categories
-            if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
-                if state.ui_state.crafting_selected_category > 0 {
-                    state.ui_state.crafting_selected_category -= 1;
-                    state.ui_state.crafting_selected_recipe = 0;
+                // Up/Down navigate recipes
+                if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
+                    if state.ui_state.crafting_selected_recipe > 0 {
+                        state.ui_state.crafting_selected_recipe -= 1;
+                    }
                 }
-            }
-            if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D) {
-                if state.ui_state.crafting_selected_category < categories.len().saturating_sub(1) {
-                    state.ui_state.crafting_selected_category += 1;
-                    state.ui_state.crafting_selected_recipe = 0;
+                if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
+                    if state.ui_state.crafting_selected_recipe < recipes_in_category.len().saturating_sub(1) {
+                        state.ui_state.crafting_selected_recipe += 1;
+                    }
                 }
-            }
 
-            // Get recipes for current category
-            let current_category = categories.get(state.ui_state.crafting_selected_category).copied().unwrap_or("consumables");
-            let recipes_in_category: Vec<&crate::game::RecipeDefinition> = state.recipe_definitions.iter()
-                .filter(|r| r.category == current_category)
-                .collect();
-
-            // Up/Down navigate recipes
-            if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
-                if state.ui_state.crafting_selected_recipe > 0 {
-                    state.ui_state.crafting_selected_recipe -= 1;
+                // Enter or C crafts selected recipe
+                if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::C) {
+                    if let Some(recipe) = recipes_in_category.get(state.ui_state.crafting_selected_recipe) {
+                        log::info!("Crafting: {}", recipe.id);
+                        commands.push(InputCommand::Craft { recipe_id: recipe.id.clone() });
+                    }
                 }
-            }
-            if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
-                if state.ui_state.crafting_selected_recipe < recipes_in_category.len().saturating_sub(1) {
-                    state.ui_state.crafting_selected_recipe += 1;
+            } else if state.ui_state.shop_main_tab == 1 {
+                // Shop tab keyboard controls
+                // Tab switches between Buy/Sell sub-tabs
+                if is_key_pressed(KeyCode::Tab) {
+                    state.ui_state.shop_sub_tab = match state.ui_state.shop_sub_tab {
+                        ShopSubTab::Buy => ShopSubTab::Sell,
+                        ShopSubTab::Sell => ShopSubTab::Buy,
+                    };
+                    state.ui_state.shop_selected_buy_index = 0;
+                    state.ui_state.shop_selected_sell_index = 0;
+                    state.ui_state.shop_transaction_quantity = 1;
                 }
-            }
 
-            // Enter or C crafts selected recipe
-            if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::C) {
-                if let Some(recipe) = recipes_in_category.get(state.ui_state.crafting_selected_recipe) {
-                    log::info!("Crafting: {}", recipe.id);
-                    commands.push(InputCommand::Craft { recipe_id: recipe.id.clone() });
+                // Handle mouse wheel scrolling for shop lists
+                let (_wheel_x, wheel_y) = mouse_wheel();
+                if wheel_y != 0.0 {
+                    const SCROLL_SPEED: f32 = 30.0;
+                    match state.ui_state.shop_sub_tab {
+                        ShopSubTab::Buy => {
+                            if let Some(ref shop_data) = state.ui_state.shop_data {
+                                let item_height = 48.0 + 4.0; // height + spacing
+                                let max_scroll = ((shop_data.stock.len() as f32) * item_height - 200.0).max(0.0);
+                                state.ui_state.shop_buy_scroll = (state.ui_state.shop_buy_scroll - wheel_y * SCROLL_SPEED).clamp(0.0, max_scroll);
+                            }
+                        }
+                        ShopSubTab::Sell => {
+                            let inventory_count = state.inventory.slots.iter().filter(|s| s.is_some()).count();
+                            let item_height = 48.0 + 4.0;
+                            let max_scroll = ((inventory_count as f32) * item_height - 200.0).max(0.0);
+                            state.ui_state.shop_sell_scroll = (state.ui_state.shop_sell_scroll - wheel_y * SCROLL_SPEED).clamp(0.0, max_scroll);
+                        }
+                    }
+                }
+
+                // Constants for scroll calculations
+                const ITEM_HEIGHT: f32 = 48.0;
+                const ITEM_SPACING: f32 = 4.0;
+                const ITEM_TOTAL: f32 = ITEM_HEIGHT + ITEM_SPACING;
+                const VISIBLE_HEIGHT: f32 = 200.0; // Approximate visible area
+
+                match state.ui_state.shop_sub_tab {
+                    ShopSubTab::Buy => {
+                        if let Some(ref shop_data) = state.ui_state.shop_data {
+                            // Up/Down navigate buy items
+                            if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
+                                if state.ui_state.shop_selected_buy_index > 0 {
+                                    state.ui_state.shop_selected_buy_index -= 1;
+                                    state.ui_state.shop_transaction_quantity = 1;
+                                    // Scroll up if selection is above visible area
+                                    let selected_top = state.ui_state.shop_selected_buy_index as f32 * ITEM_TOTAL;
+                                    if selected_top < state.ui_state.shop_buy_scroll {
+                                        state.ui_state.shop_buy_scroll = selected_top;
+                                    }
+                                }
+                            }
+                            if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
+                                if state.ui_state.shop_selected_buy_index < shop_data.stock.len().saturating_sub(1) {
+                                    state.ui_state.shop_selected_buy_index += 1;
+                                    state.ui_state.shop_transaction_quantity = 1;
+                                    // Scroll down if selection is below visible area
+                                    let selected_bottom = (state.ui_state.shop_selected_buy_index as f32 + 1.0) * ITEM_TOTAL;
+                                    if selected_bottom > state.ui_state.shop_buy_scroll + VISIBLE_HEIGHT {
+                                        state.ui_state.shop_buy_scroll = selected_bottom - VISIBLE_HEIGHT;
+                                    }
+                                }
+                            }
+
+                            // -/+ adjust quantity
+                            if is_key_pressed(KeyCode::Minus) || is_key_pressed(KeyCode::KpSubtract) {
+                                if state.ui_state.shop_transaction_quantity > 1 {
+                                    state.ui_state.shop_transaction_quantity -= 1;
+                                }
+                            }
+                            if is_key_pressed(KeyCode::Equal) || is_key_pressed(KeyCode::KpAdd) {
+                                state.ui_state.shop_transaction_quantity += 1;
+                            }
+
+                            // Enter confirms buy
+                            if is_key_pressed(KeyCode::Enter) {
+                                if let Some(stock_item) = shop_data.stock.get(state.ui_state.shop_selected_buy_index) {
+                                    if let Some(ref npc_id) = state.ui_state.shop_npc_id {
+                                        commands.push(InputCommand::ShopBuy {
+                                            npc_id: npc_id.clone(),
+                                            item_id: stock_item.item_id.clone(),
+                                            quantity: state.ui_state.shop_transaction_quantity as u32,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ShopSubTab::Sell => {
+                        let inventory_items: Vec<_> = state.inventory.slots.iter()
+                            .filter_map(|slot| slot.as_ref())
+                            .collect();
+
+                        // Up/Down navigate sell items
+                        if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
+                            if state.ui_state.shop_selected_sell_index > 0 {
+                                state.ui_state.shop_selected_sell_index -= 1;
+                                state.ui_state.shop_transaction_quantity = 1;
+                                // Scroll up if selection is above visible area
+                                let selected_top = state.ui_state.shop_selected_sell_index as f32 * ITEM_TOTAL;
+                                if selected_top < state.ui_state.shop_sell_scroll {
+                                    state.ui_state.shop_sell_scroll = selected_top;
+                                }
+                            }
+                        }
+                        if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
+                            if state.ui_state.shop_selected_sell_index < inventory_items.len().saturating_sub(1) {
+                                state.ui_state.shop_selected_sell_index += 1;
+                                state.ui_state.shop_transaction_quantity = 1;
+                                // Scroll down if selection is below visible area
+                                let selected_bottom = (state.ui_state.shop_selected_sell_index as f32 + 1.0) * ITEM_TOTAL;
+                                if selected_bottom > state.ui_state.shop_sell_scroll + VISIBLE_HEIGHT {
+                                    state.ui_state.shop_sell_scroll = selected_bottom - VISIBLE_HEIGHT;
+                                }
+                            }
+                        }
+
+                        // -/+ adjust quantity
+                        if is_key_pressed(KeyCode::Minus) || is_key_pressed(KeyCode::KpSubtract) {
+                            if state.ui_state.shop_transaction_quantity > 1 {
+                                state.ui_state.shop_transaction_quantity -= 1;
+                            }
+                        }
+                        if is_key_pressed(KeyCode::Equal) || is_key_pressed(KeyCode::KpAdd) {
+                            state.ui_state.shop_transaction_quantity += 1;
+                        }
+
+                        // Enter confirms sell
+                        if is_key_pressed(KeyCode::Enter) {
+                            if let Some(inv_slot) = inventory_items.get(state.ui_state.shop_selected_sell_index) {
+                                if let Some(ref npc_id) = state.ui_state.shop_npc_id {
+                                    commands.push(InputCommand::ShopSell {
+                                        npc_id: npc_id.clone(),
+                                        item_id: inv_slot.item_id.clone(),
+                                        quantity: state.ui_state.shop_transaction_quantity as u32,
+                                    });
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

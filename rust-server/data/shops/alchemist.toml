@@ -1,0 +1,17 @@
+id = "alchemist"
+display_name = "Alchemist's Potions"
+
+[[stock]]
+item_id = "health_potion"
+max_quantity = 15
+restock_rate = 3
+
+[[stock]]
+item_id = "mana_potion"
+max_quantity = 15
+restock_rate = 3
+
+[[stock]]
+item_id = "antidote"
+max_quantity = 8
+restock_rate = 2

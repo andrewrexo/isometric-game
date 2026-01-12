@@ -1,0 +1,17 @@
+id = "general_store"
+display_name = "General Goods"
+
+[[stock]]
+item_id = "health_potion"
+max_quantity = 10
+restock_rate = 2
+
+[[stock]]
+item_id = "bread"
+max_quantity = 20
+restock_rate = 5
+
+[[stock]]
+item_id = "rope"
+max_quantity = 5
+restock_rate = 1

@@ -19,6 +19,8 @@ pub struct ItemDefinition {
     pub category: String,
     pub max_stack: i32,
     pub description: String,
+    pub base_price: i32,
+    pub sellable: bool,
     /// Equipment stats (only for equippable items)
     pub equipment: Option<EquipmentStats>,
 }
@@ -71,6 +73,8 @@ impl ItemRegistry {
             category: "material".to_string(),
             max_stack: 99,
             description: "Unknown item".to_string(),
+            base_price: 0,
+            sellable: false,
             equipment: None,
         })
     }

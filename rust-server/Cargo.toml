@@ -47,3 +47,6 @@ mlua = { version = "0.10", features = ["lua54", "vendored", "async", "send"] }
 
 # File watching (for hot-reload)
 notify = "6"
+
+[dev-dependencies]
+tempfile = "3"

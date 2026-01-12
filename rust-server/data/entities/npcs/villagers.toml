@@ -65,6 +65,12 @@ hostile = false
 merchant = true
 craftsman = true
 
+[blacksmith.merchant]
+shop_id = "blacksmith"
+buy_multiplier = 0.5
+sell_multiplier = 1.0
+restock_interval_minutes = 5
+
 [blacksmith.dialogue]
 greeting = "Need something forged? I'm your man."
 shop_open = "Take a look at my wares."

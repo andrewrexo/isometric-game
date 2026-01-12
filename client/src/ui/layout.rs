@@ -11,6 +11,7 @@ pub enum UiElementId {
     CraftingCategoryTab(usize),
     CraftingRecipeItem(usize),
     CraftingButton,
+    MainTab(usize), // 0=Recipes, 1=Shop
 
     // Inventory & Quick Slots
     InventorySlot(usize),
@@ -32,6 +33,16 @@ pub enum UiElementId {
 
     // World Items
     GroundItem(String), // item instance ID
+
+    // Shop
+    ShopSubTab(usize), // 0=Buy, 1=Sell
+    ShopBuyItem(usize),
+    ShopSellItem(usize),
+    ShopBuyScrollArea,
+    ShopSellScrollArea,
+    ShopQuantityMinus,
+    ShopQuantityPlus,
+    ShopConfirmButton,
 }
 
 /// A single interactive UI element with its bounds

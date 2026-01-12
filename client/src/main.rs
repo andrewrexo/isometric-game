@@ -356,6 +356,9 @@ fn run_game_frame(
             // Inventory commands
             InputCommand::DropItem { slot_index, quantity } => ClientMessage::DropItem { slot_index: *slot_index, quantity: *quantity },
             InputCommand::SwapSlots { from_slot, to_slot } => ClientMessage::SwapSlots { from_slot: *from_slot, to_slot: *to_slot },
+            // Shop commands
+            InputCommand::ShopBuy { npc_id, item_id, quantity } => ClientMessage::ShopBuy { npc_id: npc_id.clone(), item_id: item_id.clone(), quantity: *quantity },
+            InputCommand::ShopSell { npc_id, item_id, quantity } => ClientMessage::ShopSell { npc_id: npc_id.clone(), item_id: item_id.clone(), quantity: *quantity },
         };
         network.send(&msg);
     }

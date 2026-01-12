@@ -11,6 +11,7 @@ use crate::item::{self, GroundItem, Inventory, GOLD_ITEM_ID};
 use crate::npc::{Npc, NpcType, NpcUpdate};
 use crate::protocol::{ServerMessage, QuestObjectiveData};
 use crate::quest::{QuestRegistry, QuestRunner, PlayerQuestState, QuestEvent};
+use crate::shop::{ShopRegistry, ShopDefinition, ShopStockItem};
 use crate::world::World;
 
 // ============================================================================
@@ -355,6 +356,10 @@ pub struct GameRoom {
     crafting_registry: Arc<crate::crafting::CraftingRegistry>,
     /// Item definition registry
     item_registry: Arc<ItemRegistry>,
+    /// Shop registry for merchant NPCs
+    shop_registry: RwLock<ShopRegistry>,
+    /// Last time shops were restocked
+    last_shop_restock: RwLock<std::time::Instant>,
     /// Track which chunk each player is in for streaming updates
     player_chunks: RwLock<HashMap<String, ChunkCoord>>,
     tick: RwLock<u64>,
@@ -413,6 +418,13 @@ impl GameRoom {
 
         tracing::info!("Spawned {} NPCs from chunk entity_spawns", npcs.len());
 
+        // Load shop registry
+        let mut shop_registry = ShopRegistry::new();
+        if let Err(e) = shop_registry.load_from_directory(std::path::Path::new("data/shops")) {
+            tracing::error!("Failed to load shop registry: {}", e);
+        }
+        tracing::info!("Loaded {} shop definitions", shop_registry.len());
+
         Self {
             id: Uuid::new_v4().to_string(),
             name: name.to_string(),
@@ -426,6 +438,8 @@ impl GameRoom {
             player_quest_states: RwLock::new(HashMap::new()),
             crafting_registry,
             item_registry,
+            shop_registry: RwLock::new(shop_registry),
+            last_shop_restock: RwLock::new(std::time::Instant::now()),
             player_chunks: RwLock::new(HashMap::new()),
             tick: RwLock::new(0),
             broadcast_tx: tx,
@@ -1675,6 +1689,51 @@ impl GameRoom {
 
         if is_merchant && (quests.is_empty() || !is_quest_giver) {
             tracing::info!("Player {} opening shop with NPC {} ({})", player_id, npc_id, entity_type);
+
+            // Get merchant config to load shop data
+            if let Some(proto) = prototype {
+                if let Some(merchant_config) = &proto.merchant {
+                    // Get shop definition from registry
+                    let shop_registry = self.shop_registry.read().await;
+                    if let Some(shop_def) = shop_registry.get(&merchant_config.shop_id) {
+                        // Build shop data with current prices
+                        let stock = shop_def.stock.iter().map(|item| {
+                            let base_price = self.item_registry
+                                .get(&item.item_id)
+                                .map(|def| def.base_price)
+                                .unwrap_or(10);
+                            let price = (base_price as f32 * merchant_config.sell_multiplier).max(1.0) as i32;
+
+                            crate::protocol::ShopStockItemData {
+                                item_id: item.item_id.clone(),
+                                quantity: item.current_quantity,
+                                price,
+                            }
+                        }).collect();
+
+                        let shop_data = crate::protocol::ShopData {
+                            shop_id: shop_def.id.clone(),
+                            display_name: shop_def.display_name.clone(),
+                            buy_multiplier: merchant_config.buy_multiplier,
+                            sell_multiplier: merchant_config.sell_multiplier,
+                            stock,
+                        };
+
+                        drop(shop_registry);
+
+                        let msg = ServerMessage::ShopData {
+                            npc_id: npc_id.to_string(),
+                            shop: shop_data,
+                        };
+                        self.send_to_player(player_id, msg).await;
+                        return;
+                    } else {
+                        tracing::warn!("Shop '{}' not found for merchant NPC {}", merchant_config.shop_id, npc_id);
+                    }
+                }
+            }
+
+            // Fallback: send empty ShopOpen if shop data couldn't be loaded
             let msg = ServerMessage::ShopOpen {
                 npc_id: npc_id.to_string(),
             };
@@ -2181,6 +2240,335 @@ impl GameRoom {
             },
         )
         .await;
+    }
+
+    /// Handle shop buy transaction
+    pub async fn handle_shop_buy(&self, player_id: &str, npc_id: &str, item_id: &str, quantity: i32) {
+        // Validate quantity
+        if quantity <= 0 {
+            self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Invalid quantity")).await;
+            return;
+        }
+
+        // Get player position and gold
+        let (player_x, player_y, player_gold) = {
+            let players = self.players.read().await;
+            match players.get(player_id) {
+                Some(p) if p.active && !p.is_dead => (p.x, p.y, p.inventory.gold),
+                _ => return,
+            }
+        };
+
+        // Get NPC position and prototype ID
+        let npc_info = {
+            let npcs = self.npcs.read().await;
+            npcs.get(npc_id).map(|npc| {
+                let dx = (npc.x - player_x) as f32;
+                let dy = (npc.y - player_y) as f32;
+                let distance = (dx * dx + dy * dy).sqrt();
+                (npc.prototype_id.clone(), distance, npc.is_alive())
+            })
+        };
+
+        let (prototype_id, distance, is_alive) = match npc_info {
+            Some(info) => info,
+            None => {
+                self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("NPC not found")).await;
+                return;
+            }
+        };
+
+        // Check distance (must be within 2.5 tiles)
+        if distance > 2.5 || !is_alive {
+            self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Too far from merchant")).await;
+            return;
+        }
+
+        // Get prototype and merchant config
+        let prototype_id = prototype_id.unwrap_or_else(|| "unknown".to_string());
+        let merchant_config = match self.entity_registry.get(&prototype_id) {
+            Some(proto) => match &proto.merchant {
+                Some(config) => config.clone(),
+                None => {
+                    self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Not a merchant")).await;
+                    return;
+                }
+            },
+            None => {
+                self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Invalid merchant")).await;
+                return;
+            }
+        };
+
+        // Get shop definition and check stock
+        let mut shop_registry = self.shop_registry.write().await;
+        let shop = match shop_registry.get_mut(&merchant_config.shop_id) {
+            Some(s) => s,
+            None => {
+                drop(shop_registry);
+                self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Shop not found")).await;
+                return;
+            }
+        };
+
+        // Check if item is in stock
+        let stock_item = match shop.get_stock_mut(item_id) {
+            Some(s) => s,
+            None => {
+                drop(shop_registry);
+                self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Item not sold here")).await;
+                return;
+            }
+        };
+
+        // Check stock quantity
+        if stock_item.current_quantity < quantity {
+            drop(shop_registry);
+            self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Insufficient stock")).await;
+            return;
+        }
+
+        // Get item definition for base price
+        let item_def = match self.item_registry.get(item_id) {
+            Some(def) => def.clone(),
+            None => {
+                drop(shop_registry);
+                self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Item not found")).await;
+                return;
+            }
+        };
+
+        // Calculate total cost
+        let base_price = item_def.base_price;
+        let unit_price = (base_price as f32 * merchant_config.sell_multiplier).max(1.0) as i32;
+        let total_cost = unit_price * quantity;
+
+        // Check if player has enough gold
+        if player_gold < total_cost {
+            drop(shop_registry);
+            self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Not enough gold")).await;
+            return;
+        }
+
+        // Check if player has inventory space
+        {
+            let players = self.players.read().await;
+            let player = match players.get(player_id) {
+                Some(p) if p.active && !p.is_dead => p,
+                _ => {
+                    drop(shop_registry);
+                    return;
+                }
+            };
+
+            if !player.inventory.has_space_for(item_id, quantity, &self.item_registry) {
+                drop(shop_registry);
+                self.send_shop_result(player_id, false, "buy", item_id, 0, 0, Some("Inventory full")).await;
+                return;
+            }
+        }
+
+        // All checks passed - process transaction
+        stock_item.current_quantity -= quantity;
+        let new_stock = stock_item.current_quantity;
+        drop(shop_registry);
+
+        // Update player inventory
+        {
+            let mut players = self.players.write().await;
+            if let Some(player) = players.get_mut(player_id) {
+                player.inventory.gold -= total_cost;
+                player.inventory.add_item(item_id, quantity, &self.item_registry);
+
+                let inventory_update = player.inventory.to_update();
+                let gold = player.inventory.gold;
+                drop(players);
+
+                // Send success result
+                self.send_shop_result(player_id, true, "buy", item_id, quantity, -total_cost, None).await;
+
+                // Send inventory update
+                self.send_to_player(
+                    player_id,
+                    ServerMessage::InventoryUpdate {
+                        player_id: player_id.to_string(),
+                        slots: inventory_update,
+                        gold,
+                    },
+                )
+                .await;
+
+                // Broadcast stock update to nearby players
+                self.broadcast_shop_stock_update(npc_id, item_id, new_stock).await;
+
+                tracing::info!(
+                    "Player {} bought {}x{} from {} for {} gold",
+                    player_id, quantity, item_id, npc_id, total_cost
+                );
+            }
+        }
+    }
+
+    /// Send shop result message to player
+    async fn send_shop_result(
+        &self,
+        player_id: &str,
+        success: bool,
+        action: &str,
+        item_id: &str,
+        quantity: i32,
+        gold_change: i32,
+        error: Option<&str>,
+    ) {
+        self.send_to_player(
+            player_id,
+            ServerMessage::ShopResult {
+                success,
+                action: action.to_string(),
+                item_id: item_id.to_string(),
+                quantity,
+                gold_change,
+                error: error.map(|s| s.to_string()),
+            },
+        )
+        .await;
+    }
+
+    /// Broadcast shop stock update to all players
+    async fn broadcast_shop_stock_update(&self, npc_id: &str, item_id: &str, new_quantity: i32) {
+        self.broadcast(ServerMessage::ShopStockUpdate {
+            npc_id: npc_id.to_string(),
+            item_id: item_id.to_string(),
+            new_quantity,
+        })
+        .await;
+    }
+
+    /// Handle shop sell transaction
+    pub async fn handle_shop_sell(&self, player_id: &str, npc_id: &str, item_id: &str, quantity: i32) {
+        // Validate quantity
+        if quantity <= 0 {
+            self.send_shop_result(player_id, false, "sell", item_id, 0, 0, Some("Invalid quantity")).await;
+            return;
+        }
+
+        // Get player position
+        let (player_x, player_y) = {
+            let players = self.players.read().await;
+            match players.get(player_id) {
+                Some(p) if p.active && !p.is_dead => (p.x, p.y),
+                _ => return,
+            }
+        };
+
+        // Get NPC position and prototype ID
+        let npc_info = {
+            let npcs = self.npcs.read().await;
+            npcs.get(npc_id).map(|npc| {
+                let dx = (npc.x - player_x) as f32;
+                let dy = (npc.y - player_y) as f32;
+                let distance = (dx * dx + dy * dy).sqrt();
+                (npc.prototype_id.clone(), distance, npc.is_alive())
+            })
+        };
+
+        let (prototype_id, distance, is_alive) = match npc_info {
+            Some(info) => info,
+            None => {
+                self.send_shop_result(player_id, false, "sell", item_id, 0, 0, Some("NPC not found")).await;
+                return;
+            }
+        };
+
+        // Check distance (must be within 2.5 tiles)
+        if distance > 2.5 || !is_alive {
+            self.send_shop_result(player_id, false, "sell", item_id, 0, 0, Some("Too far from merchant")).await;
+            return;
+        }
+
+        // Get prototype and merchant config
+        let prototype_id = prototype_id.unwrap_or_else(|| "unknown".to_string());
+        let merchant_config = match self.entity_registry.get(&prototype_id) {
+            Some(proto) => match &proto.merchant {
+                Some(config) => config.clone(),
+                None => {
+                    self.send_shop_result(player_id, false, "sell", item_id, 0, 0, Some("Not a merchant")).await;
+                    return;
+                }
+            },
+            None => {
+                self.send_shop_result(player_id, false, "sell", item_id, 0, 0, Some("Invalid merchant")).await;
+                return;
+            }
+        };
+
+        // Get item definition
+        let item_def = match self.item_registry.get(item_id) {
+            Some(def) => def.clone(),
+            None => {
+                self.send_shop_result(player_id, false, "sell", item_id, 0, 0, Some("Item not found")).await;
+                return;
+            }
+        };
+
+        // Check if item is sellable
+        if !item_def.sellable {
+            self.send_shop_result(player_id, false, "sell", item_id, 0, 0, Some("Item cannot be sold")).await;
+            return;
+        }
+
+        // Check if player has the item
+        let has_item = {
+            let players = self.players.read().await;
+            match players.get(player_id) {
+                Some(p) if p.active && !p.is_dead => p.inventory.has_item(item_id, quantity),
+                _ => false,
+            }
+        };
+
+        if !has_item {
+            self.send_shop_result(player_id, false, "sell", item_id, 0, 0, Some("You don't have enough of that item")).await;
+            return;
+        }
+
+        // Calculate sell price
+        let base_price = item_def.base_price;
+        let unit_price = (base_price as f32 * merchant_config.buy_multiplier).max(1.0) as i32;
+        let total_value = unit_price * quantity;
+
+        // Process transaction
+        {
+            let mut players = self.players.write().await;
+            if let Some(player) = players.get_mut(player_id) {
+                // Remove items from inventory
+                player.inventory.remove_item(item_id, quantity);
+                // Add gold
+                player.inventory.gold += total_value;
+
+                let inventory_update = player.inventory.to_update();
+                let gold = player.inventory.gold;
+                drop(players);
+
+                // Send success result
+                self.send_shop_result(player_id, true, "sell", item_id, quantity, total_value, None).await;
+
+                // Send inventory update
+                self.send_to_player(
+                    player_id,
+                    ServerMessage::InventoryUpdate {
+                        player_id: player_id.to_string(),
+                        slots: inventory_update,
+                        gold,
+                    },
+                )
+                .await;
+
+                tracing::info!(
+                    "Player {} sold {}x{} to {} for {} gold",
+                    player_id, quantity, item_id, npc_id, total_value
+                );
+            }
+        }
     }
 
     /// Handle equipping an item from inventory
@@ -2855,6 +3243,16 @@ impl GameRoom {
             }
         }
 
+        // Check for shop restocks (every 60 seconds)
+        {
+            let last_restock = *self.last_shop_restock.read().await;
+            if last_restock.elapsed().as_secs() >= 60 {
+                self.restock_shops().await;
+                let mut last = self.last_shop_restock.write().await;
+                *last = std::time::Instant::now();
+            }
+        }
+
         // Broadcast state sync (always include NPCs even if no players)
         let tick = *self.tick.read().await;
         self.broadcast(ServerMessage::StateSync {
@@ -2863,6 +3261,61 @@ impl GameRoom {
             npcs: npc_updates,
         })
         .await;
+    }
+
+    /// Restock all shops that have restock intervals
+    async fn restock_shops(&self) {
+        let mut shop_registry = self.shop_registry.write().await;
+        let npcs = self.npcs.read().await;
+
+        // Collect shops that need restocking by checking NPCs with merchant configs
+        let mut restocked_shops = Vec::new();
+
+        for proto in self.entity_registry.all() {
+            if let Some(merchant_config) = &proto.merchant {
+                // Check if this merchant has a restock interval
+                if merchant_config.restock_interval_minutes.is_some() {
+                    // Get and restock the shop
+                    if let Some(shop) = shop_registry.get_mut(&merchant_config.shop_id) {
+                        shop.restock();
+
+                        // Find all NPCs of this type to broadcast stock updates
+                        let npc_ids: Vec<String> = npcs
+                            .iter()
+                            .filter(|(_, npc)| {
+                                npc.prototype_id.as_ref() == Some(&proto.id)
+                            })
+                            .map(|(npc_id, _)| npc_id.clone())
+                            .collect();
+
+                        // Collect stock updates for broadcasting
+                        for npc_id in npc_ids {
+                            for stock_item in &shop.stock {
+                                restocked_shops.push((
+                                    npc_id.clone(),
+                                    stock_item.item_id.clone(),
+                                    stock_item.current_quantity,
+                                ));
+                            }
+                        }
+
+                        tracing::info!(
+                            "Restocked shop '{}' for entity type '{}'",
+                            merchant_config.shop_id,
+                            proto.id
+                        );
+                    }
+                }
+            }
+        }
+
+        drop(shop_registry);
+        drop(npcs);
+
+        // Broadcast all stock updates
+        for (npc_id, item_id, quantity) in restocked_shops {
+            self.broadcast_shop_stock_update(&npc_id, &item_id, quantity).await;
+        }
     }
 
     /// Handle chunk request from client

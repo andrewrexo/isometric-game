@@ -6,6 +6,7 @@ use super::npc::Npc;
 use super::tilemap::Tilemap;
 use super::chunk::ChunkManager;
 use super::pathfinding::PathState;
+use super::shop::{ShopData, ShopSubTab};
 use crate::ui::UiElementId;
 
 pub struct Camera {
@@ -159,6 +160,16 @@ pub struct UiState {
     pub crafting_selected_category: usize,
     pub crafting_selected_recipe: usize,
     pub crafting_npc_id: Option<String>,
+    // Shop UI state
+    pub shop_data: Option<ShopData>,
+    pub shop_npc_id: Option<String>,
+    pub shop_sub_tab: ShopSubTab,
+    pub shop_main_tab: usize, // 0=Recipes, 1=Shop
+    pub shop_selected_buy_index: usize,
+    pub shop_selected_sell_index: usize,
+    pub shop_transaction_quantity: i32,
+    pub shop_buy_scroll: f32,  // Scroll offset for buy list (pixels)
+    pub shop_sell_scroll: f32, // Scroll offset for sell list (pixels)
     // Escape menu state
     pub escape_menu_open: bool,
     // Mouse hover state for UI elements
@@ -192,6 +203,15 @@ impl Default for UiState {
             crafting_selected_category: 0,
             crafting_selected_recipe: 0,
             crafting_npc_id: None,
+            shop_data: None,
+            shop_npc_id: None,
+            shop_sub_tab: ShopSubTab::Buy,
+            shop_main_tab: 0,
+            shop_selected_buy_index: 0,
+            shop_selected_sell_index: 0,
+            shop_transaction_quantity: 1,
+            shop_buy_scroll: 0.0,
+            shop_sell_scroll: 0.0,
             escape_menu_open: false,
             hovered_element: None,
             context_menu: None,

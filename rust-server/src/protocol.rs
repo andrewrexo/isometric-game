@@ -75,6 +75,14 @@ pub enum ClientMessage {
     /// Swap two inventory slots
     #[serde(rename = "swapSlots")]
     SwapSlots { from_slot: u8, to_slot: u8 },
+
+    /// Buy item from shop
+    #[serde(rename = "shopBuy")]
+    ShopBuy { npc_id: String, item_id: String, quantity: i32 },
+
+    /// Sell item to shop
+    #[serde(rename = "shopSell")]
+    ShopSell { npc_id: String, item_id: String, quantity: i32 },
 }
 
 // ============================================================================
@@ -247,6 +255,26 @@ pub enum ServerMessage {
     ShopOpen {
         npc_id: String,
     },
+    /// Send shop data to client
+    ShopData {
+        npc_id: String,
+        shop: ShopData,
+    },
+    /// Result of a shop buy/sell action
+    ShopResult {
+        success: bool,
+        action: String,
+        item_id: String,
+        quantity: i32,
+        gold_change: i32,
+        error: Option<String>,
+    },
+    /// Broadcast shop stock update to nearby players
+    ShopStockUpdate {
+        npc_id: String,
+        item_id: String,
+        new_quantity: i32,
+    },
     /// Broadcast equipment change to all players
     EquipmentUpdate {
         player_id: String,
@@ -361,6 +389,24 @@ pub struct ClientRecipeDef {
     pub results: Vec<RecipeResult>,
 }
 
+/// Shop data for client synchronization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShopData {
+    pub shop_id: String,
+    pub display_name: String,
+    pub buy_multiplier: f32,
+    pub sell_multiplier: f32,
+    pub stock: Vec<ShopStockItemData>,
+}
+
+/// Shop stock item data for client synchronization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShopStockItemData {
+    pub item_id: String,
+    pub quantity: i32,
+    pub price: i32,
+}
+
 impl ServerMessage {
     pub fn msg_type(&self) -> &'static str {
         match self {
@@ -396,6 +442,9 @@ impl ServerMessage {
             ServerMessage::RecipeDefinitions { .. } => "recipeDefinitions",
             ServerMessage::CraftResult { .. } => "craftResult",
             ServerMessage::ShopOpen { .. } => "shopOpen",
+            ServerMessage::ShopData { .. } => "shopData",
+            ServerMessage::ShopResult { .. } => "shopResult",
+            ServerMessage::ShopStockUpdate { .. } => "shopStockUpdate",
             ServerMessage::EquipmentUpdate { .. } => "equipmentUpdate",
             ServerMessage::EquipResult { .. } => "equipResult",
             ServerMessage::Announcement { .. } => "announcement",
@@ -1089,6 +1138,51 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("npc_id".into()), Value::String(npc_id.clone().into())));
             Value::Map(map)
         }
+        ServerMessage::ShopData { npc_id, shop } => {
+            let mut map = Vec::new();
+            map.push((Value::String("npcId".into()), Value::String(npc_id.clone().into())));
+
+            let mut shop_map = Vec::new();
+            shop_map.push((Value::String("shopId".into()), Value::String(shop.shop_id.clone().into())));
+            shop_map.push((Value::String("displayName".into()), Value::String(shop.display_name.clone().into())));
+            shop_map.push((Value::String("buyMultiplier".into()), Value::F64(shop.buy_multiplier as f64)));
+            shop_map.push((Value::String("sellMultiplier".into()), Value::F64(shop.sell_multiplier as f64)));
+
+            let stock_values: Vec<Value> = shop.stock.iter().map(|s| {
+                let mut smap = Vec::new();
+                smap.push((Value::String("itemId".into()), Value::String(s.item_id.clone().into())));
+                smap.push((Value::String("quantity".into()), Value::Integer((s.quantity as i64).into())));
+                smap.push((Value::String("price".into()), Value::Integer((s.price as i64).into())));
+                Value::Map(smap)
+            }).collect();
+            shop_map.push((Value::String("stock".into()), Value::Array(stock_values)));
+
+            map.push((Value::String("shop".into()), Value::Map(shop_map)));
+            Value::Map(map)
+        }
+        ServerMessage::ShopResult { success, action, item_id, quantity, gold_change, error } => {
+            let mut map = Vec::new();
+            map.push((Value::String("success".into()), Value::Boolean(*success)));
+            map.push((Value::String("action".into()), Value::String(action.clone().into())));
+            map.push((Value::String("itemId".into()), Value::String(item_id.clone().into())));
+            map.push((Value::String("quantity".into()), Value::Integer((*quantity as i64).into())));
+            map.push((Value::String("goldChange".into()), Value::Integer((*gold_change as i64).into())));
+            map.push((
+                Value::String("error".into()),
+                match error {
+                    Some(e) => Value::String(e.clone().into()),
+                    None => Value::Nil,
+                },
+            ));
+            Value::Map(map)
+        }
+        ServerMessage::ShopStockUpdate { npc_id, item_id, new_quantity } => {
+            let mut map = Vec::new();
+            map.push((Value::String("npcId".into()), Value::String(npc_id.clone().into())));
+            map.push((Value::String("itemId".into()), Value::String(item_id.clone().into())));
+            map.push((Value::String("newQuantity".into()), Value::Integer((*new_quantity as i64).into())));
+            Value::Map(map)
+        }
         ServerMessage::EquipmentUpdate { player_id, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace, equipped_belt } => {
             let mut map = Vec::new();
             map.push((Value::String("player_id".into()), Value::String(player_id.clone().into())));
@@ -1335,6 +1429,18 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
                 .and_then(|(_, v)| v.as_u64().map(|u| u as u8))
                 .unwrap_or(0);
             Ok(ClientMessage::SwapSlots { from_slot, to_slot })
+        }
+        "shopBuy" => {
+            let npc_id = extract_string(msg_data, "npcId").unwrap_or_default();
+            let item_id = extract_string(msg_data, "itemId").unwrap_or_default();
+            let quantity = extract_i32(msg_data, "quantity").unwrap_or(0);
+            Ok(ClientMessage::ShopBuy { npc_id, item_id, quantity })
+        }
+        "shopSell" => {
+            let npc_id = extract_string(msg_data, "npcId").unwrap_or_default();
+            let item_id = extract_string(msg_data, "itemId").unwrap_or_default();
+            let quantity = extract_i32(msg_data, "quantity").unwrap_or(0);
+            Ok(ClientMessage::ShopSell { npc_id, item_id, quantity })
         }
         _ => Err(format!("Unknown message type: {}", msg_type)),
     }

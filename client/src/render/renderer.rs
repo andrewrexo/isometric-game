@@ -58,6 +58,33 @@ const TEXT_DIM: Color = Color::new(0.502, 0.502, 0.541, 1.0);           // rgba(
 // Layout constant for draw_panel_frame helper
 const FRAME_THICKNESS: f32 = 4.0;
 
+// ============================================================================
+// Health Bar Colors - Ornate Medieval Style
+// ============================================================================
+
+// Health bar frame (bronze-tinted dark metal)
+const HEALTHBAR_FRAME_DARK: Color = Color::new(0.18, 0.14, 0.10, 1.0);   // Dark bronze outline
+const HEALTHBAR_FRAME_MID: Color = Color::new(0.35, 0.27, 0.18, 1.0);    // Mid bronze
+const HEALTHBAR_FRAME_LIGHT: Color = Color::new(0.55, 0.43, 0.28, 1.0);  // Light bronze
+const HEALTHBAR_FRAME_ACCENT: Color = Color::new(0.72, 0.58, 0.38, 1.0); // Gold highlight
+
+// Health bar background (recessed dark)
+const HEALTHBAR_BG_OUTER: Color = Color::new(0.04, 0.04, 0.05, 1.0);     // Outer shadow
+const HEALTHBAR_BG_INNER: Color = Color::new(0.08, 0.07, 0.09, 1.0);     // Inner dark
+
+// Health colors - rich jewel tones (dark/mid/light for gradient effect)
+const HEALTH_GREEN_DARK: Color = Color::new(0.12, 0.45, 0.22, 1.0);      // Emerald base
+const HEALTH_GREEN_MID: Color = Color::new(0.20, 0.62, 0.32, 1.0);       // Emerald bright
+const HEALTH_GREEN_LIGHT: Color = Color::new(0.35, 0.78, 0.48, 1.0);     // Emerald highlight
+
+const HEALTH_YELLOW_DARK: Color = Color::new(0.65, 0.45, 0.08, 1.0);     // Amber base
+const HEALTH_YELLOW_MID: Color = Color::new(0.85, 0.62, 0.12, 1.0);      // Amber bright
+const HEALTH_YELLOW_LIGHT: Color = Color::new(0.95, 0.78, 0.25, 1.0);    // Amber highlight
+
+const HEALTH_RED_DARK: Color = Color::new(0.55, 0.12, 0.12, 1.0);        // Ruby base
+const HEALTH_RED_MID: Color = Color::new(0.75, 0.18, 0.18, 1.0);         // Ruby bright
+const HEALTH_RED_LIGHT: Color = Color::new(0.90, 0.35, 0.35, 1.0);       // Ruby highlight
+
 pub struct Renderer {
     player_color: Color,
     local_player_color: Color,
@@ -888,7 +915,7 @@ impl Renderer {
     }
 
     /// Draw corner indicators for the hovered tile
-    fn render_tile_hover(&self, tile_x: i32, tile_y: i32, camera: &Camera) {
+    pub(crate) fn render_tile_hover(&self, tile_x: i32, tile_y: i32, camera: &Camera) {
         // Get the center of the tile in screen space
         let (center_x, center_y) = world_to_screen(tile_x as f32 + 0.5, tile_y as f32 + 0.5, camera);
         let center_y = center_y - TILE_HEIGHT * camera.zoom / 2.0;
@@ -1072,26 +1099,15 @@ impl Renderer {
             );
         }
 
-        // Health bar (if not full HP)
+        // Health bar (if not full HP) - ornate medieval style
         if player.hp < player.max_hp {
-            let bar_width = 30.0;
-            let bar_height = 4.0;
+            let bar_width = 32.0;
+            let bar_height = 6.0;
             let bar_x = screen_x - bar_width / 2.0;
-            let bar_y = screen_y - name_y_offset - 13.0;
+            let bar_y = screen_y - name_y_offset - 16.0;
+            let hp_ratio = player.hp as f32 / player.max_hp.max(1) as f32;
 
-            // Background
-            draw_rectangle(bar_x, bar_y, bar_width, bar_height, DARKGRAY);
-
-            // Health
-            let hp_ratio = player.hp as f32 / player.max_hp as f32;
-            let hp_color = if hp_ratio > 0.5 {
-                GREEN
-            } else if hp_ratio > 0.25 {
-                YELLOW
-            } else {
-                RED
-            };
-            draw_rectangle(bar_x, bar_y, bar_width * hp_ratio, bar_height, hp_color);
+            self.draw_entity_health_bar(bar_x, bar_y, bar_width, bar_height, hp_ratio, 1.0);
         }
     }
 
@@ -1158,26 +1174,15 @@ impl Renderer {
             name_color,
         );
 
-        // Health bar (only show for hostile NPCs or when damaged)
+        // Health bar (only show for hostile NPCs or when damaged) - ornate medieval style
         if npc.is_hostile() || npc.hp < npc.max_hp {
-            let bar_width = 28.0 * zoom;
-            let bar_height = 3.0 * zoom;
+            let bar_width = 30.0 * zoom;
+            let bar_height = 5.0 * zoom;
             let bar_x = screen_x - bar_width / 2.0;
-            let bar_y = screen_y - height_offset - radius - 18.0 * zoom;
+            let bar_y = screen_y - height_offset - radius - 20.0 * zoom;
+            let hp_ratio = npc.hp as f32 / npc.max_hp.max(1) as f32;
 
-            // Background
-            draw_rectangle(bar_x, bar_y, bar_width, bar_height, DARKGRAY);
-
-            // Health
-            let hp_ratio = npc.hp as f32 / npc.max_hp as f32;
-            let hp_color = if hp_ratio > 0.5 {
-                GREEN
-            } else if hp_ratio > 0.25 {
-                YELLOW
-            } else {
-                RED
-            };
-            draw_rectangle(bar_x, bar_y, bar_width * hp_ratio, bar_height, hp_color);
+            self.draw_entity_health_bar(bar_x, bar_y, bar_width, bar_height, hp_ratio, zoom);
         }
     }
 
@@ -1731,6 +1736,70 @@ impl Renderer {
         // Bottom-right corner
         draw_rectangle(x + w - size, y + h - 2.0, size, 2.0, FRAME_ACCENT);
         draw_rectangle(x + w - 2.0, y + h - size, 2.0, size, FRAME_ACCENT);
+    }
+
+    /// Draw a slim medieval-style health bar above entities
+    ///
+    /// Creates a polished health bar with:
+    /// - Thin 1px dark border with rounded corners
+    /// - Jewel-toned health fill with gradient effect
+    fn draw_entity_health_bar(&self, x: f32, y: f32, width: f32, height: f32, hp_ratio: f32, _scale: f32) {
+        // Pixel-align coordinates for crisp rendering
+        let x = x.floor();
+        let y = y.floor();
+        let width = width.floor();
+        let height = height.floor();
+
+        // Border color - deep purple-gray for contrast
+        let border_color = Color::new(0.18, 0.16, 0.22, 1.0); // rgba(46, 41, 56, 255)
+
+        // === 1px BORDER with rounded corners ===
+        // Top edge (inset 1px from corners)
+        draw_rectangle(x, y - 1.0, width, 1.0, border_color);
+        // Bottom edge (inset 1px from corners)
+        draw_rectangle(x, y + height, width, 1.0, border_color);
+        // Left edge (inset 1px from corners)
+        draw_rectangle(x - 1.0, y, 1.0, height, border_color);
+        // Right edge (inset 1px from corners)
+        draw_rectangle(x + width, y, 1.0, height, border_color);
+
+        // === INNER BACKGROUND (Dark recessed look) ===
+        draw_rectangle(x, y, width, height, HEALTHBAR_BG_OUTER);
+
+        // === HEALTH FILL ===
+        if hp_ratio > 0.0 {
+            // Select colors based on health level (jewel tones)
+            let (color_dark, color_mid, color_light) = if hp_ratio > 0.5 {
+                (HEALTH_GREEN_DARK, HEALTH_GREEN_MID, HEALTH_GREEN_LIGHT)
+            } else if hp_ratio > 0.25 {
+                (HEALTH_YELLOW_DARK, HEALTH_YELLOW_MID, HEALTH_YELLOW_LIGHT)
+            } else {
+                (HEALTH_RED_DARK, HEALTH_RED_MID, HEALTH_RED_LIGHT)
+            };
+
+            let fill_width = (width * hp_ratio).max(1.0).floor();
+
+            // Base fill (darker tone)
+            draw_rectangle(x, y, fill_width, height, color_dark);
+
+            // Mid gradient (main color)
+            if height > 2.0 {
+                draw_rectangle(x, y + 1.0, fill_width, height - 2.0, color_mid);
+            }
+
+            // Top highlight (bright shine effect)
+            if height > 3.0 {
+                let highlight_height = (height * 0.35).max(1.0).floor();
+                draw_rectangle(x, y + 1.0, fill_width, highlight_height, color_light);
+            }
+
+            // Specular shine (small white gleam)
+            if fill_width > 4.0 && height > 2.0 {
+                let shine_width = (fill_width * 0.3).min(6.0).max(2.0).floor();
+                let shine_color = Color::new(1.0, 1.0, 1.0, 0.4);
+                draw_rectangle(x + 1.0, y + 1.0, shine_width, 1.0, shine_color);
+            }
+        }
     }
 
     /// Draw an inventory slot with bevel effect

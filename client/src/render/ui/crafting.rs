@@ -5,6 +5,7 @@ use crate::game::{GameState, RecipeDefinition};
 use crate::ui::{UiElementId, UiLayout};
 use super::super::Renderer;
 use super::common::*;
+use super::shop;
 
 impl Renderer {
     pub(crate) fn render_crafting(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
@@ -37,12 +38,92 @@ impl Renderer {
             draw_rectangle(dot_x - 1.5, header_y + HEADER_HEIGHT - 1.5, 3.0, 3.0, FRAME_ACCENT);
         }
 
-        self.draw_text_sharp("CRAFTING", header_x + 12.0, header_y + 26.0, 16.0, TEXT_TITLE);
+        // Main tabs: Recipes / Shop
+        let main_tab_y = header_y + 6.0;
+        let main_tab_height = 24.0;
+        let main_tab_width = 90.0;
+        let mut main_tab_x = header_x + 12.0;
+
+        // Recipes Tab
+        let is_recipes_selected = state.ui_state.shop_main_tab == 0;
+        let recipes_bounds = Rect::new(main_tab_x, main_tab_y, main_tab_width, main_tab_height);
+        layout.add(UiElementId::MainTab(0), recipes_bounds);
+
+        let is_recipes_hovered = matches!(hovered, Some(UiElementId::MainTab(0)));
+        let (recipes_bg, recipes_border) = if is_recipes_selected {
+            (SLOT_HOVER_BG, SLOT_SELECTED_BORDER)
+        } else if is_recipes_hovered {
+            (Color::new(0.141, 0.141, 0.188, 1.0), SLOT_HOVER_BORDER)
+        } else {
+            (SLOT_BG_EMPTY, SLOT_BORDER)
+        };
+
+        draw_rectangle(main_tab_x, main_tab_y, main_tab_width, main_tab_height, recipes_border);
+        draw_rectangle(main_tab_x + 1.0, main_tab_y + 1.0, main_tab_width - 2.0, main_tab_height - 2.0, recipes_bg);
+
+        let recipes_text_color = if is_recipes_selected { TEXT_TITLE } else if is_recipes_hovered { TEXT_NORMAL } else { TEXT_DIM };
+        self.draw_text_sharp("Recipes", main_tab_x + 18.0, main_tab_y + 17.0, 16.0, recipes_text_color);
+
+        main_tab_x += main_tab_width + 4.0;
+
+        // Shop Tab
+        let is_shop_selected = state.ui_state.shop_main_tab == 1;
+        let shop_bounds = Rect::new(main_tab_x, main_tab_y, main_tab_width, main_tab_height);
+        layout.add(UiElementId::MainTab(1), shop_bounds);
+
+        let is_shop_hovered = matches!(hovered, Some(UiElementId::MainTab(1)));
+        let (shop_bg, shop_border) = if is_shop_selected {
+            (SLOT_HOVER_BG, SLOT_SELECTED_BORDER)
+        } else if is_shop_hovered {
+            (Color::new(0.141, 0.141, 0.188, 1.0), SLOT_HOVER_BORDER)
+        } else {
+            (SLOT_BG_EMPTY, SLOT_BORDER)
+        };
+
+        draw_rectangle(main_tab_x, main_tab_y, main_tab_width, main_tab_height, shop_border);
+        draw_rectangle(main_tab_x + 1.0, main_tab_y + 1.0, main_tab_width - 2.0, main_tab_height - 2.0, shop_bg);
+
+        let shop_text_color = if is_shop_selected { TEXT_TITLE } else if is_shop_hovered { TEXT_NORMAL } else { TEXT_DIM };
+        self.draw_text_sharp("Shop", main_tab_x + 24.0, main_tab_y + 17.0, 16.0, shop_text_color);
+
         self.draw_text_sharp("[E] Close", header_x + header_w - 80.0, header_y + 26.0, 16.0, TEXT_DIM);
 
         // ===== CONTENT AREA =====
         let content_y = panel_y + FRAME_THICKNESS + HEADER_HEIGHT + 8.0;
         let content_height = panel_height - FRAME_THICKNESS * 2.0 - HEADER_HEIGHT - FOOTER_HEIGHT - 16.0;
+        let content_width = panel_width - FRAME_THICKNESS * 2.0;
+
+        // Render appropriate tab content
+        match state.ui_state.shop_main_tab {
+            0 => self.render_recipes_tab(state, hovered, layout, panel_x, content_y, content_width, content_height),
+            1 => self.render_shop_tab(state, hovered, layout, panel_x, content_y, content_width, content_height),
+            _ => {}
+        }
+
+        // ===== FOOTER SECTION =====
+        let footer_x = panel_x + FRAME_THICKNESS;
+        let footer_y = panel_y + panel_height - FRAME_THICKNESS - FOOTER_HEIGHT;
+        let footer_w = panel_width - FRAME_THICKNESS * 2.0;
+
+        draw_rectangle(footer_x, footer_y, footer_w, FOOTER_HEIGHT, FOOTER_BG);
+        draw_line(footer_x + 10.0, footer_y, footer_x + footer_w - 10.0, footer_y, 1.0, HEADER_BORDER);
+
+        if state.ui_state.shop_main_tab == 0 {
+            // Recipes tab controls
+            self.draw_text_sharp("[Q/E] Tab", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            self.draw_text_sharp("[A/D] Category", footer_x + 100.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            self.draw_text_sharp("[W/S] Select", footer_x + 230.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            self.draw_text_sharp("[C] Craft", footer_x + 340.0, footer_y + 20.0, 16.0, TEXT_DIM);
+        } else {
+            // Shop tab controls
+            self.draw_text_sharp("[Q/E] Tab", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            self.draw_text_sharp("[Tab] Buy/Sell", footer_x + 100.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            self.draw_text_sharp("[W/S] Select", footer_x + 230.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            self.draw_text_sharp("[+/-] Qty", footer_x + 340.0, footer_y + 20.0, 16.0, TEXT_DIM);
+        }
+    }
+
+    fn render_recipes_tab(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout, panel_x: f32, content_y: f32, content_width: f32, content_height: f32) {
 
         let categories: Vec<&str> = {
             let mut cats: Vec<&str> = state.recipe_definitions.iter()
@@ -54,7 +135,7 @@ impl Renderer {
         };
 
         if categories.is_empty() {
-            self.draw_text_sharp("No recipes available", panel_x + 20.0, content_y + 40.0, 16.0, TEXT_DIM);
+            self.draw_text_sharp("No recipes available", panel_x + FRAME_THICKNESS + 20.0, content_y + 40.0, 16.0, TEXT_DIM);
             return;
         }
 
@@ -155,7 +236,7 @@ impl Renderer {
 
         // ===== DETAIL PANEL (right side) =====
         let detail_x = list_x + list_width + 12.0;
-        let detail_width = panel_width - list_width - FRAME_THICKNESS * 2.0 - 32.0;
+        let detail_width = content_width - list_width - 32.0;
         let detail_y = list_y;
         let detail_height = list_height;
 
@@ -272,18 +353,5 @@ impl Renderer {
         } else {
             self.draw_text_sharp("Select a recipe", detail_x + 12.0, detail_y + 24.0, 16.0, TEXT_DIM);
         }
-
-        // ===== FOOTER SECTION =====
-        let footer_x = panel_x + FRAME_THICKNESS;
-        let footer_y = panel_y + panel_height - FRAME_THICKNESS - FOOTER_HEIGHT;
-        let footer_w = panel_width - FRAME_THICKNESS * 2.0;
-
-        draw_rectangle(footer_x, footer_y, footer_w, FOOTER_HEIGHT, FOOTER_BG);
-        draw_line(footer_x + 10.0, footer_y, footer_x + footer_w - 10.0, footer_y, 1.0, HEADER_BORDER);
-
-        self.draw_text_sharp("[A/D] Category", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
-        self.draw_text_sharp("[W/S] Select", footer_x + 130.0, footer_y + 20.0, 16.0, TEXT_DIM);
-        self.draw_text_sharp("[C] Craft", footer_x + 250.0, footer_y + 20.0, 16.0, TEXT_DIM);
-        self.draw_text_sharp("[E] Close", footer_x + footer_w - 80.0, footer_y + 20.0, 16.0, TEXT_DIM);
     }
 }

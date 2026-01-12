@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem};
 use crate::game::npc::{Npc, NpcType, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -678,6 +678,14 @@ impl NetworkClient {
                     if state.selected_entity_id.as_ref() == Some(&npc_id) {
                         state.selected_entity_id = None;
                     }
+
+                    // Close shop if this NPC was the merchant
+                    if let Some(shop_npc_id) = &state.ui_state.shop_npc_id {
+                        if shop_npc_id == &npc_id {
+                            state.ui_state.crafting_open = false;
+                            state.ui_state.shop_data = None;
+                        }
+                    }
                 }
             }
 
@@ -1071,6 +1079,8 @@ impl NetworkClient {
                             let category = extract_string(item_value, "category").unwrap_or_else(|| "material".to_string());
                             let max_stack = extract_i32(item_value, "maxStack").unwrap_or(99);
                             let description = extract_string(item_value, "description").unwrap_or_default();
+                            let base_price = extract_i32(item_value, "basePrice").unwrap_or(0);
+                            let sellable = extract_bool(item_value, "sellable").unwrap_or(false);
 
                             // Parse equipment stats if present
                             let equipment = extract_string(item_value, "equipment_slot")
@@ -1090,6 +1100,8 @@ impl NetworkClient {
                                 category,
                                 max_stack,
                                 description,
+                                base_price,
+                                sellable,
                                 equipment,
                             });
                         }
@@ -1241,6 +1253,89 @@ impl NetworkClient {
                         text,
                         time: macroquad::time::get_time(),
                     });
+                }
+            }
+
+            // ========== Shop System Messages ==========
+
+            "shopData" => {
+                if let Some(value) = data {
+                    // Extract npcId from top level (camelCase from server)
+                    let npc_id = extract_string(value, "npcId").unwrap_or_default();
+
+                    // Extract shop data from nested "shop" field
+                    let shop_value = value.as_map()
+                        .and_then(|m| {
+                            m.iter()
+                                .find(|(k, _)| k.as_str() == Some("shop"))
+                                .map(|(_, v)| v)
+                        })
+                        .unwrap_or(value);
+
+                    let shop_id = extract_string(shop_value, "shopId").unwrap_or_default();
+                    let display_name = extract_string(shop_value, "displayName").unwrap_or_else(|| "Shop".to_string());
+                    let buy_multiplier = extract_f32(shop_value, "buyMultiplier").unwrap_or(0.5);
+                    let sell_multiplier = extract_f32(shop_value, "sellMultiplier").unwrap_or(1.0);
+
+                    let mut stock = Vec::new();
+                    if let Some(stock_arr) = extract_array(shop_value, "stock") {
+                        for item_value in stock_arr {
+                            let item_id = extract_string(item_value, "itemId").unwrap_or_default();
+                            let quantity = extract_i32(item_value, "quantity").unwrap_or(0);
+                            let price = extract_i32(item_value, "price").unwrap_or(0);
+
+                            stock.push(ShopStockItem {
+                                item_id,
+                                quantity,
+                                price,
+                            });
+                        }
+                    }
+
+                    log::info!("Shop data received: {} items from {} (npc: {})", stock.len(), display_name, npc_id);
+                    state.ui_state.shop_npc_id = Some(npc_id);
+                    state.ui_state.shop_data = Some(ShopData {
+                        shop_id,
+                        display_name,
+                        buy_multiplier,
+                        sell_multiplier,
+                        stock,
+                    });
+                    state.ui_state.crafting_open = true; // Open crafting window (which has shop tab)
+                    state.ui_state.shop_main_tab = 1; // Switch to Shop tab
+                }
+            }
+
+            "shopResult" => {
+                if let Some(value) = data {
+                    let success = value.as_map()
+                        .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("success")))
+                        .and_then(|(_, v)| v.as_bool())
+                        .unwrap_or(false);
+                    let error = extract_string(value, "error");
+
+                    if success {
+                        log::info!("Shop transaction successful");
+                        // Inventory update will come separately
+                    } else if let Some(err) = error {
+                        log::warn!("Shop transaction failed: {}", err);
+                        // TODO: Show error notification in UI
+                    }
+                }
+            }
+
+            "shopStockUpdate" => {
+                if let Some(value) = data {
+                    let item_id = extract_string(value, "itemId").unwrap_or_default();
+                    let new_quantity = extract_i32(value, "newQuantity").unwrap_or(0);
+
+                    // Update the stock in the current shop data if it's open
+                    if let Some(shop_data) = &mut state.ui_state.shop_data {
+                        if let Some(item) = shop_data.stock.iter_mut().find(|i| i.item_id == item_id) {
+                            item.quantity = new_quantity;
+                            log::debug!("Shop stock updated: {} now has {} in stock", item_id, new_quantity);
+                        }
+                    }
                 }
             }
 

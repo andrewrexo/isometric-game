@@ -55,6 +55,33 @@ pub const CATEGORY_MATERIAL: Color = Color::new(0.620, 0.620, 0.659, 1.0);   // 
 pub const CATEGORY_QUEST: Color = Color::new(1.0, 0.824, 0.314, 1.0);        // rgba(255, 210, 80, 255)
 
 // ============================================================================
+// Health Bar Colors - Ornate Medieval Style
+// ============================================================================
+
+// Health bar frame (bronze-tinted dark metal)
+pub const HEALTHBAR_FRAME_DARK: Color = Color::new(0.18, 0.14, 0.10, 1.0);   // rgba(46, 36, 26, 255)
+pub const HEALTHBAR_FRAME_MID: Color = Color::new(0.35, 0.27, 0.18, 1.0);    // rgba(89, 69, 46, 255)
+pub const HEALTHBAR_FRAME_LIGHT: Color = Color::new(0.55, 0.43, 0.28, 1.0);  // rgba(140, 110, 72, 255)
+pub const HEALTHBAR_FRAME_ACCENT: Color = Color::new(0.72, 0.58, 0.38, 1.0); // rgba(184, 148, 97, 255) gold highlight
+
+// Health bar background (recessed dark)
+pub const HEALTHBAR_BG_OUTER: Color = Color::new(0.04, 0.04, 0.05, 1.0);     // rgba(10, 10, 13, 255)
+pub const HEALTHBAR_BG_INNER: Color = Color::new(0.08, 0.07, 0.09, 1.0);     // rgba(20, 18, 23, 255)
+
+// Health colors - rich jewel tones
+pub const HEALTH_GREEN_DARK: Color = Color::new(0.12, 0.45, 0.22, 1.0);      // rgba(31, 115, 56, 255) emerald base
+pub const HEALTH_GREEN_MID: Color = Color::new(0.20, 0.62, 0.32, 1.0);       // rgba(51, 158, 82, 255) emerald bright
+pub const HEALTH_GREEN_LIGHT: Color = Color::new(0.35, 0.78, 0.48, 1.0);     // rgba(89, 199, 122, 255) emerald highlight
+
+pub const HEALTH_YELLOW_DARK: Color = Color::new(0.65, 0.45, 0.08, 1.0);     // rgba(166, 115, 20, 255) amber base
+pub const HEALTH_YELLOW_MID: Color = Color::new(0.85, 0.62, 0.12, 1.0);      // rgba(217, 158, 31, 255) amber bright
+pub const HEALTH_YELLOW_LIGHT: Color = Color::new(0.95, 0.78, 0.25, 1.0);    // rgba(242, 199, 64, 255) amber highlight
+
+pub const HEALTH_RED_DARK: Color = Color::new(0.55, 0.12, 0.12, 1.0);        // rgba(140, 31, 31, 255) ruby base
+pub const HEALTH_RED_MID: Color = Color::new(0.75, 0.18, 0.18, 1.0);         // rgba(191, 46, 46, 255) ruby bright
+pub const HEALTH_RED_LIGHT: Color = Color::new(0.90, 0.35, 0.35, 1.0);       // rgba(230, 89, 89, 255) ruby highlight
+
+// ============================================================================
 // Layout Constants
 // ============================================================================
 
