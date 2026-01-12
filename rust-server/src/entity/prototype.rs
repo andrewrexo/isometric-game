@@ -169,7 +169,7 @@ impl Default for ResolvedStats {
             aggro_range: 5,
             chase_range: 8,
             move_cooldown_ms: 500,
-            attack_cooldown_ms: 1000,
+            attack_cooldown_ms: 800,
             respawn_time_ms: 10000,
         }
     }

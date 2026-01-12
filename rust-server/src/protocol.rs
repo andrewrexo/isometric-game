@@ -13,6 +13,9 @@ pub enum ClientMessage {
     #[serde(rename = "move")]
     Move { dx: f32, dy: f32 },
 
+    #[serde(rename = "face")]
+    Face { direction: u8 },
+
     #[serde(rename = "chat")]
     Chat { text: String },
 
@@ -1236,6 +1239,13 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
             let dx = extract_f32(msg_data, "dx").unwrap_or(0.0);
             let dy = extract_f32(msg_data, "dy").unwrap_or(0.0);
             Ok(ClientMessage::Move { dx, dy })
+        }
+        "face" => {
+            let direction = msg_data.as_map()
+                .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("direction")))
+                .and_then(|(_, v)| v.as_u64().map(|u| u as u8))
+                .unwrap_or(0);
+            Ok(ClientMessage::Face { direction })
         }
         "chat" => {
             let text = extract_string(msg_data, "text").unwrap_or_default();

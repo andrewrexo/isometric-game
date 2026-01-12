@@ -181,7 +181,7 @@ impl EntityRegistry {
                 .unwrap_or(500),
             attack_cooldown_ms: raw.stats.attack_cooldown_ms
                 .or_else(|| parent.map(|p| p.stats.attack_cooldown_ms))
-                .unwrap_or(1000),
+                .unwrap_or(800),
             respawn_time_ms: raw.stats.respawn_time_ms
                 .or_else(|| parent.map(|p| p.stats.respawn_time_ms))
                 .unwrap_or(10000),

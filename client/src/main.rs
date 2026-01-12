@@ -299,7 +299,22 @@ fn run_game_frame(
         use network::messages::ClientMessage;
         let msg = match cmd {
             InputCommand::Move { dx, dy } => ClientMessage::Move { dx: *dx, dy: *dy },
-            InputCommand::Face { direction } => ClientMessage::Face { direction: *direction },
+            InputCommand::Face { direction } => {
+                log::info!("[MAIN] Processing Face command: direction={}", direction);
+                // Record when we sent Face to ignore stale server updates
+                game_state.last_face_command_time = get_time();
+                // Immediately update local player direction for responsiveness
+                if let Some(local_id) = &game_state.local_player_id {
+                    if let Some(player) = game_state.players.get_mut(local_id) {
+                        let old_dir = player.direction;
+                        let new_dir = game::Direction::from_u8(*direction);
+                        player.direction = new_dir;
+                        player.animation.direction = new_dir; // Also update animation direction for rendering
+                        log::info!("[MAIN] Updated local player direction: {:?} -> {:?}", old_dir, player.direction);
+                    }
+                }
+                ClientMessage::Face { direction: *direction }
+            },
             InputCommand::Attack => {
                 // Trigger attack animation on local player
                 if let Some(local_id) = &game_state.local_player_id {

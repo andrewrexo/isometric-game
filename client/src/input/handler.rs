@@ -7,6 +7,7 @@ use crate::ui::{UiElementId, UiLayout};
 #[derive(Debug, Clone)]
 pub enum InputCommand {
     Move { dx: f32, dy: f32 },
+    Face { direction: u8 },
     Attack,
     Target { entity_id: String },
     ClearTarget,
@@ -28,7 +29,7 @@ pub enum InputCommand {
 }
 
 /// Cardinal directions for isometric movement (no diagonals)
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum CardinalDir {
     None,
     Up,
@@ -37,18 +38,40 @@ enum CardinalDir {
     Right,
 }
 
+impl CardinalDir {
+    /// Convert to server direction enum value (matches Direction enum)
+    fn to_direction_u8(self) -> u8 {
+        match self {
+            CardinalDir::Down => 0,
+            CardinalDir::Left => 1,
+            CardinalDir::Up => 2,
+            CardinalDir::Right => 3,
+            CardinalDir::None => 0, // Default to down
+        }
+    }
+}
+
+/// Threshold for distinguishing face vs move (in seconds)
+const FACE_THRESHOLD: f64 = 0.05; // 100ms
+
 pub struct InputHandler {
     // Track last sent velocity to detect changes
     last_dx: f32,
     last_dy: f32,
     // Track which direction was pressed first (for priority)
     current_dir: CardinalDir,
+    // Track previous direction for detecting key release
+    prev_dir: CardinalDir,
     // Send commands at server tick rate
     last_send_time: f64,
     send_interval: f64,
     // Attack cooldown tracking (matches server cooldown)
     last_attack_time: f64,
     attack_cooldown: f64,
+    // Track when current direction key was pressed (for face vs move)
+    dir_press_time: f64,
+    // Track if we've sent a move command for the current key press
+    move_sent: bool,
 }
 
 impl InputHandler {
@@ -57,10 +80,13 @@ impl InputHandler {
             last_dx: 0.0,
             last_dy: 0.0,
             current_dir: CardinalDir::None,
+            prev_dir: CardinalDir::None,
             last_send_time: 0.0,
             send_interval: 0.05, // 50ms = 20Hz (matches server tick rate)
             last_attack_time: 0.0,
             attack_cooldown: 0.8, // 800 ms (matches server ATTACK_COOLDOWN_MS)
+            dir_press_time: 0.0,
+            move_sent: false,
         }
     }
 
@@ -688,6 +714,46 @@ impl InputHandler {
             }
         };
 
+        // Detect direction changes for face vs move logic
+        let dir_changed = new_dir != self.prev_dir;
+
+        // Handle direction key press/release for face vs move
+        if dir_changed {
+            if new_dir != CardinalDir::None && self.prev_dir == CardinalDir::None {
+                // New direction pressed - record time
+                self.dir_press_time = current_time;
+                self.move_sent = false;
+            } else if new_dir == CardinalDir::None && self.prev_dir != CardinalDir::None {
+                // Direction released
+                let hold_duration = current_time - self.dir_press_time;
+                log::info!("[INPUT] Key released: hold_duration={:.3}s, threshold={:.3}s, move_sent={}",
+                    hold_duration, FACE_THRESHOLD, self.move_sent);
+                if self.move_sent {
+                    // Was moving, now stopped - send stop command
+                    commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
+                    self.last_dx = 0.0;
+                    self.last_dy = 0.0;
+                    self.last_send_time = current_time;
+                } else {
+                    // Never sent a move (quick tap or frame timing edge case) - send Face command
+                    let dir = self.prev_dir.to_direction_u8();
+                    log::info!("[INPUT] Sending Face command: direction={} (prev_dir={:?})", dir, self.prev_dir);
+                    commands.push(InputCommand::Face { direction: dir });
+                    self.last_send_time = current_time;
+                }
+            } else if new_dir != CardinalDir::None && self.prev_dir != CardinalDir::None {
+                // Direction changed while holding
+                if self.move_sent {
+                    // Already moving - continue moving in new direction immediately (no threshold wait)
+                    // move_sent stays true, don't reset dir_press_time
+                } else {
+                    // Wasn't moving yet (still in threshold wait) - restart timer for new direction
+                    self.dir_press_time = current_time;
+                }
+            }
+        }
+
+        self.prev_dir = new_dir;
         self.current_dir = new_dir;
 
         // Convert direction to velocity
@@ -699,18 +765,25 @@ impl InputHandler {
             CardinalDir::None => (0.0, 0.0),
         };
 
-        // Check if movement direction changed
-        let direction_changed = (dx - self.last_dx).abs() > 0.01 || (dy - self.last_dy).abs() > 0.01;
-        let time_elapsed = current_time - self.last_send_time >= self.send_interval;
+        // Only send Move commands if held past the threshold
+        if new_dir != CardinalDir::None {
+            let hold_duration = current_time - self.dir_press_time;
+            if hold_duration >= FACE_THRESHOLD {
+                // Past threshold - send movement commands
+                let direction_changed = (dx - self.last_dx).abs() > 0.01 || (dy - self.last_dy).abs() > 0.01;
+                let time_elapsed = current_time - self.last_send_time >= self.send_interval;
 
-        // Send command if: direction changed OR (moving AND enough time passed)
-        let should_send = direction_changed || (time_elapsed && (dx != 0.0 || dy != 0.0));
+                // Send command if: direction changed OR enough time passed (heartbeat)
+                let should_send = direction_changed || time_elapsed;
 
-        if should_send {
-            commands.push(InputCommand::Move { dx, dy });
-            self.last_dx = dx;
-            self.last_dy = dy;
-            self.last_send_time = current_time;
+                if should_send {
+                    commands.push(InputCommand::Move { dx, dy });
+                    self.last_dx = dx;
+                    self.last_dy = dy;
+                    self.last_send_time = current_time;
+                    self.move_sent = true;
+                }
+            }
         }
 
         // Path following - generate movement commands when auto-pathing

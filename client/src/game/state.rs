@@ -211,6 +211,8 @@ pub struct GameState {
     pub selected_character_name: Option<String>,
     pub disconnect_requested: bool,
     pub reconnection_failed: bool,
+    /// Timestamp of last Face command sent (to ignore stale server direction updates)
+    pub last_face_command_time: f64,
 
     // World
     pub tilemap: Tilemap,
@@ -266,6 +268,7 @@ impl GameState {
             selected_character_name: None,
             disconnect_requested: false,
             reconnection_failed: false,
+            last_face_command_time: 0.0,
             tilemap,
             chunk_manager: ChunkManager::new(),
             players: HashMap::new(),
@@ -299,7 +302,9 @@ impl GameState {
             if let Some(player) = self.players.get_mut(local_id) {
                 // Update facing direction based on input
                 if input_dx != 0.0 || input_dy != 0.0 {
-                    player.direction = super::entities::Direction::from_velocity(input_dx, input_dy);
+                    let new_dir = super::entities::Direction::from_velocity(input_dx, input_dy);
+                    player.direction = new_dir;
+                    player.animation.direction = new_dir;
                 }
 
                 // Smoothly interpolate visual position toward server grid position

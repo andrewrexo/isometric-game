@@ -97,6 +97,20 @@ impl Direction {
             _ => Direction::Down,
         }
     }
+
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            0 => Direction::Down,
+            1 => Direction::Left,
+            2 => Direction::Up,
+            3 => Direction::Right,
+            4 => Direction::DownLeft,
+            5 => Direction::DownRight,
+            6 => Direction::UpLeft,
+            7 => Direction::UpRight,
+            _ => Direction::Down,
+        }
+    }
 }
 
 // ============================================================================
@@ -748,6 +762,22 @@ impl GameRoom {
         }
     }
 
+    /// Handle face command - change direction without moving
+    pub async fn handle_face(&self, player_id: &str, direction: u8) {
+        tracing::info!("[SERVER] handle_face called: player_id={}, direction={}", player_id, direction);
+        let mut players = self.players.write().await;
+        if let Some(player) = players.get_mut(player_id) {
+            let old_dir = player.direction;
+            player.direction = Direction::from_u8(direction);
+            tracing::info!("[SERVER] Updated player direction: {:?} -> {:?}", old_dir, player.direction);
+            // Ensure player is not moving when just facing
+            player.move_dx = 0;
+            player.move_dy = 0;
+        } else {
+            tracing::warn!("[SERVER] handle_face: player not found: {}", player_id);
+        }
+    }
+
     pub async fn handle_chat(&self, player_id: &str, text: &str) {
         let sanitized = text.trim().chars().take(200).collect::<String>();
         if sanitized.is_empty() {
@@ -1096,6 +1126,7 @@ impl GameRoom {
 
         // Check cooldown
         if current_time - last_attack < ATTACK_COOLDOWN_MS {
+            tracing::info!("[ATTACK] Cooldown not met: current_time={}, last_attack={}, ATTACK_COOLDOWN_MS={}", current_time, last_attack, ATTACK_COOLDOWN_MS);
             return;
         }
 

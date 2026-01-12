@@ -15,6 +15,9 @@ pub enum ClientMessage {
     #[serde(rename = "move")]
     Move { dx: f32, dy: f32 },
 
+    #[serde(rename = "face")]
+    Face { direction: u8 },
+
     #[serde(rename = "moveTo")]
     MoveTo { x: f32, y: f32 },
 
@@ -87,6 +90,10 @@ impl ClientMessage {
                 data.insert("dx".into(), Value::F64(*dx as f64));
                 data.insert("dy".into(), Value::F64(*dy as f64));
                 "move"
+            }
+            ClientMessage::Face { direction } => {
+                data.insert("direction".into(), Value::Integer((*direction as i64).into()));
+                "face"
             }
             ClientMessage::MoveTo { x, y } => {
                 data.insert("x".into(), Value::F64(*x as f64));
