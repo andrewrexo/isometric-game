@@ -38,6 +38,8 @@ enum ConnectionState {
     Connected,
 }
 
+const MAX_RECONNECT_ATTEMPTS: u32 = 3;
+
 pub struct NetworkClient {
     sender: Option<WsSender>,
     receiver: Option<WsReceiver>,
@@ -51,6 +53,9 @@ pub struct NetworkClient {
     // Auth fields
     auth_token: Option<String>,
     character_id: Option<i64>,
+    // Reconnection tracking
+    reconnect_attempts: u32,
+    was_connected: bool,
 }
 
 impl NetworkClient {
@@ -72,6 +77,8 @@ impl NetworkClient {
             session_token: None,
             auth_token: None,
             character_id: None,
+            reconnect_attempts: 0,
+            was_connected: false,
         };
         client.start_matchmaking();
         client
@@ -90,6 +97,8 @@ impl NetworkClient {
             session_token: None,
             auth_token: Some(auth_token.to_string()),
             character_id: Some(character_id),
+            reconnect_attempts: 0,
+            was_connected: false,
         };
         client.start_matchmaking();
         client
@@ -108,6 +117,8 @@ impl NetworkClient {
             session_token: None,
             auth_token: Some(auth_token.to_string()),
             character_id: None, // Not used in simple model
+            reconnect_attempts: 0,
+            was_connected: false,
         };
         client.start_matchmaking();
         client
@@ -219,10 +230,29 @@ impl NetworkClient {
     pub fn poll(&mut self, state: &mut GameState) {
         match self.connection_state {
             ConnectionState::Disconnected => {
-                self.reconnect_timer += 1.0 / 60.0;
-                if self.reconnect_timer > 2.0 {
-                    self.reconnect_timer = 0.0;
-                    self.start_matchmaking();
+                // Only try to reconnect if we were previously connected
+                if self.was_connected {
+                    // Check if we've exhausted reconnection attempts
+                    if self.reconnect_attempts >= MAX_RECONNECT_ATTEMPTS {
+                        log::error!("Failed to reconnect after {} attempts", MAX_RECONNECT_ATTEMPTS);
+                        state.reconnection_failed = true;
+                        return;
+                    }
+
+                    self.reconnect_timer += 1.0 / 60.0;
+                    if self.reconnect_timer > 2.0 {
+                        self.reconnect_attempts += 1;
+                        log::info!("Reconnection attempt {}/{}", self.reconnect_attempts, MAX_RECONNECT_ATTEMPTS);
+                        self.reconnect_timer = 0.0;
+                        self.start_matchmaking();
+                    }
+                } else {
+                    // Initial connection - just retry without counting
+                    self.reconnect_timer += 1.0 / 60.0;
+                    if self.reconnect_timer > 2.0 {
+                        self.reconnect_timer = 0.0;
+                        self.start_matchmaking();
+                    }
                 }
                 return;
             }
@@ -249,6 +279,9 @@ impl NetworkClient {
                     log::info!("WebSocket connected!");
                     self.connection_state = ConnectionState::Connected;
                     state.connection_status = ConnectionStatus::Connected;
+                    // Reset reconnection tracking on successful connection
+                    self.reconnect_attempts = 0;
+                    self.was_connected = true;
                     // local_player_id is set by the "welcome" message from server
                 }
 

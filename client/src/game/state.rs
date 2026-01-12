@@ -210,6 +210,7 @@ pub struct GameState {
     pub local_player_id: Option<String>,
     pub selected_character_name: Option<String>,
     pub disconnect_requested: bool,
+    pub reconnection_failed: bool,
 
     // World
     pub tilemap: Tilemap,
@@ -264,6 +265,7 @@ impl GameState {
             local_player_id: None,
             selected_character_name: None,
             disconnect_requested: false,
+            reconnection_failed: false,
             tilemap,
             chunk_manager: ChunkManager::new(),
             players: HashMap::new(),

@@ -163,6 +163,16 @@ async fn main() {
                         app_state = AppState::Login(login_screen);
                         continue;
                     }
+
+                    // Check for reconnection failure (server disconnected and retries exhausted)
+                    if game_state.reconnection_failed {
+                        log::info!("Reconnection failed, returning to login screen");
+                        network.disconnect();
+                        let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+                        login_screen.load_font().await;
+                        app_state = AppState::Login(login_screen);
+                        continue;
+                    }
                 }
             }
 
@@ -289,6 +299,7 @@ fn run_game_frame(
         use network::messages::ClientMessage;
         let msg = match cmd {
             InputCommand::Move { dx, dy } => ClientMessage::Move { dx: *dx, dy: *dy },
+            InputCommand::Face { direction } => ClientMessage::Face { direction: *direction },
             InputCommand::Attack => {
                 // Trigger attack animation on local player
                 if let Some(local_id) = &game_state.local_player_id {
