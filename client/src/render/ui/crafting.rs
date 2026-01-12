@@ -93,8 +93,8 @@ impl Renderer {
         self.draw_text_sharp("[E] Close", header_x + header_w - 80.0, header_y + 26.0, 16.0, TEXT_DIM);
 
         // ===== CONTENT AREA =====
-        let content_y = panel_y + FRAME_THICKNESS + HEADER_HEIGHT + 8.0;
-        let content_height = panel_height - FRAME_THICKNESS * 2.0 - HEADER_HEIGHT - FOOTER_HEIGHT - 16.0;
+        let content_y = panel_y + FRAME_THICKNESS + HEADER_HEIGHT + 4.0;
+        let content_height = panel_height - FRAME_THICKNESS * 2.0 - HEADER_HEIGHT - FOOTER_HEIGHT - 12.0;
         let content_width = panel_width - FRAME_THICKNESS * 2.0;
 
         // Render appropriate tab content
@@ -115,9 +115,24 @@ impl Renderer {
         if state.ui_state.shop_main_tab == 0 {
             // Recipes tab controls
             self.draw_text_sharp("[Q/E] Tab", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
-            self.draw_text_sharp("[A/D] Category", footer_x + 100.0, footer_y + 20.0, 16.0, TEXT_DIM);
-            self.draw_text_sharp("[W/S] Select", footer_x + 230.0, footer_y + 20.0, 16.0, TEXT_DIM);
-            self.draw_text_sharp("[C] Craft", footer_x + 340.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            
+            let has_multiple_categories = {
+                let mut cats: Vec<String> = state.recipe_definitions.iter()
+                    .map(|r| if r.category == "materials" || r.category == "consumables" { "supplies".to_string() } else { r.category.clone() })
+                    .collect();
+                cats.sort();
+                cats.dedup();
+                cats.len() > 1
+            };
+
+            if has_multiple_categories {
+                self.draw_text_sharp("[A/D] Category", footer_x + 100.0, footer_y + 20.0, 16.0, TEXT_DIM);
+                self.draw_text_sharp("[W/S] Select", footer_x + 230.0, footer_y + 20.0, 16.0, TEXT_DIM);
+                self.draw_text_sharp("[C] Craft", footer_x + 340.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            } else {
+                self.draw_text_sharp("[W/S] Select", footer_x + 100.0, footer_y + 20.0, 16.0, TEXT_DIM);
+                self.draw_text_sharp("[C] Craft", footer_x + 210.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            }
         } else {
             // Shop tab controls
             self.draw_text_sharp("[Q/E] Tab", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
@@ -128,10 +143,16 @@ impl Renderer {
     }
 
     fn render_recipes_tab(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout, panel_x: f32, content_y: f32, content_width: f32, content_height: f32) {
-
-        let categories: Vec<&str> = {
-            let mut cats: Vec<&str> = state.recipe_definitions.iter()
-                .map(|r| r.category.as_str())
+        // Group consumables and materials into "supplies"
+        let categories: Vec<String> = {
+            let mut cats: Vec<String> = state.recipe_definitions.iter()
+                .map(|r| {
+                    if r.category == "materials" || r.category == "consumables" {
+                        "supplies".to_string()
+                    } else {
+                        r.category.clone()
+                    }
+                })
                 .collect();
             cats.sort();
             cats.dedup();
@@ -144,55 +165,67 @@ impl Renderer {
         }
 
         // ===== CATEGORY TABS =====
+        // If we only have one category, we don't need tabs and can stretch the list higher
+        let show_tabs = categories.len() > 1;
         let tab_y = content_y;
-        let tab_height = 28.0;
+        let tab_height = if show_tabs { 28.0 } else { 0.0 };
         let mut tab_x = panel_x + FRAME_THICKNESS + 10.0;
 
-        for (i, category) in categories.iter().enumerate() {
-            let is_selected = i == state.ui_state.crafting_selected_category;
-            let tab_width = self.measure_text_sharp(category, 16.0).width + 24.0;
+        if show_tabs {
+            for (i, category) in categories.iter().enumerate() {
+                let is_selected = i == state.ui_state.crafting_selected_category;
+                let tab_width = self.measure_text_sharp(category, 16.0).width + 24.0;
 
-            let bounds = Rect::new(tab_x, tab_y, tab_width, tab_height);
-            layout.add(UiElementId::CraftingCategoryTab(i), bounds);
+                let bounds = Rect::new(tab_x, tab_y, tab_width, tab_height);
+                layout.add(UiElementId::CraftingCategoryTab(i), bounds);
 
-            let is_hovered = matches!(hovered, Some(UiElementId::CraftingCategoryTab(idx)) if *idx == i);
+                let is_hovered = matches!(hovered, Some(UiElementId::CraftingCategoryTab(idx)) if *idx == i);
 
-            let (bg_color, border_color) = if is_selected {
-                (SLOT_HOVER_BG, SLOT_SELECTED_BORDER)
-            } else if is_hovered {
-                (Color::new(0.141, 0.141, 0.188, 1.0), SLOT_HOVER_BORDER)
-            } else {
-                (SLOT_BG_EMPTY, SLOT_BORDER)
-            };
+                let (bg_color, border_color) = if is_selected {
+                    (SLOT_HOVER_BG, SLOT_SELECTED_BORDER)
+                } else if is_hovered {
+                    (Color::new(0.141, 0.141, 0.188, 1.0), SLOT_HOVER_BORDER)
+                } else {
+                    (SLOT_BG_EMPTY, SLOT_BORDER)
+                };
 
-            draw_rectangle(tab_x, tab_y, tab_width, tab_height, border_color);
-            draw_rectangle(tab_x + 1.0, tab_y + 1.0, tab_width - 2.0, tab_height - 2.0, bg_color);
+                draw_rectangle(tab_x, tab_y, tab_width, tab_height, border_color);
+                draw_rectangle(tab_x + 1.0, tab_y + 1.0, tab_width - 2.0, tab_height - 2.0, bg_color);
 
-            if is_selected {
-                draw_line(tab_x + 2.0, tab_y + 2.0, tab_x + tab_width - 2.0, tab_y + 2.0, 1.0, FRAME_INNER);
-                draw_line(tab_x + 2.0, tab_y + 2.0, tab_x + 2.0, tab_y + tab_height - 2.0, 1.0, FRAME_INNER);
+                if is_selected {
+                    draw_line(tab_x + 2.0, tab_y + 2.0, tab_x + tab_width - 2.0, tab_y + 2.0, 1.0, FRAME_INNER);
+                    draw_line(tab_x + 2.0, tab_y + 2.0, tab_x + 2.0, tab_y + tab_height - 2.0, 1.0, FRAME_INNER);
+                }
+
+                let display_name: String = category.chars().enumerate()
+                    .map(|(idx, c)| if idx == 0 { c.to_ascii_uppercase() } else { c })
+                    .collect();
+
+                let text_color = if is_selected { TEXT_TITLE } else if is_hovered { TEXT_NORMAL } else { TEXT_DIM };
+                self.draw_text_sharp(&display_name, tab_x + 12.0, tab_y + 19.0, 16.0, text_color);
+
+                tab_x += tab_width + 4.0;
             }
-
-            let display_name: String = category.chars().enumerate()
-                .map(|(idx, c)| if idx == 0 { c.to_ascii_uppercase() } else { c })
-                .collect();
-
-            let text_color = if is_selected { TEXT_TITLE } else if is_hovered { TEXT_NORMAL } else { TEXT_DIM };
-            self.draw_text_sharp(&display_name, tab_x + 12.0, tab_y + 19.0, 16.0, text_color);
-
-            tab_x += tab_width + 4.0;
         }
 
-        let current_category = categories.get(state.ui_state.crafting_selected_category).copied().unwrap_or("consumables");
+        let selected_idx = state.ui_state.crafting_selected_category.min(categories.len().saturating_sub(1));
+        let current_category = categories.get(selected_idx).map(|s| s.as_str()).unwrap_or("supplies");
+        
         let recipes: Vec<&RecipeDefinition> = state.recipe_definitions.iter()
-            .filter(|r| r.category == current_category)
+            .filter(|r| {
+                if current_category == "supplies" {
+                    r.category == "consumables" || r.category == "materials"
+                } else {
+                    r.category == current_category
+                }
+            })
             .collect();
 
         // ===== RECIPE LIST (left side) =====
         let list_width = 220.0;
         let list_x = panel_x + FRAME_THICKNESS + 10.0;
-        let list_y = tab_y + tab_height + 10.0;
-        let list_height = content_height - tab_height - 18.0;
+        let list_y = if show_tabs { tab_y + tab_height + 12.0 } else { content_y + 2.0 };
+        let list_height = if show_tabs { content_height - tab_height - 20.0 } else { content_height - 10.0 };
 
         draw_rectangle(list_x, list_y, list_width, list_height, SLOT_BORDER);
         draw_rectangle(list_x + 1.0, list_y + 1.0, list_width - 2.0, list_height - 2.0, SLOT_BG_EMPTY);
@@ -332,20 +365,20 @@ impl Renderer {
 
             if can_craft {
                 let (btn_bg, btn_border) = if is_btn_hovered {
-                    (Color::new(0.282, 0.235, 0.157, 1.0), FRAME_ACCENT)
+                    (Color::new(0.2, 0.5, 0.2, 1.0), Color::new(0.3, 0.7, 0.3, 1.0))
                 } else {
-                    (Color::new(0.188, 0.157, 0.110, 1.0), FRAME_MID)
+                    (Color::new(0.15, 0.4, 0.15, 1.0), Color::new(0.25, 0.6, 0.25, 1.0))
                 };
 
                 draw_rectangle(btn_x, btn_y, btn_width, 28.0, btn_border);
                 draw_rectangle(btn_x + 1.0, btn_y + 1.0, btn_width - 2.0, 26.0, btn_bg);
 
-                draw_line(btn_x + 2.0, btn_y + 2.0, btn_x + btn_width - 2.0, btn_y + 2.0, 1.0, FRAME_INNER);
-                draw_line(btn_x + 2.0, btn_y + 2.0, btn_x + 2.0, btn_y + 26.0, 1.0, FRAME_INNER);
+                draw_line(btn_x + 2.0, btn_y + 2.0, btn_x + btn_width - 2.0, btn_y + 2.0, 1.0, Color::new(0.4, 0.8, 0.4, 1.0));
+                draw_line(btn_x + 2.0, btn_y + 2.0, btn_x + 2.0, btn_y + 26.0, 1.0, Color::new(0.4, 0.8, 0.4, 1.0));
 
                 let craft_text = "[ CRAFT ]";
                 let text_w = self.measure_text_sharp(craft_text, 16.0).width;
-                self.draw_text_sharp(craft_text, btn_x + (btn_width - text_w) / 2.0, btn_y + 19.0, 16.0, TEXT_TITLE);
+                self.draw_text_sharp(craft_text, btn_x + (btn_width - text_w) / 2.0, btn_y + 19.0, 16.0, WHITE);
             } else {
                 draw_rectangle(btn_x, btn_y, btn_width, 28.0, SLOT_BORDER);
                 draw_rectangle(btn_x + 1.0, btn_y + 1.0, btn_width - 2.0, 26.0, Color::new(0.125, 0.094, 0.094, 1.0));

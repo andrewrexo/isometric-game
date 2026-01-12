@@ -661,10 +661,16 @@ impl InputHandler {
 
             if state.ui_state.shop_main_tab == 0 {
                 // Recipes tab keyboard controls
-                // Get unique categories from recipes
-                let categories: Vec<&str> = {
-                    let mut cats: Vec<&str> = state.recipe_definitions.iter()
-                        .map(|r| r.category.as_str())
+                // Get unique categories from recipes, merging consumables and materials
+                let categories: Vec<String> = {
+                    let mut cats: Vec<String> = state.recipe_definitions.iter()
+                        .map(|r| {
+                            if r.category == "materials" || r.category == "consumables" {
+                                "supplies".to_string()
+                            } else {
+                                r.category.clone()
+                            }
+                        })
                         .collect();
                     cats.sort();
                     cats.dedup();
@@ -686,9 +692,16 @@ impl InputHandler {
                 }
 
                 // Get recipes for current category
-                let current_category = categories.get(state.ui_state.crafting_selected_category).copied().unwrap_or("consumables");
+                let selected_idx = state.ui_state.crafting_selected_category.min(categories.len().saturating_sub(1));
+                let current_category = categories.get(selected_idx).map(|s| s.as_str()).unwrap_or("supplies");
                 let recipes_in_category: Vec<&crate::game::RecipeDefinition> = state.recipe_definitions.iter()
-                    .filter(|r| r.category == current_category)
+                    .filter(|r| {
+                        if current_category == "supplies" {
+                            r.category == "consumables" || r.category == "materials"
+                        } else {
+                            r.category == current_category
+                        }
+                    })
                     .collect();
 
                 // Up/Down navigate recipes

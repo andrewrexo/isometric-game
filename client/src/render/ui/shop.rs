@@ -30,10 +30,18 @@ impl Renderer {
         let left_x = panel_x + FRAME_THICKNESS + 10.0;
         let right_x = left_x + column_width + COLUMN_GAP;
 
-        // Draw column headers
-        let header_y = content_y;
+        let header_y = content_y + 2.0;
+        let list_y = content_y + HEADER_HEIGHT + 10.0;
+        let list_height = content_height - HEADER_HEIGHT - TRANSACTION_HEIGHT - 26.0;
+        let bar_y = list_y + list_height + 8.0;
 
+        // STEP 1: Render lists FIRST (they may overflow)
+        self.render_buy_column(state, hovered, layout, left_x, list_y, column_width, list_height, shop_data);
+        self.render_sell_column(state, hovered, layout, right_x, list_y, column_width, list_height, shop_data);
+
+        // STEP 2: Draw headers ON TOP to cover any list overflow at the top
         // BUY header
+        draw_rectangle(left_x, header_y, column_width, HEADER_HEIGHT + 8.0, PANEL_BG_MID); // Cover gap too
         draw_rectangle(left_x, header_y, column_width, HEADER_HEIGHT, SLOT_BORDER);
         draw_rectangle(left_x + 1.0, header_y + 1.0, column_width - 2.0, HEADER_HEIGHT - 2.0, PANEL_BG_MID);
         let buy_header_dims = self.measure_text_sharp("BUY", 16.0);
@@ -41,30 +49,20 @@ impl Renderer {
         self.draw_text_sharp("BUY", buy_header_x, header_y + 17.0, 16.0, TEXT_TITLE);
 
         // SELL header
+        draw_rectangle(right_x, header_y, column_width, HEADER_HEIGHT + 8.0, PANEL_BG_MID); // Cover gap too
         draw_rectangle(right_x, header_y, column_width, HEADER_HEIGHT, SLOT_BORDER);
         draw_rectangle(right_x + 1.0, header_y + 1.0, column_width - 2.0, HEADER_HEIGHT - 2.0, PANEL_BG_MID);
         let sell_header_dims = self.measure_text_sharp("SELL", 16.0);
         let sell_header_x = right_x + (column_width - sell_header_dims.width) / 2.0;
         self.draw_text_sharp("SELL", sell_header_x, header_y + 17.0, 16.0, TEXT_TITLE);
 
-        // Calculate list dimensions
-        let list_y = content_y + HEADER_HEIGHT + 8.0;
-        let list_height = content_height - HEADER_HEIGHT - TRANSACTION_HEIGHT - 24.0;
-
-        // Render both lists side by side
-        self.render_buy_column(state, hovered, layout, left_x, list_y, column_width, list_height, shop_data);
-        self.render_sell_column(state, hovered, layout, right_x, list_y, column_width, list_height, shop_data);
-
-        // Render both transaction bars
-        let bar_y = list_y + list_height + 8.0;
+        // STEP 3: Render transaction bars ON TOP to cover any list overflow at the bottom
         self.render_buy_transaction(state, hovered, layout, left_x, bar_y, column_width, shop_data);
         self.render_sell_transaction(state, hovered, layout, right_x, bar_y, column_width, shop_data);
     }
 
     fn render_buy_column(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout, x: f32, list_y: f32, width: f32, list_height: f32, shop_data: &crate::game::ShopData) {
-        let item_width = width - SCROLLBAR_WIDTH - 4.0;
-
-        // Calculate scroll state
+        // Calculate scroll state first to know if scrollbar is needed
         let scroll_config = ScrollableListConfig {
             visible_height: list_height,
             item_height: SHOP_ITEM_HEIGHT,
@@ -74,16 +72,24 @@ impl Renderer {
         };
         let scroll_state = scroll_config.calculate();
 
+        // Only reserve scrollbar space if scrolling is needed
+        let item_width = if scroll_state.show_scrollbar {
+            width - SCROLLBAR_WIDTH - 2.0
+        } else {
+            width
+        };
+
         // Store the scroll area bounds
         let clip_rect = Rect::new(x, list_y, width, list_height);
         layout.add(UiElementId::ShopBuyScrollArea, clip_rect);
 
-        // Render visible items
+        // Render visible items (overflow will be covered by headers/transaction bars drawn later)
         for i in scroll_state.first_visible..scroll_state.last_visible {
             if let Some(stock_item) = shop_data.stock.get(i) {
                 let relative_idx = i - scroll_state.first_visible;
                 let item_y = list_y + scroll_state.first_item_offset + (relative_idx as f32) * (SHOP_ITEM_HEIGHT + SHOP_ITEM_SPACING);
 
+                // Skip items completely outside visible area
                 if item_y + SHOP_ITEM_HEIGHT < list_y || item_y > list_y + list_height {
                     continue;
                 }
@@ -163,8 +169,6 @@ impl Renderer {
     }
 
     fn render_sell_column(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout, x: f32, list_y: f32, width: f32, list_height: f32, shop_data: &crate::game::ShopData) {
-        let item_width = width - SCROLLBAR_WIDTH - 4.0;
-
         // Collect inventory items
         let inventory_items: Vec<(usize, &crate::game::InventorySlot)> = state.inventory.slots.iter()
             .enumerate()
@@ -176,7 +180,7 @@ impl Renderer {
             return;
         }
 
-        // Calculate scroll state
+        // Calculate scroll state first to know if scrollbar is needed
         let scroll_config = ScrollableListConfig {
             visible_height: list_height,
             item_height: SHOP_ITEM_HEIGHT,
@@ -186,16 +190,24 @@ impl Renderer {
         };
         let scroll_state = scroll_config.calculate();
 
+        // Only reserve scrollbar space if scrolling is needed
+        let item_width = if scroll_state.show_scrollbar {
+            width - SCROLLBAR_WIDTH - 4.0
+        } else {
+            width - 1.0
+        };
+
         // Store scroll area bounds
         let clip_rect = Rect::new(x, list_y, width, list_height);
         layout.add(UiElementId::ShopSellScrollArea, clip_rect);
 
-        // Render visible items
+        // Render visible items (overflow will be covered by headers/transaction bars drawn later)
         for i in scroll_state.first_visible..scroll_state.last_visible {
             if let Some((_slot_idx, inv_slot)) = inventory_items.get(i) {
                 let relative_idx = i - scroll_state.first_visible;
                 let item_y = list_y + scroll_state.first_item_offset + (relative_idx as f32) * (SHOP_ITEM_HEIGHT + SHOP_ITEM_SPACING);
 
+                // Skip items completely outside visible area
                 if item_y + SHOP_ITEM_HEIGHT < list_y || item_y > list_y + list_height {
                     continue;
                 }
@@ -388,7 +400,7 @@ impl Renderer {
         draw_rectangle(button_x, button_y, button_w, button_h, button_border);
         draw_rectangle(button_x + 2.0, button_y + 2.0, button_w - 4.0, button_h - 4.0, button_bg);
 
-        let button_text_color = if can_buy { TEXT_TITLE } else { TEXT_DIM };
+        let button_text_color = if can_buy { WHITE } else { TEXT_DIM };
         let btn_dims = self.measure_text_sharp("Buy", 16.0);
         let btn_text_x = button_x + (button_w - btn_dims.width) / 2.0;
         self.draw_text_sharp("Buy", btn_text_x, button_y + 19.0, 16.0, button_text_color);
@@ -505,15 +517,15 @@ impl Renderer {
         let (button_bg, button_border) = if !can_sell {
             (Color::new(0.1, 0.1, 0.1, 1.0), Color::new(0.3, 0.3, 0.3, 1.0))
         } else if button_hovered {
-            (Color::new(0.6, 0.4, 0.1, 1.0), Color::new(0.8, 0.6, 0.2, 1.0))
+            (Color::new(0.95, 0.35, 0.35, 1.0), Color::new(1.0, 0.5, 0.5, 1.0))
         } else {
-            (Color::new(0.5, 0.35, 0.1, 1.0), Color::new(0.7, 0.5, 0.15, 1.0))
+            (Color::new(0.8, 0.15, 0.15, 1.0), Color::new(0.9, 0.25, 0.25, 1.0))
         };
 
         draw_rectangle(button_x, button_y, button_w, button_h, button_border);
         draw_rectangle(button_x + 2.0, button_y + 2.0, button_w - 4.0, button_h - 4.0, button_bg);
 
-        let button_text_color = if can_sell { TEXT_TITLE } else { TEXT_DIM };
+        let button_text_color = if can_sell { WHITE } else { TEXT_DIM };
         let btn_dims = self.measure_text_sharp("Sell", 16.0);
         let btn_text_x = button_x + (button_w - btn_dims.width) / 2.0;
         self.draw_text_sharp("Sell", btn_text_x, button_y + 19.0, 16.0, button_text_color);
