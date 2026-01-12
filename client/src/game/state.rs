@@ -33,12 +33,15 @@ pub struct ChatMessage {
     pub timestamp: f64,
 }
 
-/// Floating damage number for combat feedback
+/// Floating damage/healing number for combat feedback
+/// - Positive damage = damage dealt (red)
+/// - Negative damage = healing (green, displayed as +X)
+/// - Zero = miss (gray, displayed as "MISS")
 pub struct DamageEvent {
     pub x: f32,
     pub y: f32,
     pub damage: i32,
-    pub time: f64, // When the event was created (game time)
+    pub time: f64,
 }
 
 /// Floating level up text
@@ -370,9 +373,9 @@ impl GameState {
             npc.update(delta);
         }
 
-        // Clean up old damage events (older than 1.5 seconds)
+        // Clean up old damage events (older than 1.2 seconds)
         let current_time = macroquad::time::get_time();
-        self.damage_events.retain(|event| current_time - event.time < 1.5);
+        self.damage_events.retain(|event| current_time - event.time < 1.2);
 
         // Clean up old level up events (older than 2.0 seconds)
         self.level_up_events.retain(|event| current_time - event.time < 2.0);

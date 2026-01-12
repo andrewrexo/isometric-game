@@ -695,48 +695,57 @@ impl Renderer {
 
     fn render_damage_numbers(&self, state: &GameState) {
         let current_time = macroquad::time::get_time();
+        const DURATION: f32 = 1.2;
 
         for event in &state.damage_events {
             let age = (current_time - event.time) as f32;
-            if age > 1.5 {
+            if age > DURATION {
                 continue;
             }
 
-            // Calculate position with upward float
-            let float_offset = age * 30.0; // Float up over time
+            let t = age / DURATION;
+
+            // Subtle scale: 1.2x -> 1.0x ease-out
+            let scale = 1.0 + 0.2 * (1.0 - t).powi(2);
+
+            // Steady float upward
+            let float_offset = age * 40.0;
+
             let (screen_x, screen_y) = world_to_screen(event.x, event.y, &state.camera);
-            let final_y = screen_y - 20.0 - float_offset;
+            let final_y = screen_y - 25.0 - float_offset;
 
-            // Fade out over time
-            let alpha = ((1.5 - age) / 1.5 * 255.0) as u8;
+            // Fade: visible for first half, then fade out
+            let alpha = if t < 0.5 {
+                1.0
+            } else {
+                1.0 - (t - 0.5) * 2.0
+            };
 
-            // Draw damage number with outline for visibility
-            let text = format!("-{}", event.damage);
-            let font_size = 20.0;
-            let text_width = measure_text(&text, None, font_size as u16, 1.0).width;
+            // Text and color
+            let (text, base_color) = if event.damage > 0 {
+                (format!("-{}", event.damage), Color::new(1.0, 0.3, 0.2, alpha))
+            } else if event.damage < 0 {
+                (format!("+{}", -event.damage), Color::new(0.3, 1.0, 0.4, alpha))
+            } else {
+                ("MISS".to_string(), Color::new(0.6, 0.6, 0.6, alpha))
+            };
 
-            // Outline
-            let outline_color = Color::from_rgba(0, 0, 0, alpha);
-            for ox in [-1.0, 1.0] {
-                for oy in [-1.0, 1.0] {
-                    draw_text(
-                        &text,
-                        screen_x - text_width / 2.0 + ox,
-                        final_y + oy,
-                        font_size,
-                        outline_color,
-                    );
-                }
+            let base_font_size = 18.0;
+            let scaled_font_size = base_font_size * scale;
+
+            let text_dims = self.measure_text_sharp(&text, base_font_size);
+            let scaled_width = text_dims.width * scale;
+
+            let draw_x = screen_x - scaled_width / 2.0;
+            let draw_y = final_y;
+
+            // Simple outline
+            let outline_color = Color::new(0.0, 0.0, 0.0, alpha * 0.9);
+            for &(ox, oy) in &[(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+                self.draw_text_sharp(&text, draw_x + ox, draw_y + oy, scaled_font_size, outline_color);
             }
 
-            // Main text (red for damage)
-            draw_text(
-                &text,
-                screen_x - text_width / 2.0,
-                final_y,
-                font_size,
-                Color::from_rgba(255, 50, 50, alpha),
-            );
+            self.draw_text_sharp(&text, draw_x, draw_y, scaled_font_size, base_color);
         }
     }
 
