@@ -265,11 +265,38 @@ impl NetworkClient {
             return;
         }
 
+        // Collect events from receiver, handling potential panics from the websocket library
         let mut events = Vec::new();
+        let mut receiver_failed = false;
         if let Some(receiver) = &self.receiver {
-            while let Some(event) = receiver.try_recv() {
-                events.push(event);
+            // Use AssertUnwindSafe since we're handling the failure case
+            let receiver_ref = std::panic::AssertUnwindSafe(receiver);
+            let result = std::panic::catch_unwind(|| {
+                let mut collected = Vec::new();
+                while let Some(event) = receiver_ref.try_recv() {
+                    collected.push(event);
+                }
+                collected
+            });
+
+            match result {
+                Ok(collected) => events = collected,
+                Err(_) => {
+                    log::error!("WebSocket receiver panicked - treating as disconnect");
+                    receiver_failed = true;
+                }
             }
+        }
+
+        // If the receiver panicked, treat it as a disconnect
+        if receiver_failed {
+            self.connection_state = ConnectionState::Disconnected;
+            state.connection_status = ConnectionStatus::Disconnected;
+            self.sender = None;
+            self.receiver = None;
+            self.room_id = None;
+            self.session_token = None;
+            return;
         }
 
         let mut should_disconnect = false;
@@ -303,6 +330,10 @@ impl NetworkClient {
 
                 WsEvent::Error(err) => {
                     log::error!("WebSocket error: {}", err);
+                    // Treat errors like disconnects to trigger reconnection
+                    self.connection_state = ConnectionState::Disconnected;
+                    state.connection_status = ConnectionStatus::Disconnected;
+                    should_disconnect = true;
                 }
 
                 _ => {}
