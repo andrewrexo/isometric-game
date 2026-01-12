@@ -1,3 +1,104 @@
+use macroquad::rand::gen_range;
+
+// ============================================================================
+// Gold Pile Animation State
+// ============================================================================
+
+/// Animation state for a single gold nugget in a pile
+#[derive(Debug, Clone)]
+pub struct GoldNuggetState {
+    /// Current offset from pile center (pixels, pre-zoom)
+    pub offset_x: f32,
+    pub offset_y: f32,
+    /// Target/resting position after burst animation settles
+    pub target_x: f32,
+    pub target_y: f32,
+    /// Phase offset for bob animation (creates shimmer effect)
+    pub phase_offset: f64,
+}
+
+/// Animation state for a gold pile (multiple nuggets)
+#[derive(Debug, Clone)]
+pub struct GoldPileState {
+    pub nuggets: Vec<GoldNuggetState>,
+    pub spawn_time: f64,
+}
+
+impl GoldPileState {
+    /// Create a new gold pile with nuggets based on quantity
+    pub fn new(quantity: i32, spawn_time: f64) -> Self {
+        let nugget_count = Self::calculate_nugget_count(quantity);
+        let nuggets = Self::generate_nuggets(nugget_count);
+        Self { nuggets, spawn_time }
+    }
+
+    /// Calculate number of nuggets (1-15) based on gold quantity
+    fn calculate_nugget_count(quantity: i32) -> usize {
+        match quantity {
+            1..=3 => 1,
+            4..=6 => 2,
+            7..=10 => 3,
+            11..=15 => 4,
+            16..=20 => 5,
+            21..=25 => 6,
+            26..=35 => 7,
+            36..=50 => 8,
+            51..=65 => 9,
+            66..=80 => 10,
+            81..=100 => 11,
+            101..=150 => 12,
+            151..=250 => 13,
+            251..=400 => 14,
+            _ => 15,
+        }
+    }
+
+    /// Generate nugget positions using golden-angle spiral
+    fn generate_nuggets(count: usize) -> Vec<GoldNuggetState> {
+        let mut nuggets = Vec::with_capacity(count);
+
+        // Golden angle for natural spiral distribution
+        let golden_angle = std::f32::consts::PI * (3.0 - 5.0_f32.sqrt());
+
+        for i in 0..count {
+            // Calculate target resting position (spiral pattern)
+            let (target_x, target_y) = if count == 1 {
+                (0.0, 0.0)
+            } else {
+                let angle = i as f32 * golden_angle;
+                let max_radius = 6.0 + (count as f32 * 0.4);
+                let radius = max_radius * ((i as f32 + 0.5) / count as f32).sqrt();
+                let x = angle.cos() * radius;
+                let y = angle.sin() * radius * 0.5; // Compress Y for isometric
+                (x, y)
+            };
+
+            // Initial burst position (outward from target)
+            let burst_angle = gen_range(0.0, std::f32::consts::TAU);
+            let burst_distance = gen_range(15.0, 25.0);
+            let offset_x = target_x + burst_angle.cos() * burst_distance;
+            let offset_y = target_y + burst_angle.sin() * burst_distance * 0.5;
+
+            // Random phase for bob animation
+            let phase_offset = gen_range(0.0, std::f64::consts::TAU);
+
+            nuggets.push(GoldNuggetState {
+                offset_x,
+                offset_y,
+                target_x,
+                target_y,
+                phase_offset,
+            });
+        }
+
+        nuggets
+    }
+}
+
+// ============================================================================
+// Ground Item
+// ============================================================================
+
 /// Item on the ground
 #[derive(Debug, Clone)]
 pub struct GroundItem {
@@ -6,7 +107,9 @@ pub struct GroundItem {
     pub x: f32,
     pub y: f32,
     pub quantity: i32,
-    pub animation_time: f64, // For bobbing animation
+    pub animation_time: f64,
+    /// Special animation state for gold piles (None for non-gold items)
+    pub gold_pile: Option<GoldPileState>,
 }
 
 impl GroundItem {
@@ -18,6 +121,21 @@ impl GroundItem {
             y,
             quantity,
             animation_time: macroquad::time::get_time(),
+            gold_pile: None,
+        }
+    }
+
+    /// Create a gold item with pile animation state
+    pub fn new_gold(id: String, x: f32, y: f32, quantity: i32) -> Self {
+        let spawn_time = macroquad::time::get_time();
+        Self {
+            id,
+            item_id: "gold".to_string(),
+            x,
+            y,
+            quantity,
+            animation_time: spawn_time,
+            gold_pile: Some(GoldPileState::new(quantity, spawn_time)),
         }
     }
 }

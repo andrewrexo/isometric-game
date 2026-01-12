@@ -802,7 +802,11 @@ impl NetworkClient {
 
                     log::debug!("Item dropped: {} ({}) at ({}, {})", id, item_id, x, y);
 
-                    let item = GroundItem::new(id.clone(), item_id, x, y, quantity);
+                    let item = if item_id == "gold" {
+                        GroundItem::new_gold(id.clone(), x, y, quantity)
+                    } else {
+                        GroundItem::new(id.clone(), item_id, x, y, quantity)
+                    };
                     state.ground_items.insert(id, item);
                 }
             }

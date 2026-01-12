@@ -2552,11 +2552,15 @@ impl GameRoom {
             .unwrap()
             .as_millis() as u64;
 
+        // Center item on tile (add 0.5 to tile coordinates)
+        let drop_x = player_x as f32 + 0.5;
+        let drop_y = player_y as f32 + 0.5;
+
         let ground_item = GroundItem::new(
             &uuid::Uuid::new_v4().to_string(),
             &item_id,
-            player_x as f32,
-            player_y as f32,
+            drop_x,
+            drop_y,
             qty_to_drop,
             Some(player_id.to_string()),
             current_time,
@@ -2568,8 +2572,8 @@ impl GameRoom {
         self.broadcast(ServerMessage::ItemDropped {
             id: ground_item.id.clone(),
             item_id: item_id.clone(),
-            x: player_x as f32,
-            y: player_y as f32,
+            x: drop_x,
+            y: drop_y,
             quantity: qty_to_drop,
         }).await;
 

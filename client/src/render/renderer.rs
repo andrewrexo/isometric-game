@@ -1099,11 +1099,8 @@ impl Renderer {
         let (screen_x, screen_y) = world_to_screen(npc.x, npc.y, camera);
         let zoom = camera.zoom;
 
-        // Don't render dead NPCs (or render them faded)
+        // Don't render dead NPCs
         if npc.state == NpcState::Dead {
-            // Draw faded corpse
-            let fade_color = Color::from_rgba(50, 80, 50, 100);
-            draw_circle(screen_x, screen_y - 8.0 * zoom, 16.0 * zoom, fade_color);
             return;
         }
 
@@ -1185,15 +1182,18 @@ impl Renderer {
     }
 
     fn render_ground_item(&self, item: &GroundItem, camera: &Camera, state: &GameState) {
+        // Special rendering for gold piles
+        if item.item_id == "gold" && item.gold_pile.is_some() {
+            self.render_gold_pile(item, camera);
+            return;
+        }
+
         let (screen_x, screen_y) = world_to_screen(item.x, item.y, camera);
         let zoom = camera.zoom;
 
         // Bobbing animation
         let time = macroquad::time::get_time();
         let bob = ((time - item.animation_time) * 3.0).sin() as f32 * 2.0 * zoom;
-
-        // Draw shadow
-        draw_ellipse(screen_x, screen_y, 8.0 * zoom, 4.0 * zoom, 0.0, Color::from_rgba(0, 0, 0, 40));
 
         let item_def = state.item_registry.get_or_placeholder(&item.item_id);
         let item_y = screen_y - 8.0 * zoom - bob;
@@ -1220,12 +1220,81 @@ impl Renderer {
             draw_rectangle(screen_x - 6.0 * zoom, item_y - 6.0 * zoom, 16.0 * zoom, 12.0 * zoom, color);
             draw_rectangle_lines(screen_x - 6.0 * zoom, item_y - 6.0 * zoom, 16.0 * zoom, 12.0 * zoom, 1.0, WHITE);
         }
+    }
 
-        // Draw quantity if > 1
-        if item.quantity > 1 {
-            let qty_text = format!("x{}", item.quantity);
-            let text_width = self.measure_text_sharp(&qty_text, 16.0).width;
-            self.draw_text_sharp(&qty_text, screen_x - text_width / 2.0, item_y + 14.0 * zoom, 16.0, WHITE);
+    /// Render a gold pile with multiple animated nuggets
+    fn render_gold_pile(&self, item: &GroundItem, camera: &Camera) {
+        let (screen_x, screen_y) = world_to_screen(item.x, item.y, camera);
+        let zoom = camera.zoom;
+        let time = macroquad::time::get_time();
+
+        let pile = match &item.gold_pile {
+            Some(p) => p,
+            None => return,
+        };
+
+        let texture = match &self.gold_nugget_texture {
+            Some(t) => t,
+            None => return,
+        };
+
+        let elapsed = time - pile.spawn_time;
+
+        // Animation constants
+        const SPAWN_DURATION: f64 = 0.5;
+        const STAGGER_DELAY: f64 = 0.03;
+        const BOB_SPEED: f64 = 2.5;
+        const BOB_AMPLITUDE: f32 = 1.5;
+
+        // Sort nuggets by Y offset for proper depth (back to front)
+        let mut sorted_indices: Vec<usize> = (0..pile.nuggets.len()).collect();
+        sorted_indices.sort_by(|&a, &b| {
+            pile.nuggets[a]
+                .target_y
+                .partial_cmp(&pile.nuggets[b].target_y)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Render each nugget
+        for (render_idx, &nugget_idx) in sorted_indices.iter().enumerate() {
+            let nugget = &pile.nuggets[nugget_idx];
+
+            // Calculate spawn progress with stagger
+            let nugget_elapsed = elapsed - (render_idx as f64 * STAGGER_DELAY);
+            let spawn_t = (nugget_elapsed / SPAWN_DURATION).clamp(0.0, 1.0) as f32;
+            // Ease-out cubic
+            let ease_t = 1.0 - (1.0 - spawn_t).powi(3);
+
+            // Interpolate from burst position to target
+            let current_x = nugget.offset_x + (nugget.target_x - nugget.offset_x) * ease_t;
+            let current_y = nugget.offset_y + (nugget.target_y - nugget.offset_y) * ease_t;
+
+            // Bob animation (only after mostly settled)
+            let bob = if spawn_t > 0.7 {
+                let bob_strength = ((spawn_t - 0.7) / 0.3).min(1.0);
+                ((time * BOB_SPEED + nugget.phase_offset).sin() as f32) * BOB_AMPLITUDE * zoom * bob_strength
+            } else {
+                0.0
+            };
+
+            // Calculate final screen position
+            let nugget_x = screen_x + current_x * zoom;
+            let nugget_y = screen_y + current_y * zoom - bob - 4.0 * zoom;
+
+            // Draw nugget sprite
+            let width = texture.width() * zoom;
+            let height = texture.height() * zoom;
+
+            draw_texture_ex(
+                texture,
+                nugget_x - width / 2.0,
+                nugget_y - height / 2.0,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(Vec2::new(width, height)),
+                    ..Default::default()
+                },
+            );
         }
     }
 

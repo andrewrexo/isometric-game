@@ -89,15 +89,17 @@ impl Renderer {
     }
 
     pub(crate) fn render_ground_item_overlays(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
+        let zoom = state.camera.zoom;
+
         for (item_id, item) in &state.ground_items {
             let (screen_x, screen_y) = world_to_screen(item.x, item.y, &state.camera);
 
-            // Clickable area (centered on item position)
-            let click_width = 44.0;
-            let click_height = 32.0;
+            // Clickable area - centered on where items actually render (slightly above tile center)
+            let click_width = 44.0 * zoom;
+            let click_height = 28.0 * zoom;
             let bounds = Rect::new(
                 screen_x - click_width / 2.0,
-                screen_y - click_height - 8.0,
+                screen_y - click_height,
                 click_width,
                 click_height,
             );
@@ -117,10 +119,12 @@ impl Renderer {
                     item_def.display_name.clone()
                 };
 
-                // Draw label above the item
+                // Draw label just above the clickable area
                 let label_width = self.measure_text_sharp(&label, 16.0).width;
                 let label_x = screen_x - label_width / 2.0;
-                let label_y = screen_y - click_height - 20.0;
+                // Gold piles sit lower, so offset label down by 12px
+                let gold_offset = if item.item_id == "gold" { 22.0 } else { 0.0 };
+                let label_y = screen_y - click_height - 16.0 + gold_offset;
 
                 // Background for readability
                 let padding = 4.0;
