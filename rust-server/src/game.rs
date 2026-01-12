@@ -55,6 +55,8 @@ pub struct PlayerSaveData {
     pub equipped_feet: Option<String>,
     pub equipped_ring: Option<String>,
     pub equipped_gloves: Option<String>,
+    pub equipped_necklace: Option<String>,
+    pub equipped_belt: Option<String>,
 }
 
 // ============================================================================
@@ -137,6 +139,8 @@ pub struct Player {
     pub equipped_feet: Option<String>,
     pub equipped_ring: Option<String>,
     pub equipped_gloves: Option<String>,
+    pub equipped_necklace: Option<String>,
+    pub equipped_belt: Option<String>,
     // Admin privileges
     pub is_admin: bool,
     pub is_god_mode: bool, // Invincibility for admins
@@ -183,13 +187,15 @@ impl Player {
             equipped_feet: None,
             equipped_ring: None,
             equipped_gloves: None,
+            equipped_necklace: None,
+            equipped_belt: None,
             is_admin: false,
             is_god_mode: false,
         }
     }
 
     /// Get all equipped item IDs for stat calculation
-    fn all_equipped(&self) -> [&Option<String>; 7] {
+    fn all_equipped(&self) -> [&Option<String>; 9] {
         [
             &self.equipped_head,
             &self.equipped_body,
@@ -198,6 +204,8 @@ impl Player {
             &self.equipped_feet,
             &self.equipped_ring,
             &self.equipped_gloves,
+            &self.equipped_necklace,
+            &self.equipped_belt,
         ]
     }
 
@@ -304,6 +312,8 @@ pub struct PlayerUpdate {
     pub equipped_feet: Option<String>,
     pub equipped_ring: Option<String>,
     pub equipped_gloves: Option<String>,
+    pub equipped_necklace: Option<String>,
+    pub equipped_belt: Option<String>,
     // Admin status
     pub is_admin: bool,
 }
@@ -484,6 +494,8 @@ impl GameRoom {
         equipped_feet: Option<String>,
         equipped_ring: Option<String>,
         equipped_gloves: Option<String>,
+        equipped_necklace: Option<String>,
+        equipped_belt: Option<String>,
         is_admin: bool,
     ) {
         let mut players = self.players.write().await;
@@ -503,6 +515,8 @@ impl GameRoom {
         player.equipped_feet = equipped_feet;
         player.equipped_ring = equipped_ring;
         player.equipped_gloves = equipped_gloves;
+        player.equipped_necklace = equipped_necklace;
+        player.equipped_belt = equipped_belt;
         player.is_admin = is_admin;
 
         // Restore inventory from JSON - support both old (u8) and new (String) formats
@@ -589,6 +603,8 @@ impl GameRoom {
                 equipped_feet: p.equipped_feet.clone(),
                 equipped_ring: p.equipped_ring.clone(),
                 equipped_gloves: p.equipped_gloves.clone(),
+                equipped_necklace: p.equipped_necklace.clone(),
+                equipped_belt: p.equipped_belt.clone(),
             }
         })
     }
@@ -2161,12 +2177,14 @@ impl GameRoom {
                     player.equipped_feet.clone(),
                     player.equipped_ring.clone(),
                     player.equipped_gloves.clone(),
+                    player.equipped_necklace.clone(),
+                    player.equipped_belt.clone(),
                 )),
                 _ => None,
             }
         };
 
-        let (item_id, player_level, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves) = match item_info {
+        let (item_id, player_level, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace, equipped_belt) = match item_info {
             Some(info) => info,
             None => {
                 self.send_to_player(player_id, ServerMessage::EquipResult {
@@ -2229,6 +2247,8 @@ impl GameRoom {
             EquipmentSlot::Feet => equipped_feet,
             EquipmentSlot::Ring => equipped_ring,
             EquipmentSlot::Gloves => equipped_gloves,
+            EquipmentSlot::Necklace => equipped_necklace,
+            EquipmentSlot::Belt => equipped_belt,
             EquipmentSlot::None => None,
         };
 
@@ -2256,6 +2276,8 @@ impl GameRoom {
                 EquipmentSlot::Feet => player.equipped_feet = Some(item_id.clone()),
                 EquipmentSlot::Ring => player.equipped_ring = Some(item_id.clone()),
                 EquipmentSlot::Gloves => player.equipped_gloves = Some(item_id.clone()),
+                EquipmentSlot::Necklace => player.equipped_necklace = Some(item_id.clone()),
+                EquipmentSlot::Belt => player.equipped_belt = Some(item_id.clone()),
                 EquipmentSlot::None => {}
             }
 
@@ -2270,6 +2292,8 @@ impl GameRoom {
                     player.equipped_feet.clone(),
                     player.equipped_ring.clone(),
                     player.equipped_gloves.clone(),
+                    player.equipped_necklace.clone(),
+                    player.equipped_belt.clone(),
                 ),
             )
         };
@@ -2301,13 +2325,15 @@ impl GameRoom {
             equipped_feet: new_equipment.4,
             equipped_ring: new_equipment.5,
             equipped_gloves: new_equipment.6,
+            equipped_necklace: new_equipment.7,
+            equipped_belt: new_equipment.8,
         }).await;
     }
 
     /// Handle unequipping an item
     pub async fn handle_unequip(&self, player_id: &str, slot_type: &str) {
         // Validate slot type
-        let valid_slots = ["head", "body", "weapon", "back", "feet", "ring", "gloves"];
+        let valid_slots = ["head", "body", "weapon", "back", "feet", "ring", "gloves", "necklace", "belt"];
         if !valid_slots.contains(&slot_type) {
             self.send_to_player(player_id, ServerMessage::EquipResult {
                 success: false,
@@ -2334,6 +2360,8 @@ impl GameRoom {
                 "feet" => &player.equipped_feet,
                 "ring" => &player.equipped_ring,
                 "gloves" => &player.equipped_gloves,
+                "necklace" => &player.equipped_necklace,
+                "belt" => &player.equipped_belt,
                 _ => return,
             };
 
@@ -2385,6 +2413,8 @@ impl GameRoom {
                 "feet" => player.equipped_feet = None,
                 "ring" => player.equipped_ring = None,
                 "gloves" => player.equipped_gloves = None,
+                "necklace" => player.equipped_necklace = None,
+                "belt" => player.equipped_belt = None,
                 _ => {}
             }
 
@@ -2402,6 +2432,8 @@ impl GameRoom {
                     player.equipped_feet.clone(),
                     player.equipped_ring.clone(),
                     player.equipped_gloves.clone(),
+                    player.equipped_necklace.clone(),
+                    player.equipped_belt.clone(),
                 ),
             )
         };
@@ -2433,6 +2465,8 @@ impl GameRoom {
             equipped_feet: new_equipment.4,
             equipped_ring: new_equipment.5,
             equipped_gloves: new_equipment.6,
+            equipped_necklace: new_equipment.7,
+            equipped_belt: new_equipment.8,
         }).await;
     }
 
@@ -2655,6 +2689,8 @@ impl GameRoom {
                     equipped_feet: player.equipped_feet.clone(),
                     equipped_ring: player.equipped_ring.clone(),
                     equipped_gloves: player.equipped_gloves.clone(),
+                    equipped_necklace: player.equipped_necklace.clone(),
+                    equipped_belt: player.equipped_belt.clone(),
                     is_admin: player.is_admin,
                 });
             }

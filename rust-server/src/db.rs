@@ -32,6 +32,8 @@ pub struct PlayerData {
     pub equipped_feet: Option<String>,
     pub equipped_ring: Option<String>,
     pub equipped_gloves: Option<String>,
+    pub equipped_necklace: Option<String>,
+    pub equipped_belt: Option<String>,
     pub is_admin: bool,         // Game Master privileges
 }
 
@@ -105,6 +107,10 @@ impl Database {
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_ring TEXT")
             .execute(pool).await;
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_gloves TEXT")
+            .execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_necklace TEXT")
+            .execute(pool).await;
+        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_belt TEXT")
             .execute(pool).await;
         let _ = sqlx::query("ALTER TABLE players ADD COLUMN is_admin BOOLEAN DEFAULT FALSE")
             .execute(pool).await;
@@ -205,7 +211,7 @@ impl Database {
 
     pub async fn get_player_by_username(&self, username: &str) -> Result<Option<PlayerData>, sqlx::Error> {
         let row = sqlx::query(
-            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves, is_admin FROM players WHERE username = ?",
+            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace, equipped_belt, is_admin FROM players WHERE username = ?",
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -233,6 +239,8 @@ impl Database {
             equipped_feet: r.try_get::<String, _>("equipped_feet").ok().filter(|s| !s.is_empty()),
             equipped_ring: r.try_get::<String, _>("equipped_ring").ok().filter(|s| !s.is_empty()),
             equipped_gloves: r.try_get::<String, _>("equipped_gloves").ok().filter(|s| !s.is_empty()),
+            equipped_necklace: r.try_get::<String, _>("equipped_necklace").ok().filter(|s| !s.is_empty()),
+            equipped_belt: r.try_get::<String, _>("equipped_belt").ok().filter(|s| !s.is_empty()),
             is_admin: r.try_get::<bool, _>("is_admin").unwrap_or(false),
         }))
     }
@@ -256,6 +264,8 @@ impl Database {
         equipped_feet: Option<&str>,
         equipped_ring: Option<&str>,
         equipped_gloves: Option<&str>,
+        equipped_necklace: Option<&str>,
+        equipped_belt: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"UPDATE players SET
@@ -263,7 +273,7 @@ impl Database {
                 exp_to_next_level = ?, gold = ?, inventory_json = ?,
                 equipped_head = ?, equipped_body = ?, equipped_weapon = ?,
                 equipped_back = ?, equipped_feet = ?, equipped_ring = ?,
-                equipped_gloves = ?,
+                equipped_gloves = ?, equipped_necklace = ?, equipped_belt = ?,
                 last_login = CURRENT_TIMESTAMP
             WHERE username = ?"#,
         )
@@ -283,6 +293,8 @@ impl Database {
         .bind(equipped_feet)
         .bind(equipped_ring)
         .bind(equipped_gloves)
+        .bind(equipped_necklace)
+        .bind(equipped_belt)
         .bind(username)
         .execute(&self.pool)
         .await?;

@@ -139,6 +139,8 @@ impl InputHandler {
                                                     "feet" => player.equipped_feet = None,
                                                     "ring" => player.equipped_ring = None,
                                                     "gloves" => player.equipped_gloves = None,
+                                                    "necklace" => player.equipped_necklace = None,
+                                                    "belt" => player.equipped_belt = None,
                                                     _ => {}
                                                 }
                                             }
@@ -182,6 +184,8 @@ impl InputHandler {
                                                     "feet" => player.equipped_feet = Some(drag.item_id.clone()),
                                                     "ring" => player.equipped_ring = Some(drag.item_id.clone()),
                                                     "gloves" => player.equipped_gloves = Some(drag.item_id.clone()),
+                                                    "necklace" => player.equipped_necklace = Some(drag.item_id.clone()),
+                                                    "belt" => player.equipped_belt = Some(drag.item_id.clone()),
                                                     _ => {}
                                                 }
                                             }
@@ -269,6 +273,8 @@ impl InputHandler {
                             "feet" => state.get_local_player().and_then(|p| p.equipped_feet.clone()),
                             "ring" => state.get_local_player().and_then(|p| p.equipped_ring.clone()),
                             "gloves" => state.get_local_player().and_then(|p| p.equipped_gloves.clone()),
+                            "necklace" => state.get_local_player().and_then(|p| p.equipped_necklace.clone()),
+                            "belt" => state.get_local_player().and_then(|p| p.equipped_belt.clone()),
                             _ => None,
                         };
                         if let Some(item_id) = equipped_item {
@@ -809,6 +815,8 @@ impl InputHandler {
                             "feet" => state.get_local_player().and_then(|p| p.equipped_feet.as_ref()).is_some(),
                             "ring" => state.get_local_player().and_then(|p| p.equipped_ring.as_ref()).is_some(),
                             "gloves" => state.get_local_player().and_then(|p| p.equipped_gloves.as_ref()).is_some(),
+                            "necklace" => state.get_local_player().and_then(|p| p.equipped_necklace.as_ref()).is_some(),
+                            "belt" => state.get_local_player().and_then(|p| p.equipped_belt.as_ref()).is_some(),
                             _ => false,
                         };
                         if has_item {

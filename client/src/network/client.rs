@@ -347,6 +347,8 @@ impl NetworkClient {
                     let equipped_feet = extract_string(value, "equipped_feet").filter(|s| !s.is_empty());
                     let equipped_ring = extract_string(value, "equipped_ring").filter(|s| !s.is_empty());
                     let equipped_gloves = extract_string(value, "equipped_gloves").filter(|s| !s.is_empty());
+                    let equipped_necklace = extract_string(value, "equipped_necklace").filter(|s| !s.is_empty());
+                    let equipped_belt = extract_string(value, "equipped_belt").filter(|s| !s.is_empty());
                     // Admin status
                     let is_admin = extract_bool(value, "is_admin").unwrap_or(false);
 
@@ -359,6 +361,8 @@ impl NetworkClient {
                     player.equipped_feet = equipped_feet;
                     player.equipped_ring = equipped_ring;
                     player.equipped_gloves = equipped_gloves;
+                    player.equipped_necklace = equipped_necklace;
+                    player.equipped_belt = equipped_belt;
                     player.is_admin = is_admin;
                     state.players.insert(id, player);
                 }
@@ -403,6 +407,8 @@ impl NetworkClient {
                             let equipped_feet = extract_string(player_value, "equipped_feet").filter(|s| !s.is_empty());
                             let equipped_ring = extract_string(player_value, "equipped_ring").filter(|s| !s.is_empty());
                             let equipped_gloves = extract_string(player_value, "equipped_gloves").filter(|s| !s.is_empty());
+                            let equipped_necklace = extract_string(player_value, "equipped_necklace").filter(|s| !s.is_empty());
+                            let equipped_belt = extract_string(player_value, "equipped_belt").filter(|s| !s.is_empty());
                             let is_admin = extract_bool(player_value, "is_admin").unwrap_or(false);
 
                             if let Some(player) = state.players.get_mut(&id) {
@@ -440,6 +446,8 @@ impl NetworkClient {
                                 player.equipped_feet = equipped_feet.clone();
                                 player.equipped_ring = equipped_ring.clone();
                                 player.equipped_gloves = equipped_gloves.clone();
+                                player.equipped_necklace = equipped_necklace.clone();
+                                player.equipped_belt = equipped_belt.clone();
                                 // Update admin status
                                 player.is_admin = is_admin;
                             }
@@ -1099,6 +1107,8 @@ impl NetworkClient {
                     let equipped_feet = extract_string(value, "equipped_feet").filter(|s| !s.is_empty());
                     let equipped_ring = extract_string(value, "equipped_ring").filter(|s| !s.is_empty());
                     let equipped_gloves = extract_string(value, "equipped_gloves").filter(|s| !s.is_empty());
+                    let equipped_necklace = extract_string(value, "equipped_necklace").filter(|s| !s.is_empty());
+                    let equipped_belt = extract_string(value, "equipped_belt").filter(|s| !s.is_empty());
 
                     if let Some(player) = state.players.get_mut(&player_id) {
                         player.equipped_head = equipped_head.clone();
@@ -1108,6 +1118,8 @@ impl NetworkClient {
                         player.equipped_feet = equipped_feet.clone();
                         player.equipped_ring = equipped_ring.clone();
                         player.equipped_gloves = equipped_gloves.clone();
+                        player.equipped_necklace = equipped_necklace.clone();
+                        player.equipped_belt = equipped_belt.clone();
                         log::info!("Player {} equipment updated", player_id);
                     }
                 }

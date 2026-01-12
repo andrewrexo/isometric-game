@@ -127,6 +127,8 @@ pub struct Player {
     pub equipped_feet: Option<String>,   // Item ID of equipped boots
     pub equipped_ring: Option<String>,   // Item ID of equipped ring
     pub equipped_gloves: Option<String>, // Item ID of equipped gloves
+    pub equipped_necklace: Option<String>, // Item ID of equipped necklace
+    pub equipped_belt: Option<String>,   // Item ID of equipped belt
 
     // Admin status
     pub is_admin: bool,
@@ -168,6 +170,8 @@ impl Player {
             equipped_feet: None,
             equipped_ring: None,
             equipped_gloves: None,
+            equipped_necklace: None,
+            equipped_belt: None,
             is_admin: false,
             animation: PlayerAnimation::new(),
         }

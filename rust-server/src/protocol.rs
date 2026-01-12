@@ -254,6 +254,8 @@ pub enum ServerMessage {
         equipped_feet: Option<String>,
         equipped_ring: Option<String>,
         equipped_gloves: Option<String>,
+        equipped_necklace: Option<String>,
+        equipped_belt: Option<String>,
     },
     /// Result of equip/unequip action sent to the acting player
     EquipResult {
@@ -511,6 +513,20 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     pmap.push((
                         Value::String("equipped_gloves".into()),
                         match &p.equipped_gloves {
+                            Some(item_id) => Value::String(item_id.clone().into()),
+                            None => Value::Nil,
+                        },
+                    ));
+                    pmap.push((
+                        Value::String("equipped_necklace".into()),
+                        match &p.equipped_necklace {
+                            Some(item_id) => Value::String(item_id.clone().into()),
+                            None => Value::Nil,
+                        },
+                    ));
+                    pmap.push((
+                        Value::String("equipped_belt".into()),
+                        match &p.equipped_belt {
                             Some(item_id) => Value::String(item_id.clone().into()),
                             None => Value::Nil,
                         },
@@ -1070,7 +1086,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("npc_id".into()), Value::String(npc_id.clone().into())));
             Value::Map(map)
         }
-        ServerMessage::EquipmentUpdate { player_id, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves } => {
+        ServerMessage::EquipmentUpdate { player_id, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace, equipped_belt } => {
             let mut map = Vec::new();
             map.push((Value::String("player_id".into()), Value::String(player_id.clone().into())));
             map.push((
@@ -1118,6 +1134,20 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((
                 Value::String("equipped_gloves".into()),
                 match equipped_gloves {
+                    Some(item_id) => Value::String(item_id.clone().into()),
+                    None => Value::Nil,
+                },
+            ));
+            map.push((
+                Value::String("equipped_necklace".into()),
+                match equipped_necklace {
+                    Some(item_id) => Value::String(item_id.clone().into()),
+                    None => Value::Nil,
+                },
+            ));
+            map.push((
+                Value::String("equipped_belt".into()),
+                match equipped_belt {
                     Some(item_id) => Value::String(item_id.clone().into()),
                     None => Value::Nil,
                 },

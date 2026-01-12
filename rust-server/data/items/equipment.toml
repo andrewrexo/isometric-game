@@ -125,3 +125,276 @@ slot_type = "body"
 level_required = 10
 damage_bonus = 5
 defense_bonus = 12
+
+[great_gold_ring]
+display_name = "Great Gold Ring"
+sprite = "great_gold_ring"
+description = "A magnificent ring forged from pure gold."
+category = "equipment"
+max_stack = 1
+base_price = 450
+[great_gold_ring.equipment]
+slot_type = "ring"
+level_required = 8
+damage_bonus = 4
+defense_bonus = 2
+
+[great_silver_ring]
+display_name = "Great Silver Ring"
+sprite = "great_silver_ring"
+description = "A finely crafted silver ring with intricate engravings."
+category = "equipment"
+max_stack = 1
+base_price = 300
+[great_silver_ring.equipment]
+slot_type = "ring"
+level_required = 6
+damage_bonus = 2
+defense_bonus = 2
+
+[ice_necklace]
+display_name = "Ice Necklace"
+sprite = "ice_necklace"
+description = "A necklace that feels cold to the touch. Infused with frost magic."
+category = "equipment"
+max_stack = 1
+base_price = 350
+[ice_necklace.equipment]
+slot_type = "necklace"
+level_required = 7
+damage_bonus = 3
+defense_bonus = 1
+
+[ice_ring]
+display_name = "Ice Ring"
+sprite = "ice_ring"
+description = "A ring made of eternal ice. It never melts."
+category = "equipment"
+max_stack = 1
+base_price = 280
+[ice_ring.equipment]
+slot_type = "ring"
+level_required = 5
+damage_bonus = 2
+defense_bonus = 1
+
+[magic_necklace]
+display_name = "Magic Necklace"
+sprite = "magic_necklace"
+description = "A necklace pulsating with arcane energy."
+category = "equipment"
+max_stack = 1
+base_price = 400
+[magic_necklace.equipment]
+slot_type = "necklace"
+level_required = 8
+damage_bonus = 5
+defense_bonus = 0
+
+[mana_ring]
+display_name = "Mana Ring"
+sprite = "mana_ring"
+description = "A ring that helps channel magical power."
+category = "equipment"
+max_stack = 1
+base_price = 220
+[mana_ring.equipment]
+slot_type = "necklace"
+level_required = 4
+damage_bonus = 3
+defense_bonus = 0
+
+[necklace_vitality]
+display_name = "Necklace of Vitality"
+sprite = "necklace_vitality"
+description = "A necklace that grants the wearer increased constitution."
+category = "equipment"
+max_stack = 1
+base_price = 320
+[necklace_vitality.equipment]
+slot_type = "necklace"
+level_required = 6
+damage_bonus = 0
+defense_bonus = 5
+
+[oblon_armor]
+display_name = "Oblon Armor"
+sprite = "oblon_armor"
+description = "Sturdy armor made from Oblon ore."
+category = "equipment"
+max_stack = 1
+base_price = 420
+[oblon_armor.equipment]
+slot_type = "body"
+level_required = 9
+damage_bonus = 1
+defense_bonus = 11
+
+[ring_of_life]
+display_name = "Ring of Life"
+sprite = "ring_of_life"
+description = "A ring that seems to pulse with a heartbeat."
+category = "equipment"
+max_stack = 1
+base_price = 500
+[ring_of_life.equipment]
+slot_type = "ring"
+level_required = 10
+damage_bonus = 0
+defense_bonus = 8
+
+[runic_belt]
+display_name = "Runic Belt"
+sprite = "runic_belt"
+description = "A belt inscribed with powerful ancient runes."
+category = "equipment"
+max_stack = 1
+base_price = 250
+[runic_belt.equipment]
+slot_type = "belt"
+level_required = 5
+damage_bonus = 2
+defense_bonus = 2
+
+[silver_ring]
+display_name = "Silver Ring"
+sprite = "silver_ring"
+description = "A simple silver ring."
+category = "equipment"
+max_stack = 1
+base_price = 80
+[silver_ring.equipment]
+slot_type = "ring"
+level_required = 2
+damage_bonus = 1
+defense_bonus = 0
+
+[stone_belt]
+display_name = "Stone Belt"
+sprite = "stone_belt"
+description = "A heavy belt made of connected stone links."
+category = "equipment"
+max_stack = 1
+base_price = 150
+[stone_belt.equipment]
+slot_type = "ring"
+level_required = 3
+damage_bonus = 0
+defense_bonus = 3
+
+[stone_ring]
+display_name = "Stone Ring"
+sprite = "stone_ring"
+description = "A ring carved from solid granite."
+category = "equipment"
+max_stack = 1
+base_price = 60
+[stone_ring.equipment]
+slot_type = "ring"
+level_required = 1
+damage_bonus = 0
+defense_bonus = 2
+
+[undead_armor]
+display_name = "Undead Armor"
+sprite = "undead_armor"
+description = "Armor worn by the high-ranking undead."
+category = "equipment"
+max_stack = 1
+base_price = 600
+[undead_armor.equipment]
+slot_type = "body"
+level_required = 12
+damage_bonus = 6
+defense_bonus = 15
+
+[undead_ring]
+display_name = "Undead Ring"
+sprite = "undead_ring"
+description = "A cold, dark ring found in a crypt."
+category = "equipment"
+max_stack = 1
+base_price = 380
+[undead_ring.equipment]
+slot_type = "ring"
+level_required = 7
+damage_bonus = 4
+defense_bonus = 1
+
+[used_belt]
+display_name = "Used Belt"
+sprite = "used_belt"
+description = "A worn leather belt. It's seen better days."
+category = "equipment"
+max_stack = 1
+base_price = 40
+[used_belt.equipment]
+slot_type = "belt"
+level_required = 1
+damage_bonus = 0
+defense_bonus = 1
+
+[worn_belt]
+display_name = "Worn Belt"
+sprite = "worn_belt"
+description = "A simple belt showing signs of age."
+category = "equipment"
+max_stack = 1
+base_price = 60
+[worn_belt.equipment]
+slot_type = "belt"
+level_required = 2
+damage_bonus = 0
+defense_bonus = 2
+
+[admin_robes]
+display_name = "Admin Robes"
+sprite = "admin_robes"
+description = "Powerful robes granted to the masters of this world."
+category = "equipment"
+max_stack = 1
+base_price = 10000
+[admin_robes.equipment]
+slot_type = "body"
+level_required = 1
+damage_bonus = 100
+defense_bonus = 100
+
+[death_gloves]
+display_name = "Death Gloves"
+sprite = "death_gloves"
+description = "Gloves that feel cold and carry the stench of the grave."
+category = "equipment"
+max_stack = 1
+base_price = 800
+[death_gloves.equipment]
+slot_type = "gloves"
+level_required = 15
+damage_bonus = 10
+defense_bonus = 5
+
+[training_gloves]
+display_name = "Training Gloves"
+sprite = "training_gloves"
+description = "Basic gloves used for training."
+category = "equipment"
+max_stack = 1
+base_price = 50
+[training_gloves.equipment]
+slot_type = "gloves"
+level_required = 1
+damage_bonus = 1
+defense_bonus = 1
+
+[undead_gloves]
+display_name = "Undead Gloves"
+sprite = "undead_gloves"
+description = "Gloves crafted from skeletal remains."
+category = "equipment"
+max_stack = 1
+base_price = 400
+[undead_gloves.equipment]
+slot_type = "gloves"
+level_required = 10
+damage_bonus = 5
+defense_bonus = 8

@@ -1778,6 +1778,23 @@ impl Renderer {
                     // Thumb
                     draw_rectangle(center_x + 8.0, center_y - 4.0, 4.0, 8.0, icon_color);
                 },
+                "necklace" => {
+                    // Necklace silhouette (pendant on chain)
+                    // Chain part (U shape)
+                    draw_rectangle(center_x - 8.0, center_y - 10.0, 3.0, 8.0, icon_color);
+                    draw_rectangle(center_x + 5.0, center_y - 10.0, 3.0, 8.0, icon_color);
+                    draw_rectangle(center_x - 6.0, center_y - 2.0, 12.0, 3.0, icon_color);
+                    // Pendant (diamond shape)
+                    draw_rectangle(center_x - 4.0, center_y + 1.0, 8.0, 8.0, icon_color);
+                    draw_rectangle(center_x - 2.0, center_y + 9.0, 4.0, 4.0, icon_color);
+                },
+                "belt" => {
+                    // Belt silhouette (horizontal band with buckle)
+                    draw_rectangle(center_x - 12.0, center_y - 3.0, 24.0, 6.0, icon_color);
+                    // Buckle (square with center)
+                    draw_rectangle(center_x - 5.0, center_y - 6.0, 10.0, 12.0, icon_color);
+                    draw_rectangle(center_x - 2.0, center_y - 3.0, 4.0, 6.0, EQUIP_SLOT_EMPTY);
+                },
                 _ => {}
             }
         }
@@ -1936,14 +1953,16 @@ impl Renderer {
 
         // Define all equipment slots with (slot_type, col, row)
         // col: 0=left, 1=center, 2=right
-        let equipment_slots: [(&str, i32, i32); 7] = [
-            ("head", 1, 0),     // Center top
-            ("back", 0, 1),     // Left middle
-            ("body", 1, 1),     // Center middle
-            ("weapon", 2, 1),   // Right middle
-            ("gloves", 0, 2),   // Left lower
-            ("ring", 2, 2),     // Right lower
-            ("feet", 1, 3),     // Center bottom
+        let equipment_slots: [(&str, i32, i32); 9] = [
+            ("head", 1, 0),      // Center top
+            ("back", 0, 1),      // Left middle
+            ("body", 1, 1),      // Center middle
+            ("weapon", 2, 1),    // Right middle
+            ("gloves", 0, 2),    // Left lower
+            ("ring", 2, 2),      // Right lower
+            ("necklace", 0, 3),  // Left bottom row
+            ("belt", 2, 3),      // Right bottom row
+            ("feet", 1, 4),      // Center bottom
         ];
 
         for (slot_type, col, row) in equipment_slots.iter() {
@@ -1968,6 +1987,8 @@ impl Renderer {
                     "feet" => p.equipped_feet.is_some(),
                     "ring" => p.equipped_ring.is_some(),
                     "gloves" => p.equipped_gloves.is_some(),
+                    "necklace" => p.equipped_necklace.is_some(),
+                    "belt" => p.equipped_belt.is_some(),
                     _ => false,
                 }
             }).unwrap_or(false);
@@ -1986,6 +2007,8 @@ impl Renderer {
                         "feet" => local_player.equipped_feet.as_ref(),
                         "ring" => local_player.equipped_ring.as_ref(),
                         "gloves" => local_player.equipped_gloves.as_ref(),
+                        "necklace" => local_player.equipped_necklace.as_ref(),
+                        "belt" => local_player.equipped_belt.as_ref(),
                         _ => None,
                     };
                     if let Some(id) = item_id {
@@ -2349,18 +2372,48 @@ impl Renderer {
 
     /// Render tooltip for hovered inventory/quick slot items
     fn render_item_tooltip(&self, state: &GameState) {
-        // Check if we're hovering over an inventory or quick slot
-        let slot_idx = match &state.ui_state.hovered_element {
-            Some(UiElementId::InventorySlot(idx)) if state.ui_state.inventory_open => Some(*idx),
-            Some(UiElementId::QuickSlot(idx)) => Some(*idx),
-            _ => None,
+        // Check if we're hovering over an inventory, quick slot, or equipment slot
+        let (item_id, quantity) = match &state.ui_state.hovered_element {
+            Some(UiElementId::InventorySlot(idx)) if state.ui_state.inventory_open => {
+                if let Some(slot) = state.inventory.slots.get(*idx).and_then(|s| s.as_ref()) {
+                    (slot.item_id.clone(), slot.quantity)
+                } else {
+                    return;
+                }
+            }
+            Some(UiElementId::QuickSlot(idx)) => {
+                if let Some(slot) = state.inventory.slots.get(*idx).and_then(|s| s.as_ref()) {
+                    (slot.item_id.clone(), slot.quantity)
+                } else {
+                    return;
+                }
+            }
+            Some(UiElementId::EquipmentSlot(slot_type)) if state.ui_state.inventory_open => {
+                let equipped_item = state.get_local_player().and_then(|p| {
+                    match slot_type.as_str() {
+                        "head" => p.equipped_head.clone(),
+                        "body" => p.equipped_body.clone(),
+                        "weapon" => p.equipped_weapon.clone(),
+                        "back" => p.equipped_back.clone(),
+                        "feet" => p.equipped_feet.clone(),
+                        "ring" => p.equipped_ring.clone(),
+                        "gloves" => p.equipped_gloves.clone(),
+                        "necklace" => p.equipped_necklace.clone(),
+                        "belt" => p.equipped_belt.clone(),
+                        _ => None,
+                    }
+                });
+                if let Some(id) = equipped_item {
+                    (id, 1) // Equipment always has quantity 1
+                } else {
+                    return;
+                }
+            }
+            _ => return,
         };
 
-        let Some(idx) = slot_idx else { return };
-        let Some(slot) = &state.inventory.slots.get(idx).and_then(|s| s.as_ref()) else { return };
-
         // Get item definition from registry
-        let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+        let item_def = state.item_registry.get_or_placeholder(&item_id);
 
         // Get player level for requirement checking
         let player_level = state.get_local_player().map(|p| p.level).unwrap_or(1);
@@ -2377,8 +2430,8 @@ impl Renderer {
         let text_width_limit = max_tooltip_width - padding * 2.0;
 
         // Prepare text strings for measurement
-        let name_text = if slot.quantity > 1 {
-            format!("{} x{}", item_def.display_name, slot.quantity)
+        let name_text = if quantity > 1 {
+            format!("{} x{}", item_def.display_name, quantity)
         } else {
             item_def.display_name.clone()
         };
@@ -2604,7 +2657,7 @@ impl Renderer {
         draw_line(menu_x, menu_y + header_height, menu_x + menu_width, menu_y + header_height, 1.0, HEADER_BORDER);
 
         // Header title
-        self.draw_text_sharp("Options", (menu_x + 8.0).floor(), (menu_y + 17.0).floor(), 14.0, TEXT_TITLE);
+        self.draw_text_sharp("Options", (menu_x + 8.0).floor(), (menu_y + 17.0).floor(), 16.0, TEXT_TITLE);
 
         // Small accent dots on header
         draw_rectangle((menu_x + menu_width - 18.0).floor(), (menu_y + 10.0).floor(), 3.0, 3.0, FRAME_ACCENT);
@@ -2629,7 +2682,7 @@ impl Renderer {
 
             // Label
             let text_color = if is_hovered { TEXT_TITLE } else { TEXT_NORMAL };
-            self.draw_text_sharp(label, (option_bounds.x + 10.0).floor(), (y + 16.0).floor(), 15.0, text_color);
+            self.draw_text_sharp(label, (option_bounds.x + 10.0).floor(), (y + 16.0).floor(), 16.0, text_color);
 
             y += option_height;
         }
@@ -2677,7 +2730,7 @@ impl Renderer {
         let content_width = menu_width - FRAME_THICKNESS * 2.0 - 24.0;
 
         // Camera Zoom label
-        self.draw_text_sharp("Camera Zoom", content_x.floor(), (content_y + 12.0).floor(), 14.0, TEXT_DIM);
+        self.draw_text_sharp("Camera Zoom", content_x.floor(), (content_y + 12.0).floor(), 16.0, TEXT_DIM);
 
         // Get current mouse position for hover detection
         let (mouse_x, mouse_y) = mouse_position();
@@ -2710,10 +2763,10 @@ impl Renderer {
             }
 
             // Text centered
-            let text_width = renderer.measure_text_sharp(text, 15.0).width;
+            let text_width = renderer.measure_text_sharp(text, 16.0).width;
             let text_color = if is_selected { TEXT_TITLE } else { TEXT_NORMAL };
             renderer.draw_text_sharp(text, (btn_x + (button_width - text_width) / 2.0).floor(),
-                                    (btn_y + 20.0).floor(), 15.0, text_color);
+                                    (btn_y + 20.0).floor(), 16.0, text_color);
         };
 
         // 1x Zoom button
@@ -2759,16 +2812,16 @@ impl Renderer {
         }
 
         let disconnect_text = "Disconnect";
-        let disconnect_text_width = self.measure_text_sharp(disconnect_text, 15.0).width;
+        let disconnect_text_width = self.measure_text_sharp(disconnect_text, 16.0).width;
         let disconnect_text_color = if is_disconnect_hovered { Color::new(1.0, 0.8, 0.8, 1.0) } else { Color::new(0.85, 0.7, 0.7, 1.0) };
         self.draw_text_sharp(disconnect_text, (disconnect_x + (disconnect_width - disconnect_text_width) / 2.0).floor(),
-                            (disconnect_y + 21.0).floor(), 15.0, disconnect_text_color);
+                            (disconnect_y + 21.0).floor(), 16.0, disconnect_text_color);
 
         // ===== FOOTER HINT =====
         let hint = "[Esc] Close";
-        let hint_width = self.measure_text_sharp(hint, 14.0).width;
+        let hint_width = self.measure_text_sharp(hint, 16.0).width;
         self.draw_text_sharp(hint, (menu_x + (menu_width - hint_width) / 2.0).floor(),
-                            (menu_y + menu_height - FRAME_THICKNESS - 8.0).floor(), 14.0, TEXT_DIM);
+                            (menu_y + menu_height - FRAME_THICKNESS - 8.0).floor(), 16.0, TEXT_DIM);
     }
 
     /// Render the dialogue box for NPC conversations
@@ -3242,11 +3295,9 @@ impl Renderer {
 
             // Draw item background with slot-like styling
             if is_selected {
-                draw_rectangle(list_x + 4.0, y, list_width - 8.0, line_height - 2.0, SLOT_SELECTED_BORDER);
-                draw_rectangle(list_x + 5.0, y + 1.0, list_width - 10.0, line_height - 4.0, SLOT_HOVER_BG);
+                draw_rectangle(list_x + 4.0, y, list_width - 8.0, line_height - 2.0, SLOT_HOVER_BG);
             } else if is_hovered {
-                draw_rectangle(list_x + 4.0, y, list_width - 8.0, line_height - 2.0, SLOT_HOVER_BORDER);
-                draw_rectangle(list_x + 5.0, y + 1.0, list_width - 10.0, line_height - 4.0, Color::new(0.125, 0.125, 0.173, 1.0));
+                draw_rectangle(list_x + 4.0, y, list_width - 8.0, line_height - 2.0, Color::new(0.125, 0.125, 0.173, 1.0));
             }
 
             let text_color = if is_selected { TEXT_TITLE } else if is_hovered { TEXT_NORMAL } else { TEXT_DIM };

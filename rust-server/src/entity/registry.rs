@@ -72,7 +72,7 @@ impl EntityRegistry {
                     if raw_prototypes.contains_key(&id) {
                         warn!("Duplicate entity ID '{}' in {:?}, overwriting", id, path);
                     }
-                    info!("Loaded entity prototype: {}", id);
+                    // info!("Loaded entity prototype: {}", id);
                     raw_prototypes.insert(id, proto);
                 }
             }

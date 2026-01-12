@@ -35,6 +35,8 @@ pub enum EquipmentSlot {
     Feet,
     Ring,
     Gloves,
+    Necklace,
+    Belt,
 }
 
 impl EquipmentSlot {
@@ -48,6 +50,8 @@ impl EquipmentSlot {
             EquipmentSlot::Feet => "feet",
             EquipmentSlot::Ring => "ring",
             EquipmentSlot::Gloves => "gloves",
+            EquipmentSlot::Necklace => "necklace",
+            EquipmentSlot::Belt => "belt",
         }
     }
 }

@@ -453,6 +453,8 @@ async fn login_account(
                 player.equipped_feet.as_deref(),
                 player.equipped_ring.as_deref(),
                 player.equipped_gloves.as_deref(),
+                player.equipped_necklace.as_deref(),
+                player.equipped_belt.as_deref(),
             ).await;
 
             info!("Player logged in: {} from {}", req.username, client_ip);
@@ -628,6 +630,8 @@ async fn matchmake_join_or_create(
             data.equipped_feet.clone(),
             data.equipped_ring.clone(),
             data.equipped_gloves.clone(),
+            data.equipped_necklace.clone(),
+            data.equipped_belt.clone(),
             data.is_admin,
         ).await;
     } else {
@@ -936,6 +940,8 @@ async fn handle_socket(
                 save_data.equipped_feet.as_deref(),
                 save_data.equipped_ring.as_deref(),
                 save_data.equipped_gloves.as_deref(),
+                save_data.equipped_necklace.as_deref(),
+                save_data.equipped_belt.as_deref(),
             ).await {
                 error!("Failed to save player {} on disconnect: {}", username, e);
             } else {
@@ -1109,6 +1115,8 @@ async fn main() {
                             save_data.equipped_feet.as_deref(),
                             save_data.equipped_ring.as_deref(),
                             save_data.equipped_gloves.as_deref(),
+                            save_data.equipped_necklace.as_deref(),
+                            save_data.equipped_belt.as_deref(),
                         ).await {
                             warn!("Auto-save failed for player {}: {}", username, e);
                         } else {

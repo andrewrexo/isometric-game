@@ -45,7 +45,7 @@ impl ItemRegistry {
                         warn!("Duplicate item ID '{}' in {:?}, overwriting", id, path);
                     }
                     let item = ItemDefinition::from_raw(&id, &raw);
-                    info!("Loaded item: {} ({})", item.display_name, id);
+                    // info!("Loaded item: {} ({})", item.display_name, id);
                     self.items.insert(id, item);
                 }
             }

@@ -49,13 +49,13 @@ impl CraftingRegistry {
                         warn!("Duplicate recipe ID '{}' in {:?}, overwriting", id, path);
                     }
                     let recipe = RecipeDefinition::from_raw(&id, &raw);
-                    info!(
-                        "Loaded recipe: {} ({}) - {} ingredients -> {} results",
-                        recipe.display_name,
-                        id,
-                        recipe.ingredients.len(),
-                        recipe.results.len()
-                    );
+                    // info!(
+                    //     "Loaded recipe: {} ({}) - {} ingredients -> {} results",
+                    //     recipe.display_name,
+                    //     id,
+                    //     recipe.ingredients.len(),
+                    //     recipe.results.len()
+                    // );
                     self.recipes.insert(id, recipe);
                 }
             }
