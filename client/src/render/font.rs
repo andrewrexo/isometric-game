@@ -86,13 +86,19 @@ impl BitmapFont {
     /// Draw text at the specified size (uses closest native size)
     pub fn draw_text(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color) {
         let native_size = self.get_closest_size(font_size);
-        let scale = font_size / native_size as f32;
+
+        // Only apply scaling if not an exact native size match
+        let scale = if (font_size - native_size as f32).abs() < 0.01 {
+            1.0
+        } else {
+            font_size / native_size as f32
+        };
 
         if let Some(font) = self.fonts.get(&native_size) {
             draw_text_ex(
                 text,
-                x,
-                y,
+                x.floor(),  // Pixel-perfect positioning
+                y.floor(),
                 TextParams {
                     font: Some(font),
                     font_size: native_size,
@@ -103,7 +109,7 @@ impl BitmapFont {
             );
         } else {
             // Fallback to default font
-            draw_text(text, x, y, font_size, color);
+            draw_text(text, x.floor(), y.floor(), font_size, color);
         }
     }
 
@@ -112,8 +118,8 @@ impl BitmapFont {
         if let Some(font) = self.fonts.get(&size) {
             draw_text_ex(
                 text,
-                x,
-                y,
+                x.floor(),  // Pixel-perfect positioning
+                y.floor(),
                 TextParams {
                     font: Some(font),
                     font_size: size,
@@ -127,8 +133,8 @@ impl BitmapFont {
             let scale = size as f32 / fallback_size as f32;
             draw_text_ex(
                 text,
-                x,
-                y,
+                x.floor(),
+                y.floor(),
                 TextParams {
                     font: Some(font),
                     font_size: fallback_size,

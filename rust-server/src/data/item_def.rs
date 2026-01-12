@@ -28,17 +28,26 @@ impl Default for ItemCategory {
 pub enum EquipmentSlot {
     #[default]
     None,
+    Head,
     Body,
+    Weapon,
+    Back,
     Feet,
-    // Future slots: Head, Hands, Weapon, Offhand, etc.
+    Ring,
+    Gloves,
 }
 
 impl EquipmentSlot {
     pub fn as_str(&self) -> &'static str {
         match self {
             EquipmentSlot::None => "none",
+            EquipmentSlot::Head => "head",
             EquipmentSlot::Body => "body",
+            EquipmentSlot::Weapon => "weapon",
+            EquipmentSlot::Back => "back",
             EquipmentSlot::Feet => "feet",
+            EquipmentSlot::Ring => "ring",
+            EquipmentSlot::Gloves => "gloves",
         }
     }
 }

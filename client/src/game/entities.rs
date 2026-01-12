@@ -120,8 +120,13 @@ pub struct Player {
     pub skin: String,   // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
 
     // Equipment
-    pub equipped_body: Option<String>, // Item ID of equipped body armor
-    pub equipped_feet: Option<String>, // Item ID of equipped boots
+    pub equipped_head: Option<String>,   // Item ID of equipped helmet/hat
+    pub equipped_body: Option<String>,   // Item ID of equipped body armor
+    pub equipped_weapon: Option<String>, // Item ID of equipped weapon (sword/bow/etc)
+    pub equipped_back: Option<String>,   // Item ID of equipped back item (cape/quiver/etc)
+    pub equipped_feet: Option<String>,   // Item ID of equipped boots
+    pub equipped_ring: Option<String>,   // Item ID of equipped ring
+    pub equipped_gloves: Option<String>, // Item ID of equipped gloves
 
     // Admin status
     pub is_admin: bool,
@@ -156,8 +161,13 @@ impl Player {
             death_time: 0.0,
             gender,
             skin,
+            equipped_head: None,
             equipped_body: None,
+            equipped_weapon: None,
+            equipped_back: None,
             equipped_feet: None,
+            equipped_ring: None,
+            equipped_gloves: None,
             is_admin: false,
             animation: PlayerAnimation::new(),
         }

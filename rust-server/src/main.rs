@@ -446,8 +446,13 @@ async fn login_account(
                 player.exp_to_next_level,
                 player.gold,
                 &player.inventory_json,
+                player.equipped_head.as_deref(),
                 player.equipped_body.as_deref(),
+                player.equipped_weapon.as_deref(),
+                player.equipped_back.as_deref(),
                 player.equipped_feet.as_deref(),
+                player.equipped_ring.as_deref(),
+                player.equipped_gloves.as_deref(),
             ).await;
 
             info!("Player logged in: {} from {}", req.username, client_ip);
@@ -616,8 +621,13 @@ async fn matchmake_join_or_create(
             &data.inventory_json,
             &data.gender,
             &data.skin,
+            data.equipped_head.clone(),
             data.equipped_body.clone(),
+            data.equipped_weapon.clone(),
+            data.equipped_back.clone(),
             data.equipped_feet.clone(),
+            data.equipped_ring.clone(),
+            data.equipped_gloves.clone(),
             data.is_admin,
         ).await;
     } else {
@@ -919,8 +929,13 @@ async fn handle_socket(
                 save_data.exp_to_next_level,
                 save_data.gold,
                 &save_data.inventory_json,
+                save_data.equipped_head.as_deref(),
                 save_data.equipped_body.as_deref(),
+                save_data.equipped_weapon.as_deref(),
+                save_data.equipped_back.as_deref(),
                 save_data.equipped_feet.as_deref(),
+                save_data.equipped_ring.as_deref(),
+                save_data.equipped_gloves.as_deref(),
             ).await {
                 error!("Failed to save player {} on disconnect: {}", username, e);
             } else {
@@ -1087,8 +1102,13 @@ async fn main() {
                             save_data.exp_to_next_level,
                             save_data.gold,
                             &save_data.inventory_json,
+                            save_data.equipped_head.as_deref(),
                             save_data.equipped_body.as_deref(),
+                            save_data.equipped_weapon.as_deref(),
+                            save_data.equipped_back.as_deref(),
                             save_data.equipped_feet.as_deref(),
+                            save_data.equipped_ring.as_deref(),
+                            save_data.equipped_gloves.as_deref(),
                         ).await {
                             warn!("Auto-save failed for player {}: {}", username, e);
                         } else {

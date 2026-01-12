@@ -22,6 +22,82 @@ const OBJECTS_FIRSTGID: u32 = 1249;
 /// Offset to convert local tile id to sprite filename number
 const OBJECTS_ID_OFFSET: u32 = 87;
 
+// ============================================================================
+// Inventory UI Color Palette - Medieval Fantasy Theme
+// ============================================================================
+
+// Panel backgrounds (darker to lighter for depth)
+const PANEL_BG_DARK: Color = Color::new(0.071, 0.071, 0.094, 0.961);    // rgba(18, 18, 24, 245)
+const PANEL_BG_MID: Color = Color::new(0.110, 0.110, 0.149, 1.0);       // rgba(28, 28, 38, 255)
+
+// Frame/Border colors (bronze/gold medieval theme)
+const FRAME_OUTER: Color = Color::new(0.322, 0.243, 0.165, 1.0);        // rgba(82, 62, 42, 255)
+const FRAME_MID: Color = Color::new(0.557, 0.424, 0.267, 1.0);          // rgba(142, 108, 68, 255)
+const FRAME_INNER: Color = Color::new(0.729, 0.580, 0.361, 1.0);        // rgba(186, 148, 92, 255)
+const FRAME_ACCENT: Color = Color::new(0.855, 0.698, 0.424, 1.0);       // rgba(218, 178, 108, 255)
+
+// Slot colors
+const SLOT_BG_EMPTY: Color = Color::new(0.086, 0.086, 0.118, 1.0);      // rgba(22, 22, 30, 255)
+const SLOT_BG_FILLED: Color = Color::new(0.125, 0.125, 0.173, 1.0);     // rgba(32, 32, 44, 255)
+const SLOT_INNER_SHADOW: Color = Color::new(0.047, 0.047, 0.063, 1.0);  // rgba(12, 12, 16, 255)
+const SLOT_HIGHLIGHT: Color = Color::new(0.188, 0.188, 0.251, 1.0);     // rgba(48, 48, 64, 255)
+const SLOT_BORDER: Color = Color::new(0.227, 0.212, 0.188, 1.0);        // rgba(58, 54, 48, 255)
+
+// Hover/Selection states
+const SLOT_HOVER_BG: Color = Color::new(0.188, 0.188, 0.282, 1.0);      // rgba(48, 48, 72, 255)
+const SLOT_HOVER_BORDER: Color = Color::new(0.659, 0.580, 0.424, 1.0);  // rgba(168, 148, 108, 255)
+const SLOT_SELECTED_BORDER: Color = Color::new(0.855, 0.737, 0.502, 1.0); // rgba(218, 188, 128, 255)
+const SLOT_DRAG_SOURCE: Color = Color::new(0.314, 0.392, 0.627, 0.706); // rgba(80, 100, 160, 180)
+
+// Equipment section
+const EQUIP_BG: Color = Color::new(0.094, 0.094, 0.133, 1.0);           // rgba(24, 24, 34, 255)
+const EQUIP_SLOT_EMPTY: Color = Color::new(0.110, 0.110, 0.165, 1.0);   // rgba(28, 28, 42, 255)
+const EQUIP_ACCENT: Color = Color::new(0.424, 0.345, 0.580, 1.0);       // rgba(108, 88, 148, 255)
+
+// Header/Footer
+const HEADER_BG: Color = Color::new(0.141, 0.125, 0.165, 1.0);          // rgba(36, 32, 42, 255)
+const HEADER_BORDER: Color = Color::new(0.463, 0.384, 0.267, 1.0);      // rgba(118, 98, 68, 255)
+const FOOTER_BG: Color = Color::new(0.094, 0.086, 0.110, 1.0);          // rgba(24, 22, 28, 255)
+
+// Text colors
+const TEXT_TITLE: Color = Color::new(0.855, 0.737, 0.502, 1.0);         // rgba(218, 188, 128, 255)
+const TEXT_NORMAL: Color = Color::new(0.824, 0.824, 0.855, 1.0);        // rgba(210, 210, 218, 255)
+const TEXT_DIM: Color = Color::new(0.502, 0.502, 0.541, 1.0);           // rgba(128, 128, 138, 255)
+const TEXT_GOLD: Color = Color::new(1.0, 0.843, 0.314, 1.0);            // rgba(255, 215, 80, 255)
+
+// Tooltip colors
+const TOOLTIP_BG: Color = Color::new(0.063, 0.063, 0.086, 0.980);       // rgba(16, 16, 22, 250)
+const TOOLTIP_FRAME: Color = Color::new(0.322, 0.282, 0.227, 1.0);      // rgba(82, 72, 58, 255)
+const TOOLTIP_SEPARATOR: Color = Color::new(0.227, 0.212, 0.188, 0.784); // rgba(58, 54, 48, 200)
+
+// Item category colors (enhanced)
+const CATEGORY_EQUIPMENT: Color = Color::new(0.345, 0.549, 0.824, 1.0);  // rgba(88, 140, 210, 255)
+const CATEGORY_CONSUMABLE: Color = Color::new(0.824, 0.345, 0.345, 1.0); // rgba(210, 88, 88, 255)
+const CATEGORY_MATERIAL: Color = Color::new(0.620, 0.620, 0.659, 1.0);   // rgba(158, 158, 168, 255)
+const CATEGORY_QUEST: Color = Color::new(1.0, 0.824, 0.314, 1.0);        // rgba(255, 210, 80, 255)
+
+// Layout constants
+const INV_WIDTH: f32 = 420.0;
+const INV_HEIGHT: f32 = 360.0;
+const HEADER_HEIGHT: f32 = 40.0;
+const FOOTER_HEIGHT: f32 = 30.0;
+const GRID_PADDING: f32 = 15.0;
+const INV_SLOT_SIZE: f32 = 48.0;
+const SLOT_SPACING: f32 = 4.0;
+const EQUIP_PANEL_WIDTH: f32 = 110.0;
+const EQUIP_SLOT_SIZE: f32 = 44.0;  // Smaller to fit 5 slots
+const EQUIP_SLOT_SPACING: f32 = 4.0;
+const FRAME_THICKNESS: f32 = 4.0;
+const CORNER_ACCENT_SIZE: f32 = 8.0;
+
+/// Slot visual state for rendering
+#[derive(Clone, Copy, PartialEq)]
+enum SlotState {
+    Normal,
+    Hovered,
+    Dragging,
+}
+
 pub struct Renderer {
     player_color: Color,
     local_player_color: Color,
@@ -207,7 +283,8 @@ impl Renderer {
     /// Draw text with pixel font for sharp rendering
     /// Uses multi-size bitmap font for crisp text at any size
     pub fn draw_text_sharp(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color) {
-        self.font.draw_text(text, x, y, font_size, color);
+        // Round to integer pixels for crisp rendering
+        self.font.draw_text(text, x.floor(), y.floor(), font_size, color);
     }
 
     /// Measure text with pixel font
@@ -1515,34 +1592,218 @@ impl Renderer {
         layout
     }
 
+    // ========================================================================
+    // Inventory UI Helper Functions
+    // ========================================================================
+
+    /// Draw the multi-layer medieval panel frame
+    fn draw_panel_frame(&self, x: f32, y: f32, w: f32, h: f32) {
+        // Layer 1: Outer dark shadow (gives depth from background)
+        draw_rectangle(x - 2.0, y - 2.0, w + 4.0, h + 4.0, PANEL_BG_DARK);
+
+        // Layer 2: Dark bronze outer frame
+        draw_rectangle(x, y, w, h, FRAME_OUTER);
+
+        // Layer 3: Mid bronze frame (inset 2px)
+        draw_rectangle(x + 2.0, y + 2.0, w - 4.0, h - 4.0, FRAME_MID);
+
+        // Layer 4: Main panel background (inset 4px)
+        draw_rectangle(x + FRAME_THICKNESS, y + FRAME_THICKNESS, w - FRAME_THICKNESS * 2.0, h - FRAME_THICKNESS * 2.0, PANEL_BG_MID);
+
+        // Layer 5: Inner highlight line (top and left edges - light source simulation)
+        draw_line(x + FRAME_THICKNESS, y + FRAME_THICKNESS, x + w - FRAME_THICKNESS, y + FRAME_THICKNESS, 1.0, FRAME_INNER);
+        draw_line(x + FRAME_THICKNESS, y + FRAME_THICKNESS, x + FRAME_THICKNESS, y + h - FRAME_THICKNESS, 1.0, FRAME_INNER);
+
+        // Layer 6: Inner shadow line (bottom and right edges)
+        let shadow = Color::new(0.0, 0.0, 0.0, 0.235);
+        draw_line(x + FRAME_THICKNESS + 1.0, y + h - FRAME_THICKNESS - 1.0, x + w - FRAME_THICKNESS, y + h - FRAME_THICKNESS - 1.0, 1.0, shadow);
+        draw_line(x + w - FRAME_THICKNESS - 1.0, y + FRAME_THICKNESS + 1.0, x + w - FRAME_THICKNESS - 1.0, y + h - FRAME_THICKNESS, 1.0, shadow);
+    }
+
+    /// Draw decorative corner accents (gold L-shapes at corners)
+    fn draw_corner_accents(&self, x: f32, y: f32, w: f32, h: f32) {
+        let size = CORNER_ACCENT_SIZE;
+
+        // Top-left corner
+        draw_rectangle(x, y, size, 2.0, FRAME_ACCENT);
+        draw_rectangle(x, y, 2.0, size, FRAME_ACCENT);
+
+        // Top-right corner
+        draw_rectangle(x + w - size, y, size, 2.0, FRAME_ACCENT);
+        draw_rectangle(x + w - 2.0, y, 2.0, size, FRAME_ACCENT);
+
+        // Bottom-left corner
+        draw_rectangle(x, y + h - 2.0, size, 2.0, FRAME_ACCENT);
+        draw_rectangle(x, y + h - size, 2.0, size, FRAME_ACCENT);
+
+        // Bottom-right corner
+        draw_rectangle(x + w - size, y + h - 2.0, size, 2.0, FRAME_ACCENT);
+        draw_rectangle(x + w - 2.0, y + h - size, 2.0, size, FRAME_ACCENT);
+    }
+
+    /// Draw an inventory slot with bevel effect
+    fn draw_inventory_slot(&self, x: f32, y: f32, size: f32, has_item: bool, state: SlotState) {
+        // Outer slot border (bronze)
+        draw_rectangle(x, y, size, size, SLOT_BORDER);
+
+        // Inner recessed area (1px inset)
+        let inner_x = x + 1.0;
+        let inner_y = y + 1.0;
+        let inner_size = size - 2.0;
+
+        // Background based on state
+        let bg = match state {
+            SlotState::Normal => if has_item { SLOT_BG_FILLED } else { SLOT_BG_EMPTY },
+            SlotState::Hovered => SLOT_HOVER_BG,
+            SlotState::Dragging => SLOT_DRAG_SOURCE,
+        };
+        draw_rectangle(inner_x, inner_y, inner_size, inner_size, bg);
+
+        // Inner shadow (top and left - simulates recessed slot)
+        draw_line(inner_x, inner_y, inner_x + inner_size, inner_y, 2.0, SLOT_INNER_SHADOW);
+        draw_line(inner_x, inner_y, inner_x, inner_y + inner_size, 2.0, SLOT_INNER_SHADOW);
+
+        // Inner highlight (bottom and right - subtle)
+        draw_line(inner_x + 1.0, inner_y + inner_size - 1.0, inner_x + inner_size, inner_y + inner_size - 1.0, 1.0, SLOT_HIGHLIGHT);
+        draw_line(inner_x + inner_size - 1.0, inner_y + 1.0, inner_x + inner_size - 1.0, inner_y + inner_size, 1.0, SLOT_HIGHLIGHT);
+
+        // State-specific border overlay
+        match state {
+            SlotState::Hovered => {
+                draw_rectangle_lines(x, y, size, size, 2.0, SLOT_HOVER_BORDER);
+            },
+            SlotState::Dragging => {
+                draw_rectangle_lines(x, y, size, size, 2.0, SLOT_SELECTED_BORDER);
+            },
+            _ => {}
+        }
+    }
+
+    /// Draw equipment slot with silhouette icon when empty
+    fn draw_equipment_slot(&self, x: f32, y: f32, size: f32, slot_type: &str, has_item: bool, is_hovered: bool, is_dragging: bool) {
+        // Outer border (purple accent for equipment)
+        let border_color = if is_dragging {
+            SLOT_SELECTED_BORDER
+        } else if is_hovered {
+            EQUIP_ACCENT
+        } else {
+            SLOT_BORDER
+        };
+        draw_rectangle(x, y, size, size, border_color);
+
+        // Inner background
+        let bg = if is_dragging {
+            SLOT_DRAG_SOURCE
+        } else if is_hovered {
+            SLOT_HOVER_BG
+        } else {
+            EQUIP_SLOT_EMPTY
+        };
+        draw_rectangle(x + 1.0, y + 1.0, size - 2.0, size - 2.0, bg);
+
+        // Inner bevel effect
+        draw_line(x + 2.0, y + 2.0, x + size - 2.0, y + 2.0, 2.0, SLOT_INNER_SHADOW);
+        draw_line(x + 2.0, y + 2.0, x + 2.0, y + size - 2.0, 2.0, SLOT_INNER_SHADOW);
+
+        // Draw silhouette if empty (and not dragging)
+        if !has_item && !is_dragging {
+            let center_x = x + size / 2.0;
+            let center_y = y + size / 2.0;
+            let icon_color = Color::new(0.188, 0.188, 0.227, 1.0); // rgba(48, 48, 58, 255)
+
+            match slot_type {
+                "head" => {
+                    // Helmet silhouette (rounded head shape)
+                    draw_rectangle(center_x - 8.0, center_y - 8.0, 16.0, 14.0, icon_color);
+                    draw_rectangle(center_x - 10.0, center_y - 4.0, 20.0, 8.0, icon_color);
+                    draw_rectangle(center_x - 6.0, center_y - 12.0, 12.0, 6.0, icon_color);
+                },
+                "body" => {
+                    // Armor silhouette (torso shape)
+                    draw_rectangle(center_x - 8.0, center_y - 10.0, 16.0, 20.0, icon_color);
+                    draw_rectangle(center_x - 12.0, center_y - 6.0, 5.0, 12.0, icon_color);
+                    draw_rectangle(center_x + 7.0, center_y - 6.0, 5.0, 12.0, icon_color);
+                },
+                "weapon" => {
+                    // Sword silhouette
+                    draw_rectangle(center_x - 2.0, center_y - 14.0, 4.0, 24.0, icon_color);
+                    draw_rectangle(center_x - 8.0, center_y + 4.0, 16.0, 4.0, icon_color);
+                    draw_rectangle(center_x - 3.0, center_y + 8.0, 6.0, 4.0, icon_color);
+                },
+                "back" => {
+                    // Cape/backpack silhouette
+                    draw_rectangle(center_x - 10.0, center_y - 10.0, 20.0, 6.0, icon_color);
+                    draw_rectangle(center_x - 8.0, center_y - 4.0, 16.0, 16.0, icon_color);
+                    draw_rectangle(center_x - 6.0, center_y + 10.0, 12.0, 4.0, icon_color);
+                },
+                "feet" => {
+                    // Boots silhouette
+                    draw_rectangle(center_x - 8.0, center_y - 4.0, 6.0, 12.0, icon_color);
+                    draw_rectangle(center_x + 2.0, center_y - 4.0, 6.0, 12.0, icon_color);
+                    draw_rectangle(center_x - 10.0, center_y + 6.0, 9.0, 4.0, icon_color);
+                    draw_rectangle(center_x + 1.0, center_y + 6.0, 9.0, 4.0, icon_color);
+                },
+                _ => {}
+            }
+        }
+    }
+
     fn render_inventory(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let slot_size = 50.0; // Sized to fit 44x32 item icons
+        let inv_x = (screen_width() - INV_WIDTH) / 2.0;
+        let inv_y = (screen_height() - INV_HEIGHT) / 2.0;
+
+        // Draw panel frame with corner accents
+        self.draw_panel_frame(inv_x, inv_y, INV_WIDTH, INV_HEIGHT);
+        self.draw_corner_accents(inv_x, inv_y, INV_WIDTH, INV_HEIGHT);
+
+        // ===== HEADER SECTION =====
+        let header_x = inv_x + FRAME_THICKNESS;
+        let header_y = inv_y + FRAME_THICKNESS;
+        let header_w = INV_WIDTH - FRAME_THICKNESS * 2.0;
+
+        // Header background
+        draw_rectangle(header_x, header_y, header_w, HEADER_HEIGHT, HEADER_BG);
+
+        // Header bottom separator
+        draw_line(header_x + 10.0, header_y + HEADER_HEIGHT, header_x + header_w - 10.0, header_y + HEADER_HEIGHT, 2.0, HEADER_BORDER);
+
+        // Decorative dots on separator
+        let dot_spacing = 50.0;
+        let num_dots = ((header_w - 40.0) / dot_spacing) as i32;
+        let start_dot_x = header_x + 20.0;
+        for i in 0..num_dots {
+            let dot_x = start_dot_x + i as f32 * dot_spacing;
+            draw_rectangle(dot_x - 1.5, header_y + HEADER_HEIGHT - 1.5, 3.0, 3.0, FRAME_ACCENT);
+        }
+
+        // Title text
+        self.draw_text_sharp("INVENTORY", header_x + 12.0, header_y + 26.0, 16.0, TEXT_TITLE);
+
+        // Gold display (right side)
+        let gold_text = format!("{}g", state.inventory.gold);
+        let gold_width = self.measure_text_sharp(&gold_text, 16.0).width;
+        let coin_x = header_x + header_w - 12.0 - gold_width - 22.0;
+
+        // Coin icon (simple gold square)
+        // draw_rectangle(coin_x, header_y + 12.0, 16.0, 16.0, TEXT_GOLD);
+        // draw_rectangle(coin_x + 2.0, header_y + 14.0, 12.0, 12.0, Color::new(0.784, 0.627, 0.235, 1.0));
+
+        self.draw_text_sharp(&gold_text, coin_x + 20.0, header_y + 26.0, 16.0, TEXT_GOLD);
+
+        // ===== INVENTORY GRID (left side) =====
+        let content_y = inv_y + FRAME_THICKNESS + HEADER_HEIGHT + 10.0;
+        let grid_x = inv_x + GRID_PADDING;
+        let grid_y = content_y;
         let slots_per_row = 5;
-        let inv_width = 380.0; // Adjusted for smaller slots + equipment panel
-        let inv_height = 300.0;
-        let inv_x = (screen_width() - inv_width) / 2.0;
-        let inv_y = (screen_height() - inv_height) / 2.0;
-
-        // Background
-        draw_rectangle(inv_x, inv_y, inv_width, inv_height, Color::from_rgba(30, 30, 40, 220));
-        draw_rectangle_lines(inv_x, inv_y, inv_width, inv_height, 2.0, WHITE);
-
-        // Title
-        self.draw_text_sharp("Inventory", inv_x + 10.0, inv_y + 25.0, 16.0, WHITE);
-        self.draw_text_sharp(&format!("Gold: {}", state.inventory.gold), inv_x + inv_width - 100.0, inv_y + 25.0, 16.0, GOLD);
-
-        // Inventory Slots (left side)
-        let grid_x = inv_x + 20.0;
-        let grid_y = inv_y + 40.0;
 
         for i in 0..20 {
             let row = i / slots_per_row;
             let col = i % slots_per_row;
-            let x = grid_x + col as f32 * slot_size;
-            let y = grid_y + row as f32 * slot_size;
+            let x = grid_x + col as f32 * (INV_SLOT_SIZE + SLOT_SPACING);
+            let y = grid_y + row as f32 * (INV_SLOT_SIZE + SLOT_SPACING);
 
             // Register slot bounds for hit detection
-            let bounds = Rect::new(x, y, slot_size - 4.0, slot_size - 4.0);
+            let bounds = Rect::new(x, y, INV_SLOT_SIZE, INV_SLOT_SIZE);
             layout.add(UiElementId::InventorySlot(i), bounds);
 
             // Check if this slot is hovered
@@ -1551,155 +1812,141 @@ impl Renderer {
             // Check if this slot is being dragged
             let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Inventory(idx) if *idx == i));
 
-            // Slot background with hover/drag effect
-            let bg_color = if is_dragging {
-                Color::from_rgba(30, 30, 40, 255) // Dimmed when dragging
+            // Determine slot state
+            let slot_state = if is_dragging {
+                SlotState::Dragging
             } else if is_hovered {
-                Color::from_rgba(70, 70, 90, 255)
+                SlotState::Hovered
             } else {
-                Color::from_rgba(50, 50, 60, 255)
+                SlotState::Normal
             };
-            draw_rectangle(x, y, slot_size - 4.0, slot_size - 4.0, bg_color);
 
-            // Border with hover/drag effect
-            let border_color = if is_dragging {
-                Color::from_rgba(100, 100, 255, 255) // Blue border for source slot
-            } else if is_hovered {
-                WHITE
-            } else {
-                GRAY
-            };
-            draw_rectangle_lines(x, y, slot_size - 4.0, slot_size - 4.0, 1.0, border_color);
+            // Draw the slot with bevel effect
+            let has_item = state.inventory.slots[i].is_some();
+            self.draw_inventory_slot(x, y, INV_SLOT_SIZE, has_item, slot_state);
 
-            // Draw item if present (dimmed if being dragged)
+            // Draw item if present (hide if being dragged)
             if let Some(slot) = &state.inventory.slots[i] {
                 if !is_dragging {
-                    self.draw_item_icon(&slot.item_id, x, y, slot_size - 4.0, slot_size - 4.0, state);
+                    self.draw_item_icon(&slot.item_id, x, y, INV_SLOT_SIZE, INV_SLOT_SIZE, state);
 
-                    // Quantity
+                    // Quantity badge (bottom-left with shadow)
                     if slot.quantity > 1 {
-                        self.draw_text_sharp(&slot.quantity.to_string(), x + 2.0, y + slot_size - 8.0, 16.0, WHITE);
+                        let qty_text = slot.quantity.to_string();
+                        // Shadow
+                        self.draw_text_sharp(&qty_text, x + 3.0, y + INV_SLOT_SIZE - 2.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.8));
+                        // Text
+                        self.draw_text_sharp(&qty_text, x + 2.0, y + INV_SLOT_SIZE - 3.0, 16.0, TEXT_NORMAL);
                     }
                 }
             }
 
-            // Show slot number for first 5 (quick slots)
+            // Show slot number badge for first 5 (quick slots)
             if i < 5 {
-                self.draw_text_sharp(&(i + 1).to_string(), x + slot_size - 14.0, y + 12.0, 16.0, GRAY);
+                let num_x = x + INV_SLOT_SIZE - 14.0;
+                let num_y = y + 2.0;
+                // Small dark badge background
+                draw_rectangle(num_x - 2.0, num_y, 14.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.5));
+                self.draw_text_sharp(&(i + 1).to_string(), num_x, num_y + 14.0, 16.0, TEXT_DIM);
             }
         }
 
-        // Equipment Section (right side)
-        let equip_x = inv_x + 280.0; // Adjusted for inventory grid
-        let equip_y = inv_y + 40.0;
-        let equip_slot_size = 50.0; // Match inventory slot size
+        // ===== VERTICAL DIVIDER =====
+        let divider_x = inv_x + GRID_PADDING + 5.0 * (INV_SLOT_SIZE + SLOT_SPACING) + 8.0;
+        let divider_top = content_y;
+        let divider_bottom = inv_y + INV_HEIGHT - FRAME_THICKNESS - FOOTER_HEIGHT - 5.0;
 
-        // Equipment section label
-        self.draw_text_sharp("Equipment", equip_x, equip_y, 16.0, WHITE);
+        // Divider line with highlight
+        draw_line(divider_x, divider_top, divider_x, divider_bottom, 2.0, FRAME_MID);
+        draw_line(divider_x + 1.0, divider_top, divider_x + 1.0, divider_bottom, 1.0, FRAME_INNER);
 
-        // Body equipment slot
-        let body_slot_x = equip_x;
-        let body_slot_y = equip_y + 20.0;
+        // ===== EQUIPMENT PANEL (right side) =====
+        let equip_x = divider_x + 12.0;
+        let equip_y = content_y;
+        let equip_panel_w = EQUIP_PANEL_WIDTH - 20.0;
 
-        // Register equipment slot bounds
-        let body_bounds = Rect::new(body_slot_x, body_slot_y, equip_slot_size, equip_slot_size);
-        layout.add(UiElementId::EquipmentSlot("body".to_string()), body_bounds);
+        // Equipment panel background
+        draw_rectangle(equip_x, equip_y, equip_panel_w, divider_bottom - divider_top, EQUIP_BG);
 
-        // Check if body slot is hovered
-        let body_hovered = matches!(hovered, Some(UiElementId::EquipmentSlot(slot)) if slot == "body");
+        // Equipment header
+        self.draw_text_sharp("GEAR", equip_x + (equip_panel_w - self.measure_text_sharp("GEAR", 16.0).width) / 2.0, equip_y + 16.0, 16.0, TEXT_TITLE);
 
-        // Check if body slot is being dragged
-        let body_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Equipment(slot) if slot == "body"));
+        // Decorative line under header
+        draw_line(equip_x + 2.0, equip_y + 22.0, equip_x + equip_panel_w - 2.0, equip_y + 22.0, 1.0, HEADER_BORDER);
 
-        // Body slot background
-        let body_bg_color = if body_dragging {
-            Color::from_rgba(30, 30, 40, 255) // Dimmed when dragging
-        } else if body_hovered {
-            Color::from_rgba(70, 70, 100, 255)
-        } else {
-            Color::from_rgba(40, 40, 60, 255)
-        };
-        draw_rectangle(body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, body_bg_color);
+        // Equipment slots - arranged vertically: Head, Body, Weapon, Back, Feet
+        let slot_x = equip_x + (equip_panel_w - EQUIP_SLOT_SIZE) / 2.0;
+        let first_slot_y = equip_y + 28.0;
+        let slot_step = EQUIP_SLOT_SIZE + EQUIP_SLOT_SPACING;
 
-        // Body slot border
-        let body_border_color = if body_dragging {
-            Color::from_rgba(100, 100, 255, 255) // Blue border when dragging
-        } else if body_hovered {
-            WHITE
-        } else {
-            Color::from_rgba(80, 80, 120, 255)
-        };
-        draw_rectangle_lines(body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, 2.0, body_border_color);
+        // Define all equipment slots
+        let equipment_slots = [
+            ("head", "Head", 0),
+            ("body", "Armor", 1),
+            ("weapon", "Weapon", 2),
+            ("back", "Back", 3),
+            ("feet", "Boots", 4),
+        ];
 
-        // Draw equipped body item or placeholder (hide if being dragged)
-        if !body_dragging {
-            if let Some(local_player) = state.get_local_player() {
-                if let Some(ref body_item_id) = local_player.equipped_body {
-                    // Draw equipped item sprite
-                    self.draw_item_icon(body_item_id, body_slot_x, body_slot_y, equip_slot_size, equip_slot_size, state);
-                } else {
-                    // Empty slot indicator
-                    self.draw_text_sharp("Body", body_slot_x + 8.0, body_slot_y + 32.0, 16.0, DARKGRAY);
+        for (slot_type, label, index) in equipment_slots.iter() {
+            let slot_y = first_slot_y + (*index as f32) * slot_step;
+
+            // Register slot bounds
+            let bounds = Rect::new(slot_x, slot_y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE);
+            layout.add(UiElementId::EquipmentSlot(slot_type.to_string()), bounds);
+
+            // Check slot state
+            let is_hovered = matches!(hovered, Some(UiElementId::EquipmentSlot(s)) if s == *slot_type);
+            let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Equipment(s) if s == *slot_type));
+
+            // Get equipped item
+            let has_item = state.get_local_player().map(|p| {
+                match *slot_type {
+                    "head" => p.equipped_head.is_some(),
+                    "body" => p.equipped_body.is_some(),
+                    "weapon" => p.equipped_weapon.is_some(),
+                    "back" => p.equipped_back.is_some(),
+                    "feet" => p.equipped_feet.is_some(),
+                    _ => false,
+                }
+            }).unwrap_or(false);
+
+            // Draw slot with silhouette
+            self.draw_equipment_slot(slot_x, slot_y, EQUIP_SLOT_SIZE, slot_type, has_item, is_hovered, is_dragging);
+
+            // Draw equipped item (hide if being dragged)
+            if !is_dragging {
+                if let Some(local_player) = state.get_local_player() {
+                    let item_id = match *slot_type {
+                        "head" => local_player.equipped_head.as_ref(),
+                        "body" => local_player.equipped_body.as_ref(),
+                        "weapon" => local_player.equipped_weapon.as_ref(),
+                        "back" => local_player.equipped_back.as_ref(),
+                        "feet" => local_player.equipped_feet.as_ref(),
+                        _ => None,
+                    };
+                    if let Some(id) = item_id {
+                        self.draw_item_icon(id, slot_x, slot_y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, state);
+                    }
                 }
             }
         }
 
-        // Slot label below
-        self.draw_text_sharp("Body", body_slot_x + 10.0, body_slot_y + equip_slot_size + 12.0, 16.0, GRAY);
+        // ===== FOOTER SECTION =====
+        let footer_x = inv_x + FRAME_THICKNESS;
+        let footer_y = inv_y + INV_HEIGHT - FRAME_THICKNESS - FOOTER_HEIGHT;
+        let footer_w = INV_WIDTH - FRAME_THICKNESS * 2.0;
 
-        // Feet equipment slot (below body slot)
-        let feet_slot_x = equip_x;
-        let feet_slot_y = body_slot_y + equip_slot_size + 30.0;
+        // Footer background
+        draw_rectangle(footer_x, footer_y, footer_w, FOOTER_HEIGHT, FOOTER_BG);
 
-        // Register feet equipment slot bounds
-        let feet_bounds = Rect::new(feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size);
-        layout.add(UiElementId::EquipmentSlot("feet".to_string()), feet_bounds);
+        // Footer top separator
+        draw_line(footer_x + 10.0, footer_y, footer_x + footer_w - 10.0, footer_y, 1.0, HEADER_BORDER);
 
-        // Check if feet slot is hovered
-        let feet_hovered = matches!(hovered, Some(UiElementId::EquipmentSlot(slot)) if slot == "feet");
-
-        // Check if feet slot is being dragged
-        let feet_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Equipment(slot) if slot == "feet"));
-
-        // Feet slot background
-        let feet_bg_color = if feet_dragging {
-            Color::from_rgba(30, 30, 40, 255) // Dimmed when dragging
-        } else if feet_hovered {
-            Color::from_rgba(70, 70, 100, 255)
-        } else {
-            Color::from_rgba(40, 40, 60, 255)
-        };
-        draw_rectangle(feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, feet_bg_color);
-
-        // Feet slot border
-        let feet_border_color = if feet_dragging {
-            Color::from_rgba(100, 100, 255, 255) // Blue border when dragging
-        } else if feet_hovered {
-            WHITE
-        } else {
-            Color::from_rgba(80, 80, 120, 255)
-        };
-        draw_rectangle_lines(feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, 2.0, feet_border_color);
-
-        // Draw equipped feet item or placeholder (hide if being dragged)
-        if !feet_dragging {
-            if let Some(local_player) = state.get_local_player() {
-                if let Some(ref feet_item_id) = local_player.equipped_feet {
-                    // Draw equipped item sprite
-                    self.draw_item_icon(feet_item_id, feet_slot_x, feet_slot_y, equip_slot_size, equip_slot_size, state);
-                } else {
-                    // Empty slot indicator
-                    self.draw_text_sharp("Feet", feet_slot_x + 8.0, feet_slot_y + 32.0, 16.0, DARKGRAY);
-                }
-            }
-        }
-
-        // Slot label below
-        self.draw_text_sharp("Feet", feet_slot_x + 12.0, feet_slot_y + equip_slot_size + 12.0, 16.0, GRAY);
-
-        // Close hint
-        self.draw_text_sharp("Press I to close", inv_x + 10.0, inv_y + inv_height - 15.0, 16.0, GRAY);
-        self.draw_text_sharp("Right-click to equip", inv_x + 10.0, inv_y + inv_height - 30.0, 16.0, DARKGRAY);
+        // Help hints
+        self.draw_text_sharp("[I] Close", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
+        self.draw_text_sharp("Right-click: Options", footer_x + 100.0, footer_y + 20.0, 16.0, Color::new(0.392, 0.392, 0.431, 1.0));
+        self.draw_text_sharp("Drag to move", footer_x + 270.0, footer_y + 20.0, 16.0, Color::new(0.314, 0.314, 0.353, 1.0));
     }
 
     fn render_quest_log(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
@@ -1784,11 +2031,27 @@ impl Renderer {
     }
 
     fn render_quick_slots(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let slot_size = 50.0; // Match inventory slot size for 44x32 icons
-        let padding = 4.0;
+        let slot_size = INV_SLOT_SIZE;
+        let padding = SLOT_SPACING;
         let total_width = 5.0 * (slot_size + padding) - padding;
-        let start_x = (screen_width() - total_width) / 2.0;
-        let start_y = screen_height() - slot_size - 20.0;
+
+        // Add some padding for the background panel
+        let panel_padding = 6.0;
+        let panel_width = total_width + panel_padding * 2.0;
+        let panel_height = slot_size + panel_padding * 2.0;
+
+        let panel_x = (screen_width() - panel_width) / 2.0;
+        let panel_y = screen_height() - panel_height - 12.0;
+
+        // Draw subtle background panel
+        draw_rectangle(panel_x - 1.0, panel_y - 1.0, panel_width + 2.0, panel_height + 2.0, FRAME_OUTER);
+        draw_rectangle(panel_x, panel_y, panel_width, panel_height, PANEL_BG_MID);
+
+        // Inner highlight
+        draw_line(panel_x + 1.0, panel_y + 1.0, panel_x + panel_width - 1.0, panel_y + 1.0, 1.0, FRAME_MID);
+
+        let start_x = panel_x + panel_padding;
+        let start_y = panel_y + panel_padding;
 
         for i in 0..5 {
             let x = start_x + i as f32 * (slot_size + padding);
@@ -1804,40 +2067,38 @@ impl Renderer {
             // Check if this slot is being dragged (quick slots are first 5 inventory slots)
             let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Inventory(idx) if *idx == i));
 
-            // Slot background with hover/drag effect
-            let bg_color = if is_dragging {
-                Color::from_rgba(20, 20, 30, 200) // Dimmed when dragging
+            // Determine slot state
+            let slot_state = if is_dragging {
+                SlotState::Dragging
             } else if is_hovered {
-                Color::from_rgba(50, 50, 70, 255)
+                SlotState::Hovered
             } else {
-                Color::from_rgba(30, 30, 40, 200)
+                SlotState::Normal
             };
-            draw_rectangle(x, y, slot_size, slot_size, bg_color);
 
-            // Border with hover/drag effect
-            let border_color = if is_dragging {
-                Color::from_rgba(100, 100, 255, 255) // Blue border for source slot
-            } else if is_hovered {
-                WHITE
-            } else {
-                GRAY
-            };
-            draw_rectangle_lines(x, y, slot_size, slot_size, 1.0, border_color);
+            // Draw the slot with bevel effect (matching inventory style)
+            let has_item = state.inventory.slots[i].is_some();
+            self.draw_inventory_slot(x, y, slot_size, has_item, slot_state);
 
             // Draw item if present (hide if being dragged)
             if let Some(slot) = &state.inventory.slots[i] {
                 if !is_dragging {
                     self.draw_item_icon(&slot.item_id, x, y, slot_size, slot_size, state);
 
-                    // Quantity
+                    // Quantity badge (bottom-left with shadow)
                     if slot.quantity > 1 {
-                        self.draw_text_sharp(&slot.quantity.to_string(), x + 2.0, y + slot_size - 4.0, 16.0, WHITE);
+                        let qty_text = slot.quantity.to_string();
+                        self.draw_text_sharp(&qty_text, x + 3.0, y + slot_size - 2.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.8));
+                        self.draw_text_sharp(&qty_text, x + 2.0, y + slot_size - 3.0, 16.0, TEXT_NORMAL);
                     }
                 }
             }
 
-            // Slot number
-            self.draw_text_sharp(&(i + 1).to_string(), x + slot_size - 10.0, y + 12.0, 16.0, WHITE);
+            // Slot number badge (top-right)
+            let num_x = x + slot_size - 14.0;
+            let num_y = y + 2.0;
+            draw_rectangle(num_x - 2.0, num_y, 14.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.5));
+            self.draw_text_sharp(&(i + 1).to_string(), num_x, num_y + 14.0, 16.0, TEXT_NORMAL);
         }
     }
 
@@ -1876,31 +2137,31 @@ impl Renderer {
     /// Render a dragged item following the cursor
     fn render_dragged_item(&self, drag: &DragState, state: &GameState) {
         let (mx, my) = mouse_position();
-        let slot_size = 46.0;
+        let slot_size = INV_SLOT_SIZE;
+        let x = mx - slot_size / 2.0;
+        let y = my - slot_size / 2.0;
 
-        // Semi-transparent background for the dragged item
-        draw_rectangle(
-            mx - slot_size / 2.0,
-            my - slot_size / 2.0,
-            slot_size,
-            slot_size,
-            Color::from_rgba(50, 50, 60, 180),
-        );
-        draw_rectangle_lines(
-            mx - slot_size / 2.0,
-            my - slot_size / 2.0,
-            slot_size,
-            slot_size,
-            2.0,
-            Color::from_rgba(255, 255, 255, 200),
-        );
+        // Drop shadow
+        draw_rectangle(x + 3.0, y + 3.0, slot_size, slot_size, Color::new(0.0, 0.0, 0.0, 0.4));
+
+        // Outer border (gold glow effect)
+        draw_rectangle(x - 2.0, y - 2.0, slot_size + 4.0, slot_size + 4.0, SLOT_SELECTED_BORDER);
+
+        // Background
+        draw_rectangle(x, y, slot_size, slot_size, SLOT_HOVER_BG);
+
+        // Inner bevel effect
+        draw_line(x + 1.0, y + 1.0, x + slot_size - 1.0, y + 1.0, 2.0, SLOT_INNER_SHADOW);
+        draw_line(x + 1.0, y + 1.0, x + 1.0, y + slot_size - 1.0, 2.0, SLOT_INNER_SHADOW);
 
         // Draw the item icon centered on cursor
-        self.draw_item_icon(&drag.item_id, mx - slot_size / 2.0, my - slot_size / 2.0, slot_size, slot_size, state);
+        self.draw_item_icon(&drag.item_id, x, y, slot_size, slot_size, state);
 
-        // Draw quantity if > 1
+        // Draw quantity if > 1 (with shadow)
         if drag.quantity > 1 {
-            self.draw_text_sharp(&drag.quantity.to_string(), mx - slot_size / 2.0 + 2.0, my + slot_size / 2.0 - 4.0, 16.0, WHITE);
+            let qty_text = drag.quantity.to_string();
+            self.draw_text_sharp(&qty_text, x + 3.0, y + slot_size - 2.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.8));
+            self.draw_text_sharp(&qty_text, x + 2.0, y + slot_size - 3.0, 16.0, TEXT_NORMAL);
         }
     }
 
@@ -1960,33 +2221,32 @@ impl Renderer {
         // Get mouse position for tooltip placement
         let (mouse_x, mouse_y) = mouse_position();
 
-        // Prepare text strings early for measurement
+        // Enhanced tooltip styling - use 16pt throughout for crisp rendering
+        let padding = 10.0;
+        let line_height = 20.0;
+        let font_size = 16.0;
+        let small_font_size = 16.0;  // Use 16pt for all text (native size)
+        let max_tooltip_width = 280.0;
+        let text_width_limit = max_tooltip_width - padding * 2.0;
+
+        // Prepare text strings for measurement
         let name_text = if slot.quantity > 1 {
             format!("{} x{}", item_def.display_name, slot.quantity)
         } else {
             item_def.display_name.clone()
         };
-        let category_text = format!("[{}]", item_def.category);
-
-        // Calculate tooltip dimensions based on content
-        let padding = 5.0;
-        let line_height = 16.0;
-        let font_size = 16.0;
-        let max_tooltip_width = 200.0;
-        let text_width_limit = max_tooltip_width - padding * 2.0;
 
         // Word-wrap the description
         let desc_lines = if !item_def.description.is_empty() {
-            self.wrap_text(&item_def.description, text_width_limit, font_size)
+            self.wrap_text(&item_def.description, text_width_limit, small_font_size)
         } else {
             vec![]
         };
 
         // Calculate tooltip width based on longest line
         let mut max_w = self.measure_text_sharp(&name_text, font_size).width;
-        max_w = max_w.max(self.measure_text_sharp(&category_text, font_size).width);
         for line in &desc_lines {
-            max_w = max_w.max(self.measure_text_sharp(line, font_size).width);
+            max_w = max_w.max(self.measure_text_sharp(line, small_font_size).width);
         }
 
         if let Some(ref equip) = item_def.equipment {
@@ -1996,7 +2256,7 @@ impl Renderer {
                 } else {
                     format!("{} Damage", equip.damage_bonus)
                 };
-                max_w = max_w.max(self.measure_text_sharp(&damage_text, font_size).width);
+                max_w = max_w.max(self.measure_text_sharp(&damage_text, small_font_size).width);
             }
             if equip.defense_bonus != 0 {
                 let defense_text = if equip.defense_bonus > 0 {
@@ -2004,31 +2264,35 @@ impl Renderer {
                 } else {
                     format!("{} Defense", equip.defense_bonus)
                 };
-                max_w = max_w.max(self.measure_text_sharp(&defense_text, font_size).width);
+                max_w = max_w.max(self.measure_text_sharp(&defense_text, small_font_size).width);
             }
             let req_text = format!("Requires Level {}", equip.level_required);
-            max_w = max_w.max(self.measure_text_sharp(&req_text, font_size).width);
+            max_w = max_w.max(self.measure_text_sharp(&req_text, small_font_size).width);
         }
 
-        let tooltip_width = (max_w + padding * 2.0).ceil();
+        let tooltip_width = (max_w + padding * 2.0).ceil().min(max_tooltip_width);
 
         // Calculate tooltip height based on actual lines drawn
         let mut total_h = padding * 2.0;
         total_h += line_height; // Name
-        total_h += line_height; // Category
-        if !desc_lines.is_empty() {
-            total_h += line_height * 0.5; // Gap
+        total_h += line_height; // Category badge
+
+        let has_description = !desc_lines.is_empty();
+        let has_equipment = item_def.equipment.is_some();
+
+        if has_description {
             total_h += desc_lines.len() as f32 * line_height;
         }
-        if let Some(ref equip) = item_def.equipment {
-            total_h += line_height * 0.5; // Gap
-            if equip.damage_bonus != 0 {
-                total_h += line_height;
+        if has_equipment {
+            if let Some(ref equip) = item_def.equipment {
+                if equip.damage_bonus != 0 {
+                    total_h += line_height;
+                }
+                if equip.defense_bonus != 0 {
+                    total_h += line_height;
+                }
+                total_h += line_height; // Level requirement
             }
-            if equip.defense_bonus != 0 {
-                total_h += line_height;
-            }
-            total_h += line_height; // Level requirement
         }
 
         let tooltip_height = total_h.ceil();
@@ -2045,72 +2309,96 @@ impl Renderer {
             tooltip_y = (mouse_y - tooltip_height - 8.0).floor();
         }
 
-        // Draw tooltip background
-        draw_rectangle(
-            tooltip_x,
-            tooltip_y,
-            tooltip_width,
-            tooltip_height,
-            Color::from_rgba(20, 20, 30, 240),
-        );
+        // Draw tooltip frame (3-layer)
+        // Shadow
+        draw_rectangle(tooltip_x + 2.0, tooltip_y + 2.0, tooltip_width, tooltip_height,
+                       Color::new(0.0, 0.0, 0.0, 0.4));
+        // Frame
+        draw_rectangle(tooltip_x - 1.0, tooltip_y - 1.0, tooltip_width + 2.0, tooltip_height + 2.0,
+                       TOOLTIP_FRAME);
+        // Background
+        draw_rectangle(tooltip_x, tooltip_y, tooltip_width, tooltip_height, TOOLTIP_BG);
+
+        // Inner highlight (top edge)
+        draw_line(tooltip_x + 1.0, tooltip_y + 1.0, tooltip_x + tooltip_width - 1.0, tooltip_y + 1.0,
+                  1.0, Color::new(0.227, 0.227, 0.267, 1.0));
 
         let mut y = tooltip_y + padding + 12.0;
 
-        self.draw_text_sharp(&name_text, tooltip_x + padding, y, 16.0, WHITE);
+        // Item name (white, bold-ish)
+        self.draw_text_sharp(&name_text, tooltip_x + padding, y, font_size, TEXT_NORMAL);
         y += line_height;
 
-        // Category (colored by type).
-        let category_color = item_def.category_color();
-        self.draw_text_sharp(&category_text, tooltip_x + padding, y, 16.0, category_color);
+        // Category badge
+        let category_color = self.get_category_color(&item_def.category);
+        let category_text = item_def.category.to_uppercase();
+        let badge_w = self.measure_text_sharp(&category_text, 16.0).width + 10.0;
+        let badge_h = 20.0;
+        let badge_x = tooltip_x + padding;
+        let badge_y = y - 14.0;
+
+        // Badge background (tinted)
+        let badge_bg = Color::new(category_color.r, category_color.g, category_color.b, 0.2);
+        draw_rectangle(badge_x, badge_y, badge_w, badge_h, badge_bg);
+        draw_rectangle_lines(badge_x, badge_y, badge_w, badge_h, 1.0, category_color);
+        self.draw_text_sharp(&category_text, badge_x + 5.0, y, 16.0, category_color);
         y += line_height;
 
-        // Description (word-wrapped)
-        if !desc_lines.is_empty() {
-            y += line_height * 0.5; // Small gap before description
+        // Description section (if any)
+        if has_description {
+            // Description text
             for line in &desc_lines {
-                self.draw_text_sharp(line, tooltip_x + padding, y, 16.0, LIGHTGRAY);
+                self.draw_text_sharp(line, tooltip_x + padding, y, small_font_size, TEXT_DIM);
                 y += line_height;
             }
         }
 
         // Equipment stats section
         if let Some(ref equip) = item_def.equipment {
-            y += line_height * 0.5; // Small gap before stats
+            // Stat colors
+            let stat_green = Color::new(0.392, 0.784, 0.392, 1.0);  // rgba(100, 200, 100)
+            let stat_red = Color::new(1.0, 0.392, 0.392, 1.0);      // rgba(255, 100, 100)
 
-            // Damage bonus (green for positive)
+            // Damage bonus
             if equip.damage_bonus != 0 {
                 let damage_text = if equip.damage_bonus > 0 {
                     format!("+{} Damage", equip.damage_bonus)
                 } else {
                     format!("{} Damage", equip.damage_bonus)
                 };
-                let damage_color = if equip.damage_bonus > 0 { GREEN } else { RED };
-                self.draw_text_sharp(&damage_text, tooltip_x + padding, y, 16.0, damage_color);
+                let damage_color = if equip.damage_bonus > 0 { stat_green } else { stat_red };
+                self.draw_text_sharp(&damage_text, tooltip_x + padding, y, small_font_size, damage_color);
                 y += line_height;
             }
 
-            // Defense bonus (green for positive)
+            // Defense bonus
             if equip.defense_bonus != 0 {
                 let defense_text = if equip.defense_bonus > 0 {
                     format!("+{} Defense", equip.defense_bonus)
                 } else {
                     format!("{} Defense", equip.defense_bonus)
                 };
-                let defense_color = if equip.defense_bonus > 0 { GREEN } else { RED };
-                self.draw_text_sharp(&defense_text, tooltip_x + padding, y, 16.0, defense_color);
+                let defense_color = if equip.defense_bonus > 0 { stat_green } else { stat_red };
+                self.draw_text_sharp(&defense_text, tooltip_x + padding, y, small_font_size, defense_color);
                 y += line_height;
             }
 
-            // Level requirement (green if met, red if not)
+            // Level requirement
             let meets_requirement = player_level >= equip.level_required;
-            let req_color = if meets_requirement {
-                Color::from_rgba(100, 200, 100, 255) // Soft green
-            } else {
-                Color::from_rgba(255, 100, 100, 255) // Soft red
-            };
+            let req_color = if meets_requirement { stat_green } else { stat_red };
             let req_text = format!("Requires Level {}", equip.level_required);
-            self.draw_text_sharp(&req_text, tooltip_x + padding, y, 16.0, req_color);
-            y += line_height;
+            self.draw_text_sharp(&req_text, tooltip_x + padding, y, small_font_size, req_color);
+        }
+    }
+
+    /// Get enhanced category color for tooltips
+    fn get_category_color(&self, category: &str) -> Color {
+        match category.to_lowercase().as_str() {
+            "equipment" => CATEGORY_EQUIPMENT,
+            "consumable" => CATEGORY_CONSUMABLE,
+            "material" => CATEGORY_MATERIAL,
+            "quest" => CATEGORY_QUEST,
+            _ => TEXT_NORMAL,
         }
     }
 
@@ -2271,8 +2559,8 @@ impl Renderer {
 
         // Hint text
         let hint = "Press ESC to close";
-        let hint_width = self.measure_text_sharp(hint, 14.0).width;
-        self.draw_text_sharp(hint, menu_x + (menu_width - hint_width) / 2.0, menu_y + menu_height - 10.0, 14.0, GRAY);
+        let hint_width = self.measure_text_sharp(hint, 16.0).width;
+        self.draw_text_sharp(hint, menu_x + (menu_width - hint_width) / 2.0, menu_y + menu_height - 10.0, 16.0, GRAY);
     }
 
     /// Render the dialogue box for NPC conversations

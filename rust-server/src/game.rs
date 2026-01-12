@@ -48,8 +48,13 @@ pub struct PlayerSaveData {
     pub inventory_json: String,
     pub gender: String,
     pub skin: String,
+    pub equipped_head: Option<String>,
     pub equipped_body: Option<String>,
+    pub equipped_weapon: Option<String>,
+    pub equipped_back: Option<String>,
     pub equipped_feet: Option<String>,
+    pub equipped_ring: Option<String>,
+    pub equipped_gloves: Option<String>,
 }
 
 // ============================================================================
@@ -125,8 +130,13 @@ pub struct Player {
     pub gender: String, // "male" or "female"
     pub skin: String,   // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
     // Equipment
-    pub equipped_body: Option<String>, // Item ID of equipped body armor
-    pub equipped_feet: Option<String>, // Item ID of equipped boots
+    pub equipped_head: Option<String>,
+    pub equipped_body: Option<String>,
+    pub equipped_weapon: Option<String>,
+    pub equipped_back: Option<String>,
+    pub equipped_feet: Option<String>,
+    pub equipped_ring: Option<String>,
+    pub equipped_gloves: Option<String>,
     // Admin privileges
     pub is_admin: bool,
     pub is_god_mode: bool, // Invincibility for admins
@@ -166,29 +176,40 @@ impl Player {
             inventory: Inventory::new(),
             gender: gender.to_string(),
             skin: skin.to_string(),
+            equipped_head: None,
             equipped_body: None,
+            equipped_weapon: None,
+            equipped_back: None,
             equipped_feet: None,
+            equipped_ring: None,
+            equipped_gloves: None,
             is_admin: false,
             is_god_mode: false,
         }
     }
 
+    /// Get all equipped item IDs for stat calculation
+    fn all_equipped(&self) -> [&Option<String>; 7] {
+        [
+            &self.equipped_head,
+            &self.equipped_body,
+            &self.equipped_weapon,
+            &self.equipped_back,
+            &self.equipped_feet,
+            &self.equipped_ring,
+            &self.equipped_gloves,
+        ]
+    }
+
     /// Calculate total damage bonus from equipped items
     pub fn damage_bonus(&self, item_registry: &ItemRegistry) -> i32 {
         let mut bonus = 0;
-        // Check body equipment
-        if let Some(ref item_id) = self.equipped_body {
-            if let Some(def) = item_registry.get(item_id) {
-                if let Some(ref equip) = def.equipment {
-                    bonus += equip.damage_bonus;
-                }
-            }
-        }
-        // Check feet equipment
-        if let Some(ref item_id) = self.equipped_feet {
-            if let Some(def) = item_registry.get(item_id) {
-                if let Some(ref equip) = def.equipment {
-                    bonus += equip.damage_bonus;
+        for equipped in self.all_equipped() {
+            if let Some(ref item_id) = equipped {
+                if let Some(def) = item_registry.get(item_id) {
+                    if let Some(ref equip) = def.equipment {
+                        bonus += equip.damage_bonus;
+                    }
                 }
             }
         }
@@ -198,19 +219,12 @@ impl Player {
     /// Calculate total defense bonus from equipped items
     pub fn defense_bonus(&self, item_registry: &ItemRegistry) -> i32 {
         let mut bonus = 0;
-        // Check body equipment
-        if let Some(ref item_id) = self.equipped_body {
-            if let Some(def) = item_registry.get(item_id) {
-                if let Some(ref equip) = def.equipment {
-                    bonus += equip.defense_bonus;
-                }
-            }
-        }
-        // Check feet equipment
-        if let Some(ref item_id) = self.equipped_feet {
-            if let Some(def) = item_registry.get(item_id) {
-                if let Some(ref equip) = def.equipment {
-                    bonus += equip.defense_bonus;
+        for equipped in self.all_equipped() {
+            if let Some(ref item_id) = equipped {
+                if let Some(def) = item_registry.get(item_id) {
+                    if let Some(ref equip) = def.equipment {
+                        bonus += equip.defense_bonus;
+                    }
                 }
             }
         }
@@ -283,8 +297,13 @@ pub struct PlayerUpdate {
     pub gender: String,
     pub skin: String,
     // Equipment
+    pub equipped_head: Option<String>,
     pub equipped_body: Option<String>,
+    pub equipped_weapon: Option<String>,
+    pub equipped_back: Option<String>,
     pub equipped_feet: Option<String>,
+    pub equipped_ring: Option<String>,
+    pub equipped_gloves: Option<String>,
     // Admin status
     pub is_admin: bool,
 }
@@ -458,8 +477,13 @@ impl GameRoom {
         inventory_json: &str,
         gender: &str,
         skin: &str,
+        equipped_head: Option<String>,
         equipped_body: Option<String>,
+        equipped_weapon: Option<String>,
+        equipped_back: Option<String>,
         equipped_feet: Option<String>,
+        equipped_ring: Option<String>,
+        equipped_gloves: Option<String>,
         is_admin: bool,
     ) {
         let mut players = self.players.write().await;
@@ -472,8 +496,13 @@ impl GameRoom {
         player.exp = exp;
         player.exp_to_next_level = exp_to_next_level;
         player.inventory.gold = gold;
+        player.equipped_head = equipped_head;
         player.equipped_body = equipped_body;
+        player.equipped_weapon = equipped_weapon;
+        player.equipped_back = equipped_back;
         player.equipped_feet = equipped_feet;
+        player.equipped_ring = equipped_ring;
+        player.equipped_gloves = equipped_gloves;
         player.is_admin = is_admin;
 
         // Restore inventory from JSON - support both old (u8) and new (String) formats
@@ -553,8 +582,13 @@ impl GameRoom {
                 inventory_json,
                 gender: p.gender.clone(),
                 skin: p.skin.clone(),
+                equipped_head: p.equipped_head.clone(),
                 equipped_body: p.equipped_body.clone(),
+                equipped_weapon: p.equipped_weapon.clone(),
+                equipped_back: p.equipped_back.clone(),
                 equipped_feet: p.equipped_feet.clone(),
+                equipped_ring: p.equipped_ring.clone(),
+                equipped_gloves: p.equipped_gloves.clone(),
             }
         })
     }
@@ -2120,14 +2154,19 @@ impl GameRoom {
                 Some(Some(slot)) => Some((
                     slot.item_id.clone(),
                     player.level,
+                    player.equipped_head.clone(),
                     player.equipped_body.clone(),
+                    player.equipped_weapon.clone(),
+                    player.equipped_back.clone(),
                     player.equipped_feet.clone(),
+                    player.equipped_ring.clone(),
+                    player.equipped_gloves.clone(),
                 )),
                 _ => None,
             }
         };
 
-        let (item_id, player_level, equipped_body, equipped_feet) = match item_info {
+        let (item_id, player_level, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves) = match item_info {
             Some(info) => info,
             None => {
                 self.send_to_player(player_id, ServerMessage::EquipResult {
@@ -2183,13 +2222,18 @@ impl GameRoom {
 
         // Get currently equipped item for this slot
         let currently_equipped = match equip_slot {
+            EquipmentSlot::Head => equipped_head,
             EquipmentSlot::Body => equipped_body,
+            EquipmentSlot::Weapon => equipped_weapon,
+            EquipmentSlot::Back => equipped_back,
             EquipmentSlot::Feet => equipped_feet,
+            EquipmentSlot::Ring => equipped_ring,
+            EquipmentSlot::Gloves => equipped_gloves,
             EquipmentSlot::None => None,
         };
 
         // Perform the equip operation
-        let (inventory_update, gold, new_equipped_body, new_equipped_feet) = {
+        let (inventory_update, gold, new_equipment) = {
             let mut players = self.players.write().await;
             let player = match players.get_mut(player_id) {
                 Some(p) => p,
@@ -2205,16 +2249,28 @@ impl GameRoom {
 
             // Equip the new item to the appropriate slot
             match equip_slot {
+                EquipmentSlot::Head => player.equipped_head = Some(item_id.clone()),
                 EquipmentSlot::Body => player.equipped_body = Some(item_id.clone()),
+                EquipmentSlot::Weapon => player.equipped_weapon = Some(item_id.clone()),
+                EquipmentSlot::Back => player.equipped_back = Some(item_id.clone()),
                 EquipmentSlot::Feet => player.equipped_feet = Some(item_id.clone()),
+                EquipmentSlot::Ring => player.equipped_ring = Some(item_id.clone()),
+                EquipmentSlot::Gloves => player.equipped_gloves = Some(item_id.clone()),
                 EquipmentSlot::None => {}
             }
 
             (
                 player.inventory.to_update(),
                 player.inventory.gold,
-                player.equipped_body.clone(),
-                player.equipped_feet.clone(),
+                (
+                    player.equipped_head.clone(),
+                    player.equipped_body.clone(),
+                    player.equipped_weapon.clone(),
+                    player.equipped_back.clone(),
+                    player.equipped_feet.clone(),
+                    player.equipped_ring.clone(),
+                    player.equipped_gloves.clone(),
+                ),
             )
         };
 
@@ -2238,15 +2294,21 @@ impl GameRoom {
         // Broadcast equipment update to all players
         self.broadcast(ServerMessage::EquipmentUpdate {
             player_id: player_id.to_string(),
-            equipped_body: new_equipped_body,
-            equipped_feet: new_equipped_feet,
+            equipped_head: new_equipment.0,
+            equipped_body: new_equipment.1,
+            equipped_weapon: new_equipment.2,
+            equipped_back: new_equipment.3,
+            equipped_feet: new_equipment.4,
+            equipped_ring: new_equipment.5,
+            equipped_gloves: new_equipment.6,
         }).await;
     }
 
     /// Handle unequipping an item
     pub async fn handle_unequip(&self, player_id: &str, slot_type: &str) {
         // Validate slot type
-        if slot_type != "body" && slot_type != "feet" {
+        let valid_slots = ["head", "body", "weapon", "back", "feet", "ring", "gloves"];
+        if !valid_slots.contains(&slot_type) {
             self.send_to_player(player_id, ServerMessage::EquipResult {
                 success: false,
                 slot_type: slot_type.to_string(),
@@ -2265,8 +2327,13 @@ impl GameRoom {
             };
 
             let equipped_ref = match slot_type {
+                "head" => &player.equipped_head,
                 "body" => &player.equipped_body,
+                "weapon" => &player.equipped_weapon,
+                "back" => &player.equipped_back,
                 "feet" => &player.equipped_feet,
+                "ring" => &player.equipped_ring,
+                "gloves" => &player.equipped_gloves,
                 _ => return,
             };
 
@@ -2302,7 +2369,7 @@ impl GameRoom {
         };
 
         // Perform the unequip operation
-        let (inventory_update, gold, new_equipped_body, new_equipped_feet) = {
+        let (inventory_update, gold, new_equipment) = {
             let mut players = self.players.write().await;
             let player = match players.get_mut(player_id) {
                 Some(p) => p,
@@ -2311,8 +2378,13 @@ impl GameRoom {
 
             // Clear equipped item from appropriate slot
             match slot_type {
+                "head" => player.equipped_head = None,
                 "body" => player.equipped_body = None,
+                "weapon" => player.equipped_weapon = None,
+                "back" => player.equipped_back = None,
                 "feet" => player.equipped_feet = None,
+                "ring" => player.equipped_ring = None,
+                "gloves" => player.equipped_gloves = None,
                 _ => {}
             }
 
@@ -2322,8 +2394,15 @@ impl GameRoom {
             (
                 player.inventory.to_update(),
                 player.inventory.gold,
-                player.equipped_body.clone(),
-                player.equipped_feet.clone(),
+                (
+                    player.equipped_head.clone(),
+                    player.equipped_body.clone(),
+                    player.equipped_weapon.clone(),
+                    player.equipped_back.clone(),
+                    player.equipped_feet.clone(),
+                    player.equipped_ring.clone(),
+                    player.equipped_gloves.clone(),
+                ),
             )
         };
 
@@ -2347,8 +2426,13 @@ impl GameRoom {
         // Broadcast equipment update to all players
         self.broadcast(ServerMessage::EquipmentUpdate {
             player_id: player_id.to_string(),
-            equipped_body: new_equipped_body,
-            equipped_feet: new_equipped_feet,
+            equipped_head: new_equipment.0,
+            equipped_body: new_equipment.1,
+            equipped_weapon: new_equipment.2,
+            equipped_back: new_equipment.3,
+            equipped_feet: new_equipment.4,
+            equipped_ring: new_equipment.5,
+            equipped_gloves: new_equipment.6,
         }).await;
     }
 
@@ -2564,8 +2648,13 @@ impl GameRoom {
                     gold: player.inventory.gold,
                     gender: player.gender.clone(),
                     skin: player.skin.clone(),
+                    equipped_head: player.equipped_head.clone(),
                     equipped_body: player.equipped_body.clone(),
+                    equipped_weapon: player.equipped_weapon.clone(),
+                    equipped_back: player.equipped_back.clone(),
                     equipped_feet: player.equipped_feet.clone(),
+                    equipped_ring: player.equipped_ring.clone(),
+                    equipped_gloves: player.equipped_gloves.clone(),
                     is_admin: player.is_admin,
                 });
             }

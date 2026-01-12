@@ -340,15 +340,25 @@ impl NetworkClient {
                     let gender = extract_string(value, "gender").unwrap_or_else(|| "male".to_string());
                     let skin = extract_string(value, "skin").unwrap_or_else(|| "tan".to_string());
                     // Equipment (filter empty strings to None)
+                    let equipped_head = extract_string(value, "equipped_head").filter(|s| !s.is_empty());
                     let equipped_body = extract_string(value, "equipped_body").filter(|s| !s.is_empty());
+                    let equipped_weapon = extract_string(value, "equipped_weapon").filter(|s| !s.is_empty());
+                    let equipped_back = extract_string(value, "equipped_back").filter(|s| !s.is_empty());
                     let equipped_feet = extract_string(value, "equipped_feet").filter(|s| !s.is_empty());
+                    let equipped_ring = extract_string(value, "equipped_ring").filter(|s| !s.is_empty());
+                    let equipped_gloves = extract_string(value, "equipped_gloves").filter(|s| !s.is_empty());
                     // Admin status
                     let is_admin = extract_bool(value, "is_admin").unwrap_or(false);
 
                     log::info!("Player joined: {} at ({}, {}) [{}/{}]", name, x, y, gender, skin);
                     let mut player = Player::new(id.clone(), name, x, y, gender, skin);
+                    player.equipped_head = equipped_head;
                     player.equipped_body = equipped_body;
+                    player.equipped_weapon = equipped_weapon;
+                    player.equipped_back = equipped_back;
                     player.equipped_feet = equipped_feet;
+                    player.equipped_ring = equipped_ring;
+                    player.equipped_gloves = equipped_gloves;
                     player.is_admin = is_admin;
                     state.players.insert(id, player);
                 }
@@ -386,8 +396,13 @@ impl NetworkClient {
                             let exp = extract_i32(player_value, "exp");
                             let exp_to_next_level = extract_i32(player_value, "expToNextLevel");
                             let gold = extract_i32(player_value, "gold");
+                            let equipped_head = extract_string(player_value, "equipped_head").filter(|s| !s.is_empty());
                             let equipped_body = extract_string(player_value, "equipped_body").filter(|s| !s.is_empty());
+                            let equipped_weapon = extract_string(player_value, "equipped_weapon").filter(|s| !s.is_empty());
+                            let equipped_back = extract_string(player_value, "equipped_back").filter(|s| !s.is_empty());
                             let equipped_feet = extract_string(player_value, "equipped_feet").filter(|s| !s.is_empty());
+                            let equipped_ring = extract_string(player_value, "equipped_ring").filter(|s| !s.is_empty());
+                            let equipped_gloves = extract_string(player_value, "equipped_gloves").filter(|s| !s.is_empty());
                             let is_admin = extract_bool(player_value, "is_admin").unwrap_or(false);
 
                             if let Some(player) = state.players.get_mut(&id) {
@@ -418,8 +433,13 @@ impl NetworkClient {
                                     player.exp_to_next_level = exp_to_next_level;
                                 }
                                 // Update equipment
+                                player.equipped_head = equipped_head.clone();
                                 player.equipped_body = equipped_body.clone();
+                                player.equipped_weapon = equipped_weapon.clone();
+                                player.equipped_back = equipped_back.clone();
                                 player.equipped_feet = equipped_feet.clone();
+                                player.equipped_ring = equipped_ring.clone();
+                                player.equipped_gloves = equipped_gloves.clone();
                                 // Update admin status
                                 player.is_admin = is_admin;
                             }
@@ -1072,13 +1092,23 @@ impl NetworkClient {
             "equipmentUpdate" => {
                 if let Some(value) = data {
                     let player_id = extract_string(value, "player_id").unwrap_or_default();
+                    let equipped_head = extract_string(value, "equipped_head").filter(|s| !s.is_empty());
                     let equipped_body = extract_string(value, "equipped_body").filter(|s| !s.is_empty());
+                    let equipped_weapon = extract_string(value, "equipped_weapon").filter(|s| !s.is_empty());
+                    let equipped_back = extract_string(value, "equipped_back").filter(|s| !s.is_empty());
                     let equipped_feet = extract_string(value, "equipped_feet").filter(|s| !s.is_empty());
+                    let equipped_ring = extract_string(value, "equipped_ring").filter(|s| !s.is_empty());
+                    let equipped_gloves = extract_string(value, "equipped_gloves").filter(|s| !s.is_empty());
 
                     if let Some(player) = state.players.get_mut(&player_id) {
+                        player.equipped_head = equipped_head.clone();
                         player.equipped_body = equipped_body.clone();
+                        player.equipped_weapon = equipped_weapon.clone();
+                        player.equipped_back = equipped_back.clone();
                         player.equipped_feet = equipped_feet.clone();
-                        log::info!("Player {} equipment updated: body={:?}, feet={:?}", player_id, equipped_body, equipped_feet);
+                        player.equipped_ring = equipped_ring.clone();
+                        player.equipped_gloves = equipped_gloves.clone();
+                        log::info!("Player {} equipment updated", player_id);
                     }
                 }
             }
