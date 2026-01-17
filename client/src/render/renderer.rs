@@ -1237,7 +1237,7 @@ impl Renderer {
             draw_texture_ex(
                 texture,
                 screen_x - icon_width / 2.0,
-                item_y - icon_height,
+                item_y - icon_height / 2.0,
                 WHITE,
                 DrawTextureParams {
                     dest_size: Some(Vec2::new(icon_width, icon_height)),

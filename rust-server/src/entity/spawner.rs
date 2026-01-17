@@ -49,8 +49,8 @@ pub fn generate_loot_from_prototype(
                 drops.push(GroundItem::new(
                     &id,
                     &entry.item_id,
-                    x + (item_counter as f32 * 0.3),
-                    y + (item_counter as f32 * 0.3),
+                    x,
+                    y,
                     quantity,
                     Some(killer_id.to_string()),
                     current_time,
