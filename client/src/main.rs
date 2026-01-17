@@ -21,6 +21,11 @@ use ui::{Screen, ScreenState, LoginScreen, CharacterSelectScreen};
 #[cfg(not(target_arch = "wasm32"))]
 use auth::AuthSession;
 
+// Production mode - use the production server.
+// const SERVER_URL: &str = "http://5.161.177.38:2567";
+// const WS_URL: &str = "ws://5.161.177.38:2567";
+
+// Development mode - use the development server
 const SERVER_URL: &str = "http://localhost:2567";
 const WS_URL: &str = "ws://localhost:2567";
 
