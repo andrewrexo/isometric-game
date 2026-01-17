@@ -228,9 +228,9 @@ impl Player {
     pub fn damage_bonus(&self, item_registry: &ItemRegistry) -> i32 {
         let mut bonus = 0;
         for equipped in self.all_equipped() {
-            if let Some(ref item_id) = equipped {
+            if let Some(item_id) = equipped {
                 if let Some(def) = item_registry.get(item_id) {
-                    if let Some(ref equip) = def.equipment {
+                    if let Some(equip) = &def.equipment {
                         bonus += equip.damage_bonus;
                     }
                 }
@@ -243,9 +243,9 @@ impl Player {
     pub fn defense_bonus(&self, item_registry: &ItemRegistry) -> i32 {
         let mut bonus = 0;
         for equipped in self.all_equipped() {
-            if let Some(ref item_id) = equipped {
+            if let Some(item_id) = equipped {
                 if let Some(def) = item_registry.get(item_id) {
-                    if let Some(ref equip) = def.equipment {
+                    if let Some(equip) = &def.equipment {
                         bonus += equip.defense_bonus;
                     }
                 }

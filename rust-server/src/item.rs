@@ -62,7 +62,7 @@ impl Inventory {
             if quantity <= 0 {
                 break;
             }
-            if let Some(ref mut inv_slot) = slot {
+            if let Some(inv_slot) = slot {
                 if inv_slot.item_id == item_id {
                     let can_add = max_stack - inv_slot.quantity;
                     if can_add > 0 {
@@ -159,7 +159,7 @@ impl Inventory {
             if count <= 0 {
                 break;
             }
-            if let Some(ref mut inv_slot) = slot {
+            if let Some(inv_slot) = slot {
                 if inv_slot.item_id == item_id {
                     let remove = count.min(inv_slot.quantity);
                     inv_slot.quantity -= remove;
@@ -194,7 +194,7 @@ impl Inventory {
             if remaining <= 0 {
                 return true;
             }
-            if let Some(ref inv_slot) = slot {
+            if let Some(inv_slot) = slot {
                 if inv_slot.item_id == item_id {
                     let can_add = max_stack - inv_slot.quantity;
                     remaining -= can_add;
@@ -328,7 +328,7 @@ pub fn generate_drops(
     match npc_type {
         NpcType::Slime => {
             // Always drop some gold (5-15)
-            let gold_amount = rng.gen_range(5..=15);
+            let gold_amount = rng.r#gen_range(5..=15);
             let id = format!("item_{}_{}", current_time, item_counter);
             item_counter += 1;
             drops.push(GroundItem::new(
@@ -342,7 +342,7 @@ pub fn generate_drops(
             ));
 
             // 30% chance to drop Slime Core
-            if rng.gen_range(0..100) < 30 {
+            if rng.r#gen_range(0..100) < 30 {
                 let id = format!("item_{}_{}", current_time, item_counter);
                 item_counter += 1;
                 drops.push(GroundItem::new(
@@ -357,7 +357,7 @@ pub fn generate_drops(
             }
 
             // 20% chance to drop Health Potion
-            if rng.gen_range(0..100) < 20 {
+            if rng.r#gen_range(0..100) < 20 {
                 let id = format!("item_{}_{}", current_time, item_counter);
                 let _ = item_counter; // silence unused warning
                 drops.push(GroundItem::new(

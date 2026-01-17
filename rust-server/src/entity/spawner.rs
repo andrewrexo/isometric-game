@@ -18,7 +18,7 @@ pub fn generate_loot_from_prototype(
 
     // Gold drop
     if prototype.rewards.gold_max > 0 {
-        let gold_amount = rng.gen_range(
+        let gold_amount = rng.r#gen_range(
             prototype.rewards.gold_min..=prototype.rewards.gold_max
         ) * level; // Scale by level
 
@@ -39,8 +39,8 @@ pub fn generate_loot_from_prototype(
 
     // Loot table drops - now using string item IDs directly
     for entry in &prototype.loot {
-        if rng.gen::<f32>() < entry.drop_chance {
-            let quantity = rng.gen_range(entry.quantity_min..=entry.quantity_max);
+        if rng.r#gen::<f32>() < entry.drop_chance {
+            let quantity = rng.r#gen_range(entry.quantity_min..=entry.quantity_max);
             if quantity > 0 {
                 let id = format!("item_{}_{}", current_time, item_counter);
                 item_counter += 1;
