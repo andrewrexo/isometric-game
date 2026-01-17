@@ -179,6 +179,10 @@ pub enum ServerMessage {
     ItemDespawned {
         item_id: String,
     },
+    ItemQuantityUpdated {
+        id: String,
+        quantity: i32,
+    },
     InventoryUpdate {
         player_id: String,
         slots: Vec<crate::item::InventorySlotUpdate>,
@@ -429,6 +433,7 @@ impl ServerMessage {
             ServerMessage::ItemDropped { .. } => "itemDropped",
             ServerMessage::ItemPickedUp { .. } => "itemPickedUp",
             ServerMessage::ItemDespawned { .. } => "itemDespawned",
+            ServerMessage::ItemQuantityUpdated { .. } => "itemQuantityUpdated",
             ServerMessage::InventoryUpdate { .. } => "inventoryUpdate",
             ServerMessage::ItemUsed { .. } => "itemUsed",
             ServerMessage::QuestAccepted { .. } => "questAccepted",
@@ -844,6 +849,18 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((
                 Value::String("item_id".into()),
                 Value::String(item_id.clone().into()),
+            ));
+            Value::Map(map)
+        }
+        ServerMessage::ItemQuantityUpdated { id, quantity } => {
+            let mut map = Vec::new();
+            map.push((
+                Value::String("id".into()),
+                Value::String(id.clone().into()),
+            ));
+            map.push((
+                Value::String("quantity".into()),
+                Value::Integer((*quantity as i64).into()),
             ));
             Value::Map(map)
         }

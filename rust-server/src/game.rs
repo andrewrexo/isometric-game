@@ -1362,7 +1362,39 @@ impl GameRoom {
                 };
 
                 for item in drops {
-                    // Broadcast item drop
+                    let mut items = self.ground_items.write().await;
+
+                    // For gold, try to combine with existing pile at same tile
+                    if item.item_id == "gold" {
+                        let tile_x = item.x.floor() as i32;
+                        let tile_y = item.y.floor() as i32;
+
+                        // Find existing gold at same tile with same owner
+                        let existing_gold_id = items.iter()
+                            .find(|(_, existing)| {
+                                existing.item_id == "gold"
+                                    && existing.x.floor() as i32 == tile_x
+                                    && existing.y.floor() as i32 == tile_y
+                                    && existing.owner_id == item.owner_id
+                            })
+                            .map(|(id, _)| id.clone());
+
+                        if let Some(existing_id) = existing_gold_id {
+                            // Combine with existing pile
+                            if let Some(existing) = items.get_mut(&existing_id) {
+                                existing.quantity += item.quantity;
+                                let update_msg = ServerMessage::ItemQuantityUpdated {
+                                    id: existing_id.clone(),
+                                    quantity: existing.quantity,
+                                };
+                                drop(items); // Release lock before broadcast
+                                self.broadcast(update_msg).await;
+                            }
+                            continue;
+                        }
+                    }
+
+                    // No existing pile to combine with - create new item
                     let drop_msg = ServerMessage::ItemDropped {
                         id: item.id.clone(),
                         item_id: item.item_id.clone(),
@@ -1370,11 +1402,9 @@ impl GameRoom {
                         y: item.y,
                         quantity: item.quantity,
                     };
-                    self.broadcast(drop_msg).await;
-
-                    // Store in ground_items
-                    let mut items = self.ground_items.write().await;
                     items.insert(item.id.clone(), item);
+                    drop(items); // Release lock before broadcast
+                    self.broadcast(drop_msg).await;
                 }
             } else {
                 // Broadcast player death

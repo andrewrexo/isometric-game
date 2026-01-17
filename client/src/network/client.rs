@@ -837,6 +837,26 @@ impl NetworkClient {
                 }
             }
 
+            "itemQuantityUpdated" => {
+                if let Some(value) = data {
+                    let id = extract_string(value, "id").unwrap_or_default();
+                    let quantity = extract_i32(value, "quantity").unwrap_or(1);
+
+                    log::debug!("Item {} quantity updated to {}", id, quantity);
+
+                    if let Some(item) = state.ground_items.get_mut(&id) {
+                        item.quantity = quantity;
+                        // Regenerate gold pile with new quantity
+                        if item.item_id == "gold" {
+                            item.gold_pile = Some(crate::game::item::GoldPileState::new(
+                                quantity,
+                                macroquad::time::get_time(),
+                            ));
+                        }
+                    }
+                }
+            }
+
             "inventoryUpdate" => {
                 // Server sends this only to the owning player (unicast)
                 if let Some(value) = data {
