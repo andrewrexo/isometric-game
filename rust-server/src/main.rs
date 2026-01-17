@@ -1164,9 +1164,16 @@ async fn main() {
         // For production, specify allowed origins explicitly
         .layer(
             CorsLayer::new()
-                .allow_origin(tower_http::cors::Any) // TODO: Replace with specific origins in production
-                .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
-                .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION])
+                .allow_origin(tower_http::cors::Any)
+                .allow_methods([
+                    axum::http::Method::GET, 
+                    axum::http::Method::POST,
+                    axum::http::Method::OPTIONS
+                ])
+                .allow_headers([
+                    axum::http::header::CONTENT_TYPE, 
+                    axum::http::header::AUTHORIZATION
+                ])
         )
         .with_state(state);
 
