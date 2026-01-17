@@ -31,3 +31,6 @@ Thumbs.db
 # Tiled map maker projects
 *.new.json
 *.tmj
+
+# Worktrees
+.worktrees/
