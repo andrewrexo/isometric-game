@@ -9,6 +9,7 @@ pub struct PathState {
     pub current_index: usize,        // Current waypoint being targeted
     pub destination: (i32, i32),     // Final target
     pub pickup_target: Option<String>, // Item ID to pick up when path completes
+    pub interact_target: Option<String>, // NPC ID to interact with on path completion
 }
 
 /// Node for A* priority queue

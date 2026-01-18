@@ -1129,12 +1129,18 @@ impl InputHandler {
                 }
             }
 
-            // Check if path completed and handle pickup if needed
+            // Check if path completed and handle pickup/interact if needed
             if state.auto_path.as_ref().map(|p| p.current_index >= p.path.len()).unwrap_or(false) {
                 // Path completed - check for pickup target
                 if let Some(ref path_state) = state.auto_path {
                     if let Some(ref item_id) = path_state.pickup_target {
                         commands.push(InputCommand::Pickup { item_id: item_id.clone() });
+                    }
+                    // Handle interact target (NPC)
+                    if let Some(ref npc_id) = path_state.interact_target {
+                        if state.npcs.get(npc_id).map(|n| n.is_alive()).unwrap_or(false) {
+                            commands.push(InputCommand::Interact { npc_id: npc_id.clone() });
+                        }
                     }
                 }
                 state.auto_path = None;
@@ -1247,6 +1253,7 @@ impl InputHandler {
                                                 current_index: 0,
                                                 destination: dest,
                                                 pickup_target: Some(item_id.clone()),
+                                                interact_target: None,
                                             });
                                         }
                                     }
@@ -1265,47 +1272,96 @@ impl InputHandler {
             let (mouse_x, mouse_y) = mouse_position();
             let (world_x, world_y) = screen_to_world(mouse_x, mouse_y, &state.camera);
 
-            // Find nearest entity within click radius (1.5 tiles)
-            const CLICK_RADIUS: f32 = 1.5;
-            let mut nearest_entity: Option<(String, f32)> = None;
+            // Get the clicked tile coordinates
+            let clicked_tile_x = world_x.round() as i32;
+            let clicked_tile_y = world_y.round() as i32;
 
-            // Check players
+            // Find entity on the exact clicked tile
+            let mut clicked_player: Option<String> = None;
+            let mut clicked_npc: Option<String> = None;
+
+            // Check players - must be on the exact clicked tile
             for (id, player) in &state.players {
                 // Don't allow targeting self
                 if state.local_player_id.as_ref() == Some(id) {
                     continue;
                 }
 
-                let dx: f32 = player.x - world_x;
-                let dy: f32 = player.y - world_y;
-                let dist = (dx * dx + dy * dy).sqrt();
+                let player_tile_x = player.x.round() as i32;
+                let player_tile_y = player.y.round() as i32;
 
-                if dist < CLICK_RADIUS {
-                    if nearest_entity.is_none() || dist < nearest_entity.as_ref().unwrap().1 {
-                        nearest_entity = Some((id.clone(), dist));
-                    }
+                if player_tile_x == clicked_tile_x && player_tile_y == clicked_tile_y {
+                    clicked_player = Some(id.clone());
+                    break;
                 }
             }
 
-            // Check NPCs (prioritize over players for targeting)
+            // Check NPCs - must be on the exact clicked tile
             for (id, npc) in &state.npcs {
-                // Only allow targeting alive NPCs
+                // Only allow interacting with alive NPCs
                 if !npc.is_alive() {
                     continue;
                 }
 
-                let dx: f32 = npc.x - world_x;
-                let dy: f32 = npc.y - world_y;
-                let dist = (dx * dx + dy * dy).sqrt();
+                let npc_tile_x = npc.x.round() as i32;
+                let npc_tile_y = npc.y.round() as i32;
 
-                if dist < CLICK_RADIUS {
-                    if nearest_entity.is_none() || dist < nearest_entity.as_ref().unwrap().1 {
-                        nearest_entity = Some((id.clone(), dist));
-                    }
+                if npc_tile_x == clicked_tile_x && npc_tile_y == clicked_tile_y {
+                    clicked_npc = Some(id.clone());
+                    break;
                 }
             }
 
-            if let Some((entity_id, _)) = nearest_entity {
+            // Prioritize NPC interaction over player targeting
+            if let Some(npc_id) = clicked_npc {
+                // Check if NPC is hostile (monster) or friendly (shop/quest)
+                let is_hostile = state.npcs.get(&npc_id).map(|n| n.is_hostile()).unwrap_or(true);
+
+                if is_hostile {
+                    // Hostile NPC (monster) - target them for combat
+                    commands.push(InputCommand::Target { entity_id: npc_id });
+                } else {
+                    // Friendly NPC - interact or pathfind-to-interact
+                    const INTERACT_RANGE: f32 = 2.5;
+                    if let Some(local_id) = &state.local_player_id {
+                        if let Some(player) = state.players.get(local_id) {
+                            if let Some(npc) = state.npcs.get(&npc_id) {
+                                let dx = npc.x - player.x;
+                                let dy = npc.y - player.y;
+                                let dist_to_player = (dx * dx + dy * dy).sqrt();
+
+                                if dist_to_player < INTERACT_RANGE {
+                                    // Within range - immediate interact
+                                    commands.push(InputCommand::Interact { npc_id });
+                                } else {
+                                    // Out of range - pathfind to adjacent tile
+                                    let player_x = player.x.round() as i32;
+                                    let player_y = player.y.round() as i32;
+                                    let npc_x = npc.x.round() as i32;
+                                    let npc_y = npc.y.round() as i32;
+
+                                    const MAX_PATH_DISTANCE: i32 = 32;
+                                    if let Some((dest, path)) = pathfinding::find_path_to_adjacent(
+                                        (player_x, player_y),
+                                        (npc_x, npc_y),
+                                        &state.chunk_manager,
+                                        MAX_PATH_DISTANCE,
+                                    ) {
+                                        state.auto_path = Some(PathState {
+                                            path,
+                                            current_index: 0,
+                                            destination: dest,
+                                            pickup_target: None,
+                                            interact_target: Some(npc_id),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if let Some(entity_id) = clicked_player {
+                // Player clicked - target them
                 commands.push(InputCommand::Target { entity_id });
             } else {
                 // Clicked on empty space - try to path there
@@ -1333,6 +1389,7 @@ impl InputHandler {
                                 current_index: 0,
                                 destination: (tile_x, tile_y),
                                 pickup_target: None,
+                                interact_target: None,
                             });
                         }
                     }
