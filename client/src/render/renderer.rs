@@ -1455,23 +1455,9 @@ impl Renderer {
             }
         }
 
-        // Connection status (bottom-right, mirroring controls guide)
-        let status_text = match state.connection_status {
-            ConnectionStatus::Connected => "Connected",
-            ConnectionStatus::Connecting => "Connecting...",
-            ConnectionStatus::Disconnected => "Disconnected",
-        };
-        let status_color = match state.connection_status {
-            ConnectionStatus::Connected => GREEN,
-            ConnectionStatus::Connecting => YELLOW,
-            ConnectionStatus::Disconnected => RED,
-        };
-        let status_width = self.measure_text_sharp(status_text, 16.0).width;
-        self.draw_text_sharp(status_text, screen_width() - status_width - 16.0, screen_height() - 10.0, 16.0, status_color);
-
-        // Chat messages (bottom-left) with text wrapping
+        // Chat messages (bottom-left, above the exp bar) with text wrapping
         let chat_x = 10.0;
-        let chat_y = screen_height() - 30.0;
+        let chat_y = self.get_exp_bar_top() - 20.0;
         let line_height = 18.0;
         let max_chat_width = 400.0;
         let font_size = 16.0;
@@ -1488,10 +1474,10 @@ impl Renderer {
             }
         }
 
-        // Local player stats panel (top-right) - Name, HP/XP bars
+        // Local player stats panel (top-right) - Name, HP bar
         if let Some(player) = state.get_local_player() {
             let panel_width = 160.0;
-            let panel_height = 64.0;
+            let panel_height = 44.0;
             let panel_x = (screen_width() - panel_width - 12.0).floor();
             let panel_y = 12.0;
 
@@ -1537,23 +1523,6 @@ impl Renderer {
             let hp_text = format!("{}/{}", player.hp, player.max_hp);
             let hp_text_w = self.measure_text_sharp(&hp_text, 16.0).width;
             self.draw_text_sharp(&hp_text, (panel_x + padding + (bar_width - hp_text_w) / 2.0).floor(), (hp_bar_y + 13.0).floor(), 16.0, TEXT_NORMAL);
-
-            // ===== XP BAR =====
-            let exp_bar_y = hp_bar_y + bar_height + 4.0;
-            let exp_ratio = player.exp as f32 / player.exp_to_next_level.max(1) as f32;
-
-            draw_rectangle(panel_x + padding, exp_bar_y, bar_width, bar_height, SLOT_INNER_SHADOW);
-            draw_rectangle(panel_x + padding + 1.0, exp_bar_y + 1.0, bar_width - 2.0, bar_height - 2.0, Color::new(0.08, 0.08, 0.10, 1.0));
-
-            let exp_fill_w = (bar_width - 4.0) * exp_ratio;
-            if exp_fill_w > 0.0 {
-                draw_rectangle(panel_x + padding + 2.0, exp_bar_y + 2.0, exp_fill_w, bar_height - 4.0, Color::new(0.4, 0.3, 0.8, 1.0));
-                draw_rectangle(panel_x + padding + 2.0, exp_bar_y + 2.0, exp_fill_w, (bar_height - 4.0) / 2.0, Color::new(1.0, 1.0, 1.0, 0.2));
-            }
-
-            let exp_text = format!("{}/{}", player.exp, player.exp_to_next_level);
-            let exp_text_w = self.measure_text_sharp(&exp_text, 16.0).width;
-            self.draw_text_sharp(&exp_text, (panel_x + padding + (bar_width - exp_text_w) / 2.0).floor(), (exp_bar_y + 13.0).floor(), 16.0, TEXT_NORMAL);
         }
 
         // Note: Interactive UI (inventory, crafting, dialogue, quick slots) is rendered
@@ -1664,6 +1633,9 @@ impl Renderer {
         // Ground item clickable areas and hover labels (world-space, registered first)
         self.render_ground_item_overlays(state, hovered, &mut layout);
 
+        // Experience bar (at the very bottom, rendered first)
+        self.render_exp_bar(state);
+
         // Inventory UI (when open)
         if state.ui_state.inventory_open {
             self.render_inventory(state, hovered, &mut layout);
@@ -1679,8 +1651,11 @@ impl Renderer {
             self.render_crafting(state, hovered, &mut layout);
         }
 
-        // Quick slots (always visible at bottom)
+        // Quick slots (always visible at bottom, above exp bar)
         self.render_quick_slots(state, hovered, &mut layout);
+
+        // Menu buttons (bottom-right, above exp bar)
+        self.render_menu_buttons(state, hovered, &mut layout);
 
         // Quest objective tracker (top-left)
         self.render_quest_tracker(state);

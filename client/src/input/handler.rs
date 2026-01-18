@@ -431,6 +431,68 @@ impl InputHandler {
             }
         }
 
+        // Handle menu button clicks (always visible, handle before modal UIs)
+        if mouse_clicked {
+            if let Some(ref element) = clicked_element {
+                match element {
+                    UiElementId::MenuButtonCharacter => {
+                        // Toggle character panel, close others if opening
+                        if state.ui_state.character_open {
+                            state.ui_state.character_open = false;
+                        } else {
+                            state.ui_state.character_open = true;
+                            state.ui_state.inventory_open = false;
+                            state.ui_state.social_open = false;
+                            state.ui_state.map_open = false;
+                        }
+                        return commands;
+                    }
+                    UiElementId::MenuButtonInventory => {
+                        // Toggle inventory panel, close others if opening
+                        if state.ui_state.inventory_open {
+                            state.ui_state.inventory_open = false;
+                        } else {
+                            state.ui_state.inventory_open = true;
+                            state.ui_state.character_open = false;
+                            state.ui_state.social_open = false;
+                            state.ui_state.map_open = false;
+                        }
+                        return commands;
+                    }
+                    UiElementId::MenuButtonSocial => {
+                        // Toggle social panel, close others if opening
+                        if state.ui_state.social_open {
+                            state.ui_state.social_open = false;
+                        } else {
+                            state.ui_state.social_open = true;
+                            state.ui_state.inventory_open = false;
+                            state.ui_state.character_open = false;
+                            state.ui_state.map_open = false;
+                        }
+                        return commands;
+                    }
+                    UiElementId::MenuButtonMap => {
+                        // Toggle map panel, close others if opening
+                        if state.ui_state.map_open {
+                            state.ui_state.map_open = false;
+                        } else {
+                            state.ui_state.map_open = true;
+                            state.ui_state.inventory_open = false;
+                            state.ui_state.character_open = false;
+                            state.ui_state.social_open = false;
+                        }
+                        return commands;
+                    }
+                    UiElementId::MenuButtonSettings => {
+                        // Toggle escape/settings menu
+                        state.ui_state.escape_menu_open = !state.ui_state.escape_menu_open;
+                        return commands;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // Handle escape menu
         if state.ui_state.escape_menu_open {
             // Handle mouse clicks on escape menu elements
@@ -1402,22 +1464,33 @@ impl InputHandler {
             }
         }
 
-        // Escape key - close inventory first, then clear target, then open escape menu
+        // Escape key - close any open panel first, then clear target, then open escape menu
         if is_key_pressed(KeyCode::Escape) {
-            if state.ui_state.inventory_open {
-                // Close inventory
+            // Check if any panel is open and close it
+            if state.ui_state.inventory_open || state.ui_state.character_open
+                || state.ui_state.social_open || state.ui_state.map_open {
                 state.ui_state.inventory_open = false;
+                state.ui_state.character_open = false;
+                state.ui_state.social_open = false;
+                state.ui_state.map_open = false;
             } else if state.selected_entity_id.is_some() {
                 commands.push(InputCommand::ClearTarget);
             } else {
-                // No target selected and inventory closed - open escape menu
+                // No target selected and no panels open - open escape menu
                 state.ui_state.escape_menu_open = true;
             }
         }
 
-        // Toggle inventory (I key)
+        // Toggle inventory (I key) with mutual exclusivity
         if is_key_pressed(KeyCode::I) {
-            state.ui_state.inventory_open = !state.ui_state.inventory_open;
+            if state.ui_state.inventory_open {
+                state.ui_state.inventory_open = false;
+            } else {
+                state.ui_state.inventory_open = true;
+                state.ui_state.character_open = false;
+                state.ui_state.social_open = false;
+                state.ui_state.map_open = false;
+            }
         }
 
         // Use/equip items (1-5 keys for quick slots)

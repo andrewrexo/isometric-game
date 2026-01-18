@@ -81,6 +81,11 @@ pub const HEALTH_RED_DARK: Color = Color::new(0.55, 0.12, 0.12, 1.0);        // 
 pub const HEALTH_RED_MID: Color = Color::new(0.75, 0.18, 0.18, 1.0);         // rgba(191, 46, 46, 255) ruby bright
 pub const HEALTH_RED_LIGHT: Color = Color::new(0.90, 0.35, 0.35, 1.0);       // rgba(230, 89, 89, 255) ruby highlight
 
+// Experience bar colors - gold/amber theme
+pub const EXP_BAR_FILL_DARK: Color = Color::new(0.55, 0.40, 0.08, 1.0);      // rgba(140, 102, 20, 255) gold base
+pub const EXP_BAR_FILL_MID: Color = Color::new(0.75, 0.55, 0.12, 1.0);       // rgba(191, 140, 31, 255) gold bright
+pub const EXP_BAR_FILL_LIGHT: Color = Color::new(0.90, 0.70, 0.25, 1.0);     // rgba(230, 179, 64, 255) gold highlight
+
 // ============================================================================
 // Layout Constants
 // ============================================================================
@@ -108,6 +113,14 @@ pub const ITEM_TEXT_OFFSET: f32 = 48.0;  // icon padding (8) + icon size (32) + 
 
 // Transaction Bar Constants
 pub const TRANSACTION_BAR_HEIGHT: f32 = 100.0;
+
+// Experience Bar Constants
+pub const EXP_BAR_HEIGHT: f32 = 16.0;
+pub const EXP_BAR_GAP: f32 = 8.0;  // Gap between exp bar and UI elements above
+
+// Menu Button Constants
+pub const MENU_BUTTON_SIZE: f32 = 40.0;
+pub const MENU_BUTTON_SPACING: f32 = 4.0;
 
 // ============================================================================
 // Shared Types

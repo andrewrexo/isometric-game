@@ -45,6 +45,13 @@ pub enum UiElementId {
     ShopSellQuantityMinus,
     ShopSellQuantityPlus,
     ShopSellConfirmButton,
+
+    // Menu Buttons
+    MenuButtonCharacter,
+    MenuButtonInventory,
+    MenuButtonSocial,
+    MenuButtonMap,
+    MenuButtonSettings,
 }
 
 /// A single interactive UI element with its bounds

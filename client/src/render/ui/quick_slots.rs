@@ -20,7 +20,9 @@ impl Renderer {
         let panel_height = slot_size + panel_padding * 2.0;
 
         let panel_x = (screen_width() - panel_width) / 2.0;
-        let panel_y = screen_height() - panel_height - 10.0;
+        // Position above the exp bar with gap
+        let exp_bar_top = self.get_exp_bar_top();
+        let panel_y = exp_bar_top - EXP_BAR_GAP - panel_height;
 
         // Draw semi-transparent background panel
         let frame_outer_alpha = Color::new(FRAME_OUTER.r, FRAME_OUTER.g, FRAME_OUTER.b, 0.7);

@@ -176,6 +176,10 @@ pub struct UiState {
     pub shop_sell_scroll: f32, // Scroll offset for sell list (pixels)
     // Escape menu state
     pub escape_menu_open: bool,
+    // Menu button panel states
+    pub character_open: bool,
+    pub social_open: bool,
+    pub map_open: bool,
     // Mouse hover state for UI elements
     pub hovered_element: Option<UiElementId>,
     // Context menu state
@@ -218,6 +222,9 @@ impl Default for UiState {
             shop_buy_scroll: 0.0,
             shop_sell_scroll: 0.0,
             escape_menu_open: false,
+            character_open: false,
+            social_open: false,
+            map_open: false,
             hovered_element: None,
             context_menu: None,
             drag_state: None,

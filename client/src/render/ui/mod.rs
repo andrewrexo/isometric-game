@@ -10,3 +10,4 @@ pub mod tooltip;
 pub mod context_menu;
 pub mod menu;
 pub mod shop;
+pub mod bottom_bar;
