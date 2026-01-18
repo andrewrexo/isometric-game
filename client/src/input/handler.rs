@@ -1242,12 +1242,15 @@ impl InputHandler {
             }
         }
 
-        // Escape key - clear target first, then open escape menu if no target
+        // Escape key - close inventory first, then clear target, then open escape menu
         if is_key_pressed(KeyCode::Escape) {
-            if state.selected_entity_id.is_some() {
+            if state.ui_state.inventory_open {
+                // Close inventory
+                state.ui_state.inventory_open = false;
+            } else if state.selected_entity_id.is_some() {
                 commands.push(InputCommand::ClearTarget);
             } else {
-                // No target selected - open escape menu
+                // No target selected and inventory closed - open escape menu
                 state.ui_state.escape_menu_open = true;
             }
         }
