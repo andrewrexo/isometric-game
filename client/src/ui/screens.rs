@@ -1,8 +1,76 @@
 use macroquad::prelude::*;
+use std::collections::HashMap;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::auth::{AuthClient, AuthSession, CharacterInfo};
 use crate::render::BitmapFont;
+
+// Sprite sheet constants for character preview
+const SPRITE_WIDTH: f32 = 34.0;
+const SPRITE_HEIGHT: f32 = 78.0;
+
+/// Load all player sprite textures (gender x skin combinations)
+async fn load_player_sprites() -> HashMap<String, Texture2D> {
+    let mut sprites = HashMap::new();
+    let genders = ["male", "female"];
+    let skins = ["tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"];
+
+    for gender in &genders {
+        for skin in &skins {
+            let path = format!("assets/sprites/players/player_{}_{}.png", gender, skin);
+            if let Ok(texture) = load_texture(&path).await {
+                texture.set_filter(FilterMode::Nearest);
+                let key = format!("{}_{}", gender, skin);
+                sprites.insert(key, texture);
+            }
+        }
+    }
+
+    sprites
+}
+
+/// Check if a point is inside a rectangle
+fn point_in_rect(px: f32, py: f32, rx: f32, ry: f32, rw: f32, rh: f32) -> bool {
+    px >= rx && px < rx + rw && py >= ry && py < ry + rh
+}
+
+/// Draw a character preview sprite at the given position
+/// Uses the idle frame (row 0, column 0) facing down
+fn draw_character_preview(
+    sprites: &HashMap<String, Texture2D>,
+    gender: &str,
+    skin: &str,
+    x: f32,
+    y: f32,
+    scale: f32,
+) {
+    let key = format!("{}_{}", gender, skin);
+    if let Some(texture) = sprites.get(&key) {
+        // Idle frame is at row 0, column 0
+        let src_x = 0.0;
+        let src_y = 0.0;
+
+        let dest_w = SPRITE_WIDTH * scale;
+        let dest_h = SPRITE_HEIGHT * scale;
+
+        draw_texture_ex(
+            texture,
+            x,
+            y,
+            WHITE,
+            DrawTextureParams {
+                source: Some(Rect::new(src_x, src_y, SPRITE_WIDTH, SPRITE_HEIGHT)),
+                dest_size: Some(Vec2::new(dest_w, dest_h)),
+                ..Default::default()
+            },
+        );
+    } else {
+        // Fallback: draw a colored rectangle if sprite not found
+        let dest_w = SPRITE_WIDTH * scale;
+        let dest_h = SPRITE_HEIGHT * scale;
+        draw_rectangle(x, y, dest_w, dest_h, Color::from_rgba(100, 100, 100, 255));
+    }
+}
 
 /// Result of screen update - tells main loop what to do next
 pub enum ScreenState {
@@ -331,6 +399,7 @@ pub struct CharacterSelectScreen {
     auth_client: AuthClient,
     font: BitmapFont,
     confirm_delete: bool,
+    player_sprites: HashMap<String, Texture2D>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -349,12 +418,14 @@ impl CharacterSelectScreen {
             auth_client,
             font: BitmapFont::default(),
             confirm_delete: false,
+            player_sprites: HashMap::new(),
         }
     }
 
-    /// Load font asynchronously - call this after creating the screen
+    /// Load font and sprites asynchronously - call this after creating the screen
     pub async fn load_font(&mut self) {
         self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
+        self.player_sprites = load_player_sprites().await;
     }
 
     /// Refresh the character list from the server
@@ -380,10 +451,21 @@ impl CharacterSelectScreen {
 #[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterSelectScreen {
     fn update(&mut self) -> ScreenState {
+        let sw = screen_width();
+        let sh = screen_height();
+        let (mx, my) = mouse_position();
+        let clicked = is_mouse_button_pressed(MouseButton::Left);
+
+        // Layout constants (must match render)
+        let list_x = (sw - 500.0) / 2.0;
+        let list_y = 100.0;
+        let item_height = 70.0;
+        let inst_y = sh - 70.0;
+
         // Delete confirmation mode
         if self.confirm_delete {
+            // Keyboard shortcuts
             if is_key_pressed(KeyCode::Y) {
-                // Confirm delete
                 if !self.characters.is_empty() {
                     let char_id = self.characters[self.selected_index].id;
                     if self.auth_client.delete_character(&self.session.token, char_id).is_ok() {
@@ -397,10 +479,96 @@ impl Screen for CharacterSelectScreen {
                 self.confirm_delete = false;
                 return ScreenState::Continue;
             }
+
+            // Mouse clicks on Yes/No buttons
+            if clicked {
+                let box_w = 450.0;
+                let box_h = 150.0;
+                let box_x = (sw - box_w) / 2.0;
+                let box_y = (sh - box_h) / 2.0;
+
+                // Yes button area (left side of button text)
+                let yes_x = box_x + 70.0;
+                let yes_y = box_y + 85.0;
+                if point_in_rect(mx, my, yes_x, yes_y, 100.0, 30.0) {
+                    if !self.characters.is_empty() {
+                        let char_id = self.characters[self.selected_index].id;
+                        if self.auth_client.delete_character(&self.session.token, char_id).is_ok() {
+                            self.refresh_characters();
+                        }
+                    }
+                    self.confirm_delete = false;
+                    return ScreenState::Continue;
+                }
+
+                // No button area (right side of button text)
+                let no_x = box_x + 250.0;
+                if point_in_rect(mx, my, no_x, yes_y, 100.0, 30.0) {
+                    self.confirm_delete = false;
+                    return ScreenState::Continue;
+                }
+            }
+
             return ScreenState::Continue;
         }
 
-        // Navigate characters
+        // Mouse: Click on character rows
+        if clicked && !self.characters.is_empty() {
+            for i in 0..self.characters.len() {
+                let y = list_y + i as f32 * item_height;
+                if point_in_rect(mx, my, list_x, y, 500.0, item_height - 5.0) {
+                    if self.selected_index == i {
+                        // Double-click effect: if already selected, start game
+                        let character = &self.characters[self.selected_index];
+                        return ScreenState::StartGame {
+                            session: self.session.clone(),
+                            character_id: character.id,
+                            character_name: character.name.clone(),
+                        };
+                    } else {
+                        self.selected_index = i;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Mouse: Click on buttons at bottom
+        if clicked {
+            // Play button
+            if point_in_rect(mx, my, list_x, inst_y - 10.0, 100.0, 30.0) {
+                if !self.characters.is_empty() {
+                    let character = &self.characters[self.selected_index];
+                    return ScreenState::StartGame {
+                        session: self.session.clone(),
+                        character_id: character.id,
+                        character_name: character.name.clone(),
+                    };
+                }
+            }
+
+            // New button
+            if self.characters.len() < MAX_CHARACTERS {
+                if point_in_rect(mx, my, list_x + 120.0, inst_y - 10.0, 70.0, 30.0) {
+                    return ScreenState::ToCharacterCreate(self.session.clone());
+                }
+            }
+
+            // Delete button
+            if point_in_rect(mx, my, list_x + 210.0, inst_y - 10.0, 90.0, 30.0) {
+                if !self.characters.is_empty() {
+                    self.confirm_delete = true;
+                }
+            }
+
+            // Logout button
+            if point_in_rect(mx, my, list_x + 330.0, inst_y - 10.0, 100.0, 30.0) {
+                let _ = self.auth_client.logout(&self.session.token);
+                return ScreenState::ToLogin;
+            }
+        }
+
+        // Keyboard: Navigate characters
         if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
             if self.selected_index > 0 {
                 self.selected_index -= 1;
@@ -412,25 +580,25 @@ impl Screen for CharacterSelectScreen {
             }
         }
 
-        // Create new character - go to character creation screen
+        // Keyboard: Create new character
         if is_key_pressed(KeyCode::N) && self.characters.len() < MAX_CHARACTERS {
             return ScreenState::ToCharacterCreate(self.session.clone());
         }
 
-        // Delete character - ask for confirmation
+        // Keyboard: Delete character
         if is_key_pressed(KeyCode::Delete) || is_key_pressed(KeyCode::X) {
             if !self.characters.is_empty() {
                 self.confirm_delete = true;
             }
         }
 
-        // Logout
+        // Keyboard: Logout
         if is_key_pressed(KeyCode::Escape) {
             let _ = self.auth_client.logout(&self.session.token);
             return ScreenState::ToLogin;
         }
 
-        // Select character and start game
+        // Keyboard: Select character and start game
         if is_key_pressed(KeyCode::Enter) {
             if !self.characters.is_empty() {
                 let character = &self.characters[self.selected_index];
@@ -493,10 +661,24 @@ impl Screen for CharacterSelectScreen {
                     draw_rectangle_lines(list_x, y, 500.0, item_height - 5.0, 2.0, WHITE);
                 }
 
-                // Character info
-                self.draw_text_sharp(&character.name, list_x + 20.0, y + 26.0, 16.0, WHITE);
+                // Character preview sprite (scale to fit in the row)
+                let preview_scale = 1.0;
+                let preview_h = SPRITE_HEIGHT * preview_scale;
+                let preview_y = y + (item_height - 5.0 - preview_h) / 2.0;
+                draw_character_preview(
+                    &self.player_sprites,
+                    &character.gender,
+                    &character.skin,
+                    list_x + 10.0,
+                    preview_y,
+                    preview_scale,
+                );
+
+                // Character info (shifted right to make room for preview)
+                let text_x = list_x + 50.0;
+                self.draw_text_sharp(&character.name, text_x, y + 26.0, 16.0, WHITE);
                 let class_info = format!("Level {} {} {}", character.level, character.gender, character.skin);
-                self.draw_text_sharp(&class_info, list_x + 20.0, y + 48.0, 16.0, LIGHTGRAY);
+                self.draw_text_sharp(&class_info, text_x, y + 48.0, 16.0, LIGHTGRAY);
 
                 // Played time
                 let hours = character.played_time / 3600;
@@ -572,6 +754,7 @@ pub struct CharacterCreateScreen {
     auth_client: AuthClient,
     font: BitmapFont,
     active_field: CreateField,
+    player_sprites: HashMap<String, Texture2D>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -594,11 +777,13 @@ impl CharacterCreateScreen {
             auth_client: AuthClient::new(server_url),
             font: BitmapFont::default(),
             active_field: CreateField::Name,
+            player_sprites: HashMap::new(),
         }
     }
 
     pub async fn load_font(&mut self) {
         self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
+        self.player_sprites = load_player_sprites().await;
     }
 
     fn draw_text_sharp(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color) {
@@ -629,12 +814,101 @@ impl CharacterCreateScreen {
 #[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterCreateScreen {
     fn update(&mut self) -> ScreenState {
+        let sw = screen_width();
+        let sh = screen_height();
+        let (mx, my) = mouse_position();
+        let clicked = is_mouse_button_pressed(MouseButton::Left);
+
+        // Layout constants (must match render)
+        let form_x = (sw - 400.0) / 2.0;
+        let form_y = 120.0;
+        let field_height = 80.0;
+        let inst_y = sh - 70.0;
+
         // Handle name input when name field is active
         if self.active_field == CreateField::Name {
             self.handle_name_input();
         }
 
-        // Navigate between fields with Tab or Up/Down
+        // Mouse: Click on fields to focus
+        if clicked {
+            // Name field box
+            let name_box_y = form_y + 24.0;
+            if point_in_rect(mx, my, form_x, name_box_y, 400.0, 40.0) {
+                self.active_field = CreateField::Name;
+            }
+
+            // Gender field box
+            let gender_box_y = form_y + field_height + 24.0;
+            if point_in_rect(mx, my, form_x, gender_box_y, 400.0, 40.0) {
+                self.active_field = CreateField::Gender;
+
+                // Check if clicked on left arrow area
+                if point_in_rect(mx, my, form_x, gender_box_y, 60.0, 40.0) {
+                    self.gender_index = if self.gender_index == 0 {
+                        GENDERS.len() - 1
+                    } else {
+                        self.gender_index - 1
+                    };
+                }
+                // Check if clicked on right arrow area
+                if point_in_rect(mx, my, form_x + 340.0, gender_box_y, 60.0, 40.0) {
+                    self.gender_index = (self.gender_index + 1) % GENDERS.len();
+                }
+            }
+
+            // Skin field box
+            let skin_box_y = form_y + field_height * 2.0 + 24.0;
+            if point_in_rect(mx, my, form_x, skin_box_y, 400.0, 40.0) {
+                self.active_field = CreateField::Skin;
+
+                // Check if clicked on left arrow area
+                if point_in_rect(mx, my, form_x, skin_box_y, 60.0, 40.0) {
+                    self.skin_index = if self.skin_index == 0 {
+                        SKINS.len() - 1
+                    } else {
+                        self.skin_index - 1
+                    };
+                }
+                // Check if clicked on right arrow area
+                if point_in_rect(mx, my, form_x + 340.0, skin_box_y, 60.0, 40.0) {
+                    self.skin_index = (self.skin_index + 1) % SKINS.len();
+                }
+            }
+
+            // Create button
+            if point_in_rect(mx, my, form_x, inst_y - 10.0, 120.0, 30.0) {
+                // Trigger create
+                let name = self.name.trim();
+                if name.len() < 2 {
+                    self.error_message = Some("Name must be at least 2 characters".to_string());
+                    return ScreenState::Continue;
+                }
+                if name.len() > 16 {
+                    self.error_message = Some("Name must be at most 16 characters".to_string());
+                    return ScreenState::Continue;
+                }
+
+                let gender = GENDERS[self.gender_index];
+                let skin = SKINS[self.skin_index];
+
+                match self.auth_client.create_character(&self.session.token, name, gender, skin) {
+                    Ok(_) => {
+                        return ScreenState::ToCharacterSelect(self.session.clone());
+                    }
+                    Err(e) => {
+                        self.error_message = Some(e.to_string());
+                    }
+                }
+            }
+
+            // Cancel button
+            if point_in_rect(mx, my, form_x + 150.0, inst_y - 10.0, 120.0, 30.0) {
+                return ScreenState::ToCharacterSelect(self.session.clone());
+            }
+        }
+
+        // Keyboard: Navigate between fields with Tab or Up/Down
         if is_key_pressed(KeyCode::Tab) || is_key_pressed(KeyCode::Down) {
             self.active_field = match self.active_field {
                 CreateField::Name => CreateField::Gender,
@@ -650,7 +924,7 @@ impl Screen for CharacterCreateScreen {
             };
         }
 
-        // Left/Right or A/D to cycle options
+        // Keyboard: Left/Right or A/D to cycle options
         if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
             match self.active_field {
                 CreateField::Gender => {
@@ -682,12 +956,12 @@ impl Screen for CharacterCreateScreen {
             }
         }
 
-        // Cancel
+        // Keyboard: Cancel
         if is_key_pressed(KeyCode::Escape) {
             return ScreenState::ToCharacterSelect(self.session.clone());
         }
 
-        // Create character
+        // Keyboard: Create character
         if is_key_pressed(KeyCode::Enter) {
             let name = self.name.trim();
             if name.len() < 2 {
@@ -704,7 +978,6 @@ impl Screen for CharacterCreateScreen {
 
             match self.auth_client.create_character(&self.session.token, name, gender, skin) {
                 Ok(_) => {
-                    // Return to character select - it will refresh the list
                     return ScreenState::ToCharacterSelect(self.session.clone());
                 }
                 Err(e) => {
@@ -806,10 +1079,35 @@ impl Screen for CharacterCreateScreen {
         // Right arrow
         self.draw_text_sharp(">", form_x + 370.0, skin_y + 52.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
 
-        // Preview info
+        // Character Preview
         let preview_y = form_y + field_height * 3.0 + 20.0;
-        let preview_text = format!("Preview: {} {}", GENDERS[self.gender_index], SKINS[self.skin_index]);
-        self.draw_text_sharp(&preview_text, form_x, preview_y, 16.0, LIGHTGRAY);
+        self.draw_text_sharp("Preview", form_x, preview_y, 16.0, LIGHTGRAY);
+
+        // Draw preview box with darker background
+        let preview_box_y = preview_y + 20.0;
+        let preview_box_w = 100.0;
+        let preview_box_h = 140.0;
+        draw_rectangle(form_x, preview_box_y, preview_box_w, preview_box_h, Color::from_rgba(30, 30, 45, 255));
+        draw_rectangle_lines(form_x, preview_box_y, preview_box_w, preview_box_h, 1.0, GRAY);
+
+        // Draw character sprite preview (scaled up for visibility)
+        let preview_scale = 1.0;
+        let sprite_w = SPRITE_WIDTH * preview_scale;
+        let sprite_h = SPRITE_HEIGHT * preview_scale;
+        let sprite_x = form_x + (preview_box_w - sprite_w) / 2.0;
+        let sprite_y = preview_box_y + (preview_box_h - sprite_h) / 2.0;
+        draw_character_preview(
+            &self.player_sprites,
+            GENDERS[self.gender_index],
+            SKINS[self.skin_index],
+            sprite_x,
+            sprite_y,
+            preview_scale,
+        );
+
+        // Preview label
+        let preview_text = format!("{} {}", GENDERS[self.gender_index], SKINS[self.skin_index]);
+        self.draw_text_sharp(&preview_text, form_x + preview_box_w + 20.0, preview_box_y + 60.0, 16.0, WHITE);
 
         // Error message
         if let Some(ref error) = self.error_message {
