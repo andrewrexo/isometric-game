@@ -1197,11 +1197,14 @@ impl GameRoom {
             }
         };
 
-        // Update attacker's last attack time
+        // Update attacker's last attack time and stop movement
         {
             let mut players = self.players.write().await;
             if let Some(player) = players.get_mut(player_id) {
                 player.last_attack_time = current_time;
+                // Stop movement when attacking (player must stand still to attack)
+                player.move_dx = 0;
+                player.move_dy = 0;
             }
         }
 

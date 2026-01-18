@@ -1139,7 +1139,9 @@ impl InputHandler {
         };
 
         // Only send Move commands if held past the threshold
-        if new_dir != CardinalDir::None {
+        // Don't move while attacking (Space held) - player must stand still to attack
+        let is_attacking = is_key_down(KeyCode::Space);
+        if new_dir != CardinalDir::None && !is_attacking {
             let hold_duration = current_time - self.dir_press_time;
             if hold_duration >= FACE_THRESHOLD {
                 // Past threshold - send movement commands
@@ -1160,8 +1162,8 @@ impl InputHandler {
         }
 
         // Path following - generate movement commands when auto-pathing
-        // Only follow path if not manually moving
-        if dx == 0.0 && dy == 0.0 {
+        // Only follow path if not manually moving and not attacking
+        if dx == 0.0 && dy == 0.0 && !is_attacking {
             // Get player position first to avoid borrow conflicts
             let player_pos = state.get_local_player().map(|p| (p.x.round() as i32, p.y.round() as i32));
 
@@ -1213,7 +1215,18 @@ impl InputHandler {
         }
 
         // Attack (Space key) - holding space continues attacking with cooldown
+        // Also stop movement when attacking (player must stand still)
         if is_key_down(KeyCode::Space) {
+            // Send stop command if we were moving via keyboard or auto-path
+            let was_pathing = state.auto_path.is_some();
+            if self.last_dx != 0.0 || self.last_dy != 0.0 || was_pathing {
+                commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
+                self.last_dx = 0.0;
+                self.last_dy = 0.0;
+            }
+            // Cancel auto-path when attacking
+            state.clear_auto_path();
+
             if current_time - self.last_attack_time >= self.attack_cooldown {
                 log::info!("Space held - sending Attack command");
                 commands.push(InputCommand::Attack);
