@@ -642,21 +642,17 @@ impl InputHandler {
                 }
             }
 
-            // Escape or E closes crafting
-            if is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::E) {
+            // Escape closes crafting/shop menu
+            if is_key_pressed(KeyCode::Escape) {
                 state.ui_state.crafting_open = false;
                 state.ui_state.crafting_npc_id = None;
                 state.ui_state.shop_data = None;
                 return commands;
             }
 
-            // Q/E switch between main tabs
+            // Q switches between Recipes/Shop main tabs
             if is_key_pressed(KeyCode::Q) {
-                state.ui_state.shop_main_tab = 0; // Recipes
-            }
-            if is_key_pressed(KeyCode::E) && !is_key_down(KeyCode::LeftControl) && !is_key_down(KeyCode::RightControl) {
-                // Don't switch to shop tab if Ctrl+E (close) was intended
-                // But allow E to open shop tab if not closing
+                state.ui_state.shop_main_tab = if state.ui_state.shop_main_tab == 0 { 1 } else { 0 };
             }
 
             if state.ui_state.shop_main_tab == 0 {
@@ -745,6 +741,113 @@ impl InputHandler {
                             state.ui_state.shop_sell_scroll = (state.ui_state.shop_sell_scroll - wheel_y * SCROLL_SPEED).clamp(0.0, max_scroll);
                         }
                         _ => {}
+                    }
+                }
+
+                // Keyboard controls for shop
+                use crate::game::ShopSubTab;
+
+                // Left/Right or A/D to switch between Buy and Sell panels
+                if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
+                    state.ui_state.shop_sub_tab = ShopSubTab::Buy;
+                }
+                if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D) {
+                    state.ui_state.shop_sub_tab = ShopSubTab::Sell;
+                }
+                // Tab to toggle between panels
+                if is_key_pressed(KeyCode::Tab) {
+                    state.ui_state.shop_sub_tab = match state.ui_state.shop_sub_tab {
+                        ShopSubTab::Buy => ShopSubTab::Sell,
+                        ShopSubTab::Sell => ShopSubTab::Buy,
+                    };
+                }
+
+                // Up/Down or W/S to navigate items in the active panel
+                match state.ui_state.shop_sub_tab {
+                    ShopSubTab::Buy => {
+                        let item_count = state.ui_state.shop_data.as_ref()
+                            .map(|d| d.stock.len())
+                            .unwrap_or(0);
+
+                        if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
+                            if state.ui_state.shop_selected_buy_index > 0 {
+                                state.ui_state.shop_selected_buy_index -= 1;
+                                state.ui_state.shop_buy_quantity = 1;
+                            }
+                        }
+                        if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
+                            if state.ui_state.shop_selected_buy_index < item_count.saturating_sub(1) {
+                                state.ui_state.shop_selected_buy_index += 1;
+                                state.ui_state.shop_buy_quantity = 1;
+                            }
+                        }
+
+                        // +/- to adjust quantity
+                        if is_key_pressed(KeyCode::Equal) || is_key_pressed(KeyCode::KpAdd) {
+                            state.ui_state.shop_buy_quantity += 1;
+                        }
+                        if is_key_pressed(KeyCode::Minus) || is_key_pressed(KeyCode::KpSubtract) {
+                            if state.ui_state.shop_buy_quantity > 1 {
+                                state.ui_state.shop_buy_quantity -= 1;
+                            }
+                        }
+
+                        // Enter to confirm buy
+                        if is_key_pressed(KeyCode::Enter) {
+                            if let Some(ref shop_data) = state.ui_state.shop_data {
+                                if let Some(ref npc_id) = state.ui_state.shop_npc_id {
+                                    if let Some(stock_item) = shop_data.stock.get(state.ui_state.shop_selected_buy_index) {
+                                        commands.push(InputCommand::ShopBuy {
+                                            npc_id: npc_id.clone(),
+                                            item_id: stock_item.item_id.clone(),
+                                            quantity: state.ui_state.shop_buy_quantity as u32,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ShopSubTab::Sell => {
+                        let inventory_items: Vec<_> = state.inventory.slots.iter()
+                            .filter_map(|slot| slot.as_ref())
+                            .collect();
+                        let item_count = inventory_items.len();
+
+                        if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
+                            if state.ui_state.shop_selected_sell_index > 0 {
+                                state.ui_state.shop_selected_sell_index -= 1;
+                                state.ui_state.shop_sell_quantity = 1;
+                            }
+                        }
+                        if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
+                            if state.ui_state.shop_selected_sell_index < item_count.saturating_sub(1) {
+                                state.ui_state.shop_selected_sell_index += 1;
+                                state.ui_state.shop_sell_quantity = 1;
+                            }
+                        }
+
+                        // +/- to adjust quantity
+                        if is_key_pressed(KeyCode::Equal) || is_key_pressed(KeyCode::KpAdd) {
+                            state.ui_state.shop_sell_quantity += 1;
+                        }
+                        if is_key_pressed(KeyCode::Minus) || is_key_pressed(KeyCode::KpSubtract) {
+                            if state.ui_state.shop_sell_quantity > 1 {
+                                state.ui_state.shop_sell_quantity -= 1;
+                            }
+                        }
+
+                        // Enter to confirm sell
+                        if is_key_pressed(KeyCode::Enter) {
+                            if let Some(ref npc_id) = state.ui_state.shop_npc_id {
+                                if let Some(inv_slot) = inventory_items.get(state.ui_state.shop_selected_sell_index) {
+                                    commands.push(InputCommand::ShopSell {
+                                        npc_id: npc_id.clone(),
+                                        item_id: inv_slot.item_id.clone(),
+                                        quantity: state.ui_state.shop_sell_quantity as u32,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
