@@ -8,11 +8,24 @@ use crate::quest::state::{PlayerQuestState, QuestProgress, QuestStatus, Objectiv
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 
+/// Account data - separate from character data
 #[derive(Debug, Clone)]
-pub struct PlayerData {
+pub struct AccountData {
     pub id: i64,
     pub username: String,
     pub password_hash: String,
+    pub created_at: Option<String>,
+    pub last_login: Option<String>,
+}
+
+/// Character data - belongs to an account
+#[derive(Debug, Clone)]
+pub struct CharacterData {
+    pub id: i64,
+    pub account_id: i64,
+    pub name: String,
+    pub gender: String,         // "male" or "female"
+    pub skin: String,           // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
     pub x: f32,
     pub y: f32,
     pub hp: i32,
@@ -22,8 +35,6 @@ pub struct PlayerData {
     pub exp_to_next_level: i32,
     pub gold: i32,
     pub inventory_json: String, // JSON serialized inventory
-    pub gender: String,         // "male" or "female"
-    pub skin: String,           // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
     // Equipment slots
     pub equipped_head: Option<String>,
     pub equipped_body: Option<String>,
@@ -34,8 +45,11 @@ pub struct PlayerData {
     pub equipped_gloves: Option<String>,
     pub equipped_necklace: Option<String>,
     pub equipped_belt: Option<String>,
+    pub played_time: i64,       // Seconds played
+    pub created_at: Option<String>,
     pub is_admin: bool,         // Game Master privileges
 }
+
 
 // Available appearance options
 pub const GENDERS: &[&str] = &["male", "female"];
@@ -59,13 +73,30 @@ impl Database {
     }
 
     async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
-        // Create players table
+        // Create accounts table (new)
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS players (
+            CREATE TABLE IF NOT EXISTS accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                last_login TEXT
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
+
+        // Create characters table (new)
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS characters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                name TEXT UNIQUE NOT NULL,
+                gender TEXT NOT NULL DEFAULT 'male',
+                skin TEXT NOT NULL DEFAULT 'tan',
                 x REAL DEFAULT 16.0,
                 y REAL DEFAULT 16.0,
                 hp INTEGER DEFAULT 100,
@@ -74,60 +105,39 @@ impl Database {
                 exp INTEGER DEFAULT 0,
                 exp_to_next_level INTEGER DEFAULT 100,
                 gold INTEGER DEFAULT 0,
+                equipped_head TEXT,
+                equipped_body TEXT,
+                equipped_weapon TEXT,
+                equipped_back TEXT,
+                equipped_feet TEXT,
+                equipped_ring TEXT,
+                equipped_gloves TEXT,
+                equipped_necklace TEXT,
+                equipped_belt TEXT,
                 inventory_json TEXT DEFAULT '[]',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                last_login DATETIME DEFAULT CURRENT_TIMESTAMP
+                played_time INTEGER DEFAULT 0,
+                is_admin BOOLEAN DEFAULT FALSE,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts(id)
             )
             "#,
         )
         .execute(pool)
         .await?;
 
-        // Add new columns if they don't exist (for existing databases)
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN exp_to_next_level INTEGER DEFAULT 100")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN gold INTEGER DEFAULT 0")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN inventory_json TEXT DEFAULT '[]'")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN gender TEXT DEFAULT 'male'")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN skin TEXT DEFAULT 'tan'")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_head TEXT")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_body TEXT")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_weapon TEXT")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_back TEXT")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_feet TEXT")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_ring TEXT")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_gloves TEXT")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_necklace TEXT")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN equipped_belt TEXT")
-            .execute(pool).await;
-        let _ = sqlx::query("ALTER TABLE players ADD COLUMN is_admin BOOLEAN DEFAULT FALSE")
-            .execute(pool).await;
-
-        // Quest system tables
+        // Character quest tables (renamed from player_*)
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS player_quests (
+            CREATE TABLE IF NOT EXISTS character_quests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                player_id INTEGER NOT NULL,
+                character_id INTEGER NOT NULL,
                 quest_id TEXT NOT NULL,
                 state TEXT NOT NULL DEFAULT 'active',
                 objectives_json TEXT DEFAULT '{}',
-                started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                completed_at DATETIME,
-                FOREIGN KEY(player_id) REFERENCES players(id),
-                UNIQUE(player_id, quest_id)
+                started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                completed_at TEXT,
+                FOREIGN KEY(character_id) REFERENCES characters(id),
+                UNIQUE(character_id, quest_id)
             )
             "#,
         )
@@ -136,13 +146,13 @@ impl Database {
 
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS player_flags (
+            CREATE TABLE IF NOT EXISTS character_flags (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                player_id INTEGER NOT NULL,
+                character_id INTEGER NOT NULL,
                 flag_name TEXT NOT NULL,
                 flag_value TEXT,
-                FOREIGN KEY(player_id) REFERENCES players(id),
-                UNIQUE(player_id, flag_name)
+                FOREIGN KEY(character_id) REFERENCES characters(id),
+                UNIQUE(character_id, flag_name)
             )
             "#,
         )
@@ -151,12 +161,12 @@ impl Database {
 
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS player_quest_availability (
-                player_id INTEGER NOT NULL,
+            CREATE TABLE IF NOT EXISTS character_quest_availability (
+                character_id INTEGER NOT NULL,
                 quest_id TEXT NOT NULL,
-                unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY(player_id, quest_id),
-                FOREIGN KEY(player_id) REFERENCES players(id)
+                unlocked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(character_id, quest_id),
+                FOREIGN KEY(character_id) REFERENCES characters(id)
             )
             "#,
         )
@@ -167,8 +177,12 @@ impl Database {
         Ok(())
     }
 
-    /// Create a new player with hashed password and random appearance
-    pub async fn create_player(
+    // =========================================================================
+    // Account CRUD Functions (new)
+    // =========================================================================
+
+    /// Create a new account (no character created)
+    pub async fn create_account(
         &self,
         username: &str,
         password: &str,
@@ -181,19 +195,11 @@ impl Database {
             .map_err(|e| format!("Failed to hash password: {}", e))?
             .to_string();
 
-        // Assign random appearance
-        let gender_idx = rand::random::<usize>() % GENDERS.len();
-        let skin_idx = rand::random::<usize>() % SKINS.len();
-        let gender = GENDERS[gender_idx];
-        let skin = SKINS[skin_idx];
-
         let result = sqlx::query(
-            "INSERT INTO players (username, password_hash, gender, skin) VALUES (?, ?, ?, ?)",
+            "INSERT INTO accounts (username, password_hash) VALUES (?, ?)",
         )
         .bind(username)
         .bind(&password_hash)
-        .bind(gender)
-        .bind(skin)
         .execute(&self.pool)
         .await
         .map_err(|e| {
@@ -204,23 +210,69 @@ impl Database {
             }
         })?;
 
-        tracing::info!("Created player: {} (id: {}) with appearance: {} {}",
-            username, result.last_insert_rowid(), gender, skin);
-        Ok(result.last_insert_rowid())
+        let account_id = result.last_insert_rowid();
+        tracing::info!("Created account: {} (id: {})", username, account_id);
+        Ok(account_id)
     }
 
-    pub async fn get_player_by_username(&self, username: &str) -> Result<Option<PlayerData>, sqlx::Error> {
+    /// Verify account password and return account data if valid
+    pub async fn verify_account_password(&self, username: &str, password: &str) -> Option<AccountData> {
         let row = sqlx::query(
-            "SELECT id, username, password_hash, x, y, hp, max_hp, level, exp, exp_to_next_level, gold, inventory_json, gender, skin, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace, equipped_belt, is_admin FROM players WHERE username = ?",
+            "SELECT id, username, password_hash, created_at, last_login FROM accounts WHERE username = ?",
         )
         .bind(username)
         .fetch_optional(&self.pool)
+        .await
+        .ok()??;
+
+        let account = AccountData {
+            id: row.get("id"),
+            username: row.get("username"),
+            password_hash: row.get("password_hash"),
+            created_at: row.get("created_at"),
+            last_login: row.get("last_login"),
+        };
+
+        // Verify password
+        if let Ok(parsed_hash) = PasswordHash::new(&account.password_hash) {
+            if Argon2::default()
+                .verify_password(password.as_bytes(), &parsed_hash)
+                .is_ok()
+            {
+                // Update last login time
+                let _ = sqlx::query("UPDATE accounts SET last_login = CURRENT_TIMESTAMP WHERE id = ?")
+                    .bind(account.id)
+                    .execute(&self.pool)
+                    .await;
+                return Some(account);
+            }
+        }
+        None
+    }
+
+    // =========================================================================
+    // Character CRUD Functions (new)
+    // =========================================================================
+
+    /// Get all characters for an account
+    pub async fn get_characters_for_account(&self, account_id: i64) -> Result<Vec<CharacterData>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT id, account_id, name, gender, skin, x, y, hp, max_hp, level, exp,
+                exp_to_next_level, gold, equipped_head, equipped_body, equipped_weapon,
+                equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace,
+                equipped_belt, inventory_json, played_time, is_admin, created_at
+            FROM characters WHERE account_id = ? ORDER BY created_at DESC"#,
+        )
+        .bind(account_id)
+        .fetch_all(&self.pool)
         .await?;
 
-        Ok(row.map(|r| PlayerData {
+        Ok(rows.into_iter().map(|r| CharacterData {
             id: r.get("id"),
-            username: r.get("username"),
-            password_hash: r.get("password_hash"),
+            account_id: r.get("account_id"),
+            name: r.get("name"),
+            gender: r.get("gender"),
+            skin: r.get("skin"),
             x: r.get("x"),
             y: r.get("y"),
             hp: r.get("hp"),
@@ -229,9 +281,6 @@ impl Database {
             exp: r.get("exp"),
             exp_to_next_level: r.get("exp_to_next_level"),
             gold: r.get("gold"),
-            inventory_json: r.get("inventory_json"),
-            gender: r.try_get("gender").unwrap_or_else(|_| "male".to_string()),
-            skin: r.try_get("skin").unwrap_or_else(|_| "tan".to_string()),
             equipped_head: r.try_get::<String, _>("equipped_head").ok().filter(|s| !s.is_empty()),
             equipped_body: r.try_get::<String, _>("equipped_body").ok().filter(|s| !s.is_empty()),
             equipped_weapon: r.try_get::<String, _>("equipped_weapon").ok().filter(|s| !s.is_empty()),
@@ -241,13 +290,152 @@ impl Database {
             equipped_gloves: r.try_get::<String, _>("equipped_gloves").ok().filter(|s| !s.is_empty()),
             equipped_necklace: r.try_get::<String, _>("equipped_necklace").ok().filter(|s| !s.is_empty()),
             equipped_belt: r.try_get::<String, _>("equipped_belt").ok().filter(|s| !s.is_empty()),
+            inventory_json: r.get("inventory_json"),
+            played_time: r.get("played_time"),
+            created_at: r.get("created_at"),
+            is_admin: r.try_get::<bool, _>("is_admin").unwrap_or(false),
+        }).collect())
+    }
+
+    /// Check if a character name is already taken (globally unique)
+    pub async fn is_character_name_taken(&self, name: &str) -> Result<bool, sqlx::Error> {
+        let row = sqlx::query("SELECT COUNT(*) as count FROM characters WHERE name = ?")
+            .bind(name)
+            .fetch_one(&self.pool)
+            .await?;
+        let count: i64 = row.get("count");
+        Ok(count > 0)
+    }
+
+    /// Count characters for an account
+    pub async fn count_characters_for_account(&self, account_id: i64) -> Result<i64, sqlx::Error> {
+        let row = sqlx::query("SELECT COUNT(*) as count FROM characters WHERE account_id = ?")
+            .bind(account_id)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.get("count"))
+    }
+
+    /// Create a new character for an account
+    pub async fn create_character(
+        &self,
+        account_id: i64,
+        name: &str,
+        gender: &str,
+        skin: &str,
+    ) -> Result<CharacterData, String> {
+        // Validate gender and skin
+        if !GENDERS.contains(&gender) {
+            return Err(format!("Invalid gender: {}", gender));
+        }
+        if !SKINS.contains(&skin) {
+            return Err(format!("Invalid skin: {}", skin));
+        }
+
+        let result = sqlx::query(
+            "INSERT INTO characters (account_id, name, gender, skin) VALUES (?, ?, ?, ?)",
+        )
+        .bind(account_id)
+        .bind(name)
+        .bind(gender)
+        .bind(skin)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("UNIQUE constraint failed") {
+                "Character name already exists".to_string()
+            } else {
+                format!("Database error: {}", e)
+            }
+        })?;
+
+        let character_id = result.last_insert_rowid();
+        tracing::info!("Created character: {} (id: {}) for account {} as {} {}",
+            name, character_id, account_id, gender, skin);
+
+        // Fetch and return the created character
+        self.get_character(character_id).await
+            .map_err(|e| format!("Failed to fetch created character: {}", e))?
+            .ok_or_else(|| "Failed to find created character".to_string())
+    }
+
+    /// Get a character by ID
+    pub async fn get_character(&self, character_id: i64) -> Result<Option<CharacterData>, sqlx::Error> {
+        let row = sqlx::query(
+            r#"SELECT id, account_id, name, gender, skin, x, y, hp, max_hp, level, exp,
+                exp_to_next_level, gold, equipped_head, equipped_body, equipped_weapon,
+                equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace,
+                equipped_belt, inventory_json, played_time, is_admin, created_at
+            FROM characters WHERE id = ?"#,
+        )
+        .bind(character_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| CharacterData {
+            id: r.get("id"),
+            account_id: r.get("account_id"),
+            name: r.get("name"),
+            gender: r.get("gender"),
+            skin: r.get("skin"),
+            x: r.get("x"),
+            y: r.get("y"),
+            hp: r.get("hp"),
+            max_hp: r.get("max_hp"),
+            level: r.get("level"),
+            exp: r.get("exp"),
+            exp_to_next_level: r.get("exp_to_next_level"),
+            gold: r.get("gold"),
+            equipped_head: r.try_get::<String, _>("equipped_head").ok().filter(|s| !s.is_empty()),
+            equipped_body: r.try_get::<String, _>("equipped_body").ok().filter(|s| !s.is_empty()),
+            equipped_weapon: r.try_get::<String, _>("equipped_weapon").ok().filter(|s| !s.is_empty()),
+            equipped_back: r.try_get::<String, _>("equipped_back").ok().filter(|s| !s.is_empty()),
+            equipped_feet: r.try_get::<String, _>("equipped_feet").ok().filter(|s| !s.is_empty()),
+            equipped_ring: r.try_get::<String, _>("equipped_ring").ok().filter(|s| !s.is_empty()),
+            equipped_gloves: r.try_get::<String, _>("equipped_gloves").ok().filter(|s| !s.is_empty()),
+            equipped_necklace: r.try_get::<String, _>("equipped_necklace").ok().filter(|s| !s.is_empty()),
+            equipped_belt: r.try_get::<String, _>("equipped_belt").ok().filter(|s| !s.is_empty()),
+            inventory_json: r.get("inventory_json"),
+            played_time: r.get("played_time"),
+            created_at: r.get("created_at"),
             is_admin: r.try_get::<bool, _>("is_admin").unwrap_or(false),
         }))
     }
 
-    pub async fn save_player(
+    /// Delete a character (with ownership verification)
+    pub async fn delete_character(&self, character_id: i64, account_id: i64) -> Result<bool, sqlx::Error> {
+        // Delete related quest data first
+        sqlx::query("DELETE FROM character_quests WHERE character_id = ?")
+            .bind(character_id)
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM character_flags WHERE character_id = ?")
+            .bind(character_id)
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DELETE FROM character_quest_availability WHERE character_id = ?")
+            .bind(character_id)
+            .execute(&self.pool)
+            .await?;
+
+        // Delete the character (only if owned by this account)
+        let result = sqlx::query("DELETE FROM characters WHERE id = ? AND account_id = ?")
+            .bind(character_id)
+            .bind(account_id)
+            .execute(&self.pool)
+            .await?;
+
+        let deleted = result.rows_affected() > 0;
+        if deleted {
+            tracing::info!("Deleted character {} for account {}", character_id, account_id);
+        }
+        Ok(deleted)
+    }
+
+    /// Save character data
+    pub async fn save_character(
         &self,
-        username: &str,
+        character_id: i64,
         x: f32,
         y: f32,
         hp: i32,
@@ -268,14 +456,13 @@ impl Database {
         equipped_belt: Option<&str>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"UPDATE players SET
+            r#"UPDATE characters SET
                 x = ?, y = ?, hp = ?, max_hp = ?, level = ?, exp = ?,
                 exp_to_next_level = ?, gold = ?, inventory_json = ?,
                 equipped_head = ?, equipped_body = ?, equipped_weapon = ?,
                 equipped_back = ?, equipped_feet = ?, equipped_ring = ?,
-                equipped_gloves = ?, equipped_necklace = ?, equipped_belt = ?,
-                last_login = CURRENT_TIMESTAMP
-            WHERE username = ?"#,
+                equipped_gloves = ?, equipped_necklace = ?, equipped_belt = ?
+            WHERE id = ?"#,
         )
         .bind(x)
         .bind(y)
@@ -295,52 +482,26 @@ impl Database {
         .bind(equipped_gloves)
         .bind(equipped_necklace)
         .bind(equipped_belt)
-        .bind(username)
+        .bind(character_id)
         .execute(&self.pool)
         .await?;
 
         Ok(())
     }
 
-    pub async fn update_player_position(&self, username: &str, x: f32, y: f32) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            "UPDATE players SET x = ?, y = ? WHERE username = ?",
-        )
-        .bind(x)
-        .bind(y)
-        .bind(username)
-        .execute(&self.pool)
-        .await?;
+    // =========================================================================
+    // Character Quest State Functions (new - uses character_id)
+    // =========================================================================
 
-        Ok(())
-    }
-
-    /// Verify password and return player data if valid
-    pub async fn verify_password(&self, username: &str, password: &str) -> Option<PlayerData> {
-        if let Ok(Some(player)) = self.get_player_by_username(username).await {
-            // Parse the stored hash
-            if let Ok(parsed_hash) = PasswordHash::new(&player.password_hash) {
-                // Verify password against stored hash
-                if Argon2::default()
-                    .verify_password(password.as_bytes(), &parsed_hash)
-                    .is_ok()
-                {
-                    return Some(player);
-                }
-            }
-        }
-        None
-    }
-
-    /// Load quest state for a player from database
-    pub async fn load_quest_state(&self, db_player_id: i64) -> Result<PlayerQuestState, sqlx::Error> {
+    /// Load quest state for a character from database
+    pub async fn load_character_quest_state(&self, character_id: i64) -> Result<PlayerQuestState, sqlx::Error> {
         let mut state = PlayerQuestState::new();
 
-        // Load quests from player_quests table
+        // Load quests from character_quests table
         let quest_rows = sqlx::query(
-            "SELECT quest_id, state, objectives_json, started_at, completed_at FROM player_quests WHERE player_id = ?"
+            "SELECT quest_id, state, objectives_json, started_at, completed_at FROM character_quests WHERE character_id = ?"
         )
-        .bind(db_player_id)
+        .bind(character_id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -383,9 +544,9 @@ impl Database {
 
         // Load available quests
         let available_rows = sqlx::query(
-            "SELECT quest_id FROM player_quest_availability WHERE player_id = ?"
+            "SELECT quest_id FROM character_quest_availability WHERE character_id = ?"
         )
-        .bind(db_player_id)
+        .bind(character_id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -399,9 +560,9 @@ impl Database {
 
         // Load flags
         let flag_rows = sqlx::query(
-            "SELECT flag_name, flag_value FROM player_flags WHERE player_id = ?"
+            "SELECT flag_name, flag_value FROM character_flags WHERE character_id = ?"
         )
-        .bind(db_player_id)
+        .bind(character_id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -413,8 +574,8 @@ impl Database {
             }
         }
 
-        tracing::debug!("Loaded quest state for player {}: {} active, {} completed, {} available",
-            db_player_id,
+        tracing::debug!("Loaded quest state for character {}: {} active, {} completed, {} available",
+            character_id,
             state.active_quests.len(),
             state.completed_quests.len(),
             state.available_quests.len()
@@ -423,8 +584,8 @@ impl Database {
         Ok(state)
     }
 
-    /// Save quest state for a player to database
-    pub async fn save_quest_state(&self, db_player_id: i64, state: &PlayerQuestState) -> Result<(), sqlx::Error> {
+    /// Save quest state for a character to database
+    pub async fn save_character_quest_state(&self, character_id: i64, state: &PlayerQuestState) -> Result<(), sqlx::Error> {
         // Save active quests
         for (quest_id, progress) in &state.active_quests {
             let objectives_json = progress.objectives_to_json();
@@ -432,15 +593,15 @@ impl Database {
             let completed_at = progress.completed_at.map(|dt| dt.to_rfc3339());
 
             sqlx::query(
-                r#"INSERT INTO player_quests (player_id, quest_id, state, objectives_json, started_at, completed_at)
+                r#"INSERT INTO character_quests (character_id, quest_id, state, objectives_json, started_at, completed_at)
                    VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(player_id, quest_id) DO UPDATE SET
+                   ON CONFLICT(character_id, quest_id) DO UPDATE SET
                        state = excluded.state,
                        objectives_json = excluded.objectives_json,
                        started_at = excluded.started_at,
                        completed_at = excluded.completed_at"#
             )
-            .bind(db_player_id)
+            .bind(character_id)
             .bind(quest_id)
             .bind(progress.status.as_str())
             .bind(&objectives_json)
@@ -452,15 +613,14 @@ impl Database {
 
         // Save completed quests
         for quest_id in &state.completed_quests {
-            // Insert or update to completed state (quest may have been active before)
             sqlx::query(
-                r#"INSERT INTO player_quests (player_id, quest_id, state, completed_at)
+                r#"INSERT INTO character_quests (character_id, quest_id, state, completed_at)
                    VALUES (?, ?, 'completed', CURRENT_TIMESTAMP)
-                   ON CONFLICT(player_id, quest_id) DO UPDATE SET
+                   ON CONFLICT(character_id, quest_id) DO UPDATE SET
                        state = 'completed',
                        completed_at = CURRENT_TIMESTAMP"#
             )
-            .bind(db_player_id)
+            .bind(character_id)
             .bind(quest_id)
             .execute(&self.pool)
             .await?;
@@ -469,10 +629,10 @@ impl Database {
         // Save available quests
         for quest_id in &state.available_quests {
             sqlx::query(
-                r#"INSERT OR IGNORE INTO player_quest_availability (player_id, quest_id)
+                r#"INSERT OR IGNORE INTO character_quest_availability (character_id, quest_id)
                    VALUES (?, ?)"#
             )
-            .bind(db_player_id)
+            .bind(character_id)
             .bind(quest_id)
             .execute(&self.pool)
             .await?;
@@ -481,20 +641,20 @@ impl Database {
         // Save flags
         for (flag_name, flag_value) in &state.flags {
             sqlx::query(
-                r#"INSERT INTO player_flags (player_id, flag_name, flag_value)
+                r#"INSERT INTO character_flags (character_id, flag_name, flag_value)
                    VALUES (?, ?, ?)
-                   ON CONFLICT(player_id, flag_name) DO UPDATE SET
+                   ON CONFLICT(character_id, flag_name) DO UPDATE SET
                        flag_value = excluded.flag_value"#
             )
-            .bind(db_player_id)
+            .bind(character_id)
             .bind(flag_name)
             .bind(flag_value)
             .execute(&self.pool)
             .await?;
         }
 
-        tracing::debug!("Saved quest state for player {}: {} active, {} completed",
-            db_player_id,
+        tracing::debug!("Saved quest state for character {}: {} active, {} completed",
+            character_id,
             state.active_quests.len(),
             state.completed_quests.len()
         );

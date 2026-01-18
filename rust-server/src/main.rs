@@ -5,7 +5,7 @@ use axum::{
     },
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use dashmap::DashMap;
@@ -55,9 +55,10 @@ use protocol::{ClientMessage, ServerMessage};
 struct GameSession {
     room_id: String,
     player_id: String,
-    username: String,      // For DB persistence
-    db_player_id: i64,     // Database player ID (from auth)
-    auth_token: String,    // Token used for this session (for validation)
+    character_name: String,   // Character name for display
+    character_id: i64,        // Database character ID
+    account_id: i64,          // Database account ID
+    auth_token: String,       // Token used for this session (for validation)
 }
 
 #[derive(Clone)]
@@ -180,8 +181,8 @@ impl AppState {
 // HTTP Handlers - Authentication
 // ============================================================================
 
-/// Auth sessions: token -> (username, player_id)
-type AuthSessions = Arc<DashMap<String, (String, i64)>>;
+/// Auth sessions: token -> (account_id, username)
+type AuthSessions = Arc<DashMap<String, (i64, String)>>;
 
 /// Rate limiter entry: (request_count, window_start_time)
 type RateLimitEntry = (u32, std::time::Instant);
@@ -386,13 +387,13 @@ async fn register_account(
         });
     }
 
-    match state.db.create_player(&req.username, &req.password).await {
-        Ok(player_id) => {
-            // Create auth token
+    match state.db.create_account(&req.username, &req.password).await {
+        Ok(account_id) => {
+            // Create auth token - note: (account_id, username) order now
             let token = Uuid::new_v4().to_string();
-            state.auth_sessions.insert(token.clone(), (req.username.clone(), player_id));
+            state.auth_sessions.insert(token.clone(), (account_id, req.username.clone()));
 
-            info!("Account registered: {} (id: {}) from {}", req.username, player_id, client_ip);
+            info!("Account registered: {} (id: {}) from {}", req.username, account_id, client_ip);
 
             Json(AuthResponse {
                 success: true,
@@ -429,36 +430,13 @@ async fn login_account(
         });
     }
 
-    match state.db.verify_password(&req.username, &req.password).await {
-        Some(player) => {
-            // Create auth token
+    match state.db.verify_account_password(&req.username, &req.password).await {
+        Some(account) => {
+            // Create auth token - note: (account_id, username) order now
             let token = Uuid::new_v4().to_string();
-            state.auth_sessions.insert(token.clone(), (req.username.clone(), player.id));
+            state.auth_sessions.insert(token.clone(), (account.id, req.username.clone()));
 
-            // Update last login (save existing data with updated timestamp)
-            let _ = state.db.save_player(
-                &req.username,
-                player.x,
-                player.y,
-                player.hp,
-                player.max_hp,
-                player.level,
-                player.exp,
-                player.exp_to_next_level,
-                player.gold,
-                &player.inventory_json,
-                player.equipped_head.as_deref(),
-                player.equipped_body.as_deref(),
-                player.equipped_weapon.as_deref(),
-                player.equipped_back.as_deref(),
-                player.equipped_feet.as_deref(),
-                player.equipped_ring.as_deref(),
-                player.equipped_gloves.as_deref(),
-                player.equipped_necklace.as_deref(),
-                player.equipped_belt.as_deref(),
-            ).await;
-
-            info!("Player logged in: {} from {}", req.username, client_ip);
+            info!("Account logged in: {} (id: {}) from {}", req.username, account.id, client_ip);
 
             Json(AuthResponse {
                 success: true,
@@ -496,12 +474,279 @@ async fn logout_account(
 }
 
 // ============================================================================
+// HTTP Handlers - Characters
+// ============================================================================
+
+/// Maximum characters per account
+const MAX_CHARACTERS_PER_ACCOUNT: i64 = 3;
+
+#[derive(Serialize)]
+struct CharacterListResponse {
+    success: bool,
+    characters: Option<Vec<CharacterInfo>>,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct CharacterInfo {
+    id: i64,
+    name: String,
+    level: i32,
+    gender: String,
+    skin: String,
+    #[serde(rename = "playedTime")]
+    played_time: i64,
+}
+
+#[derive(Deserialize)]
+struct CreateCharacterRequest {
+    name: String,
+    gender: String,
+    skin: String,
+}
+
+#[derive(Serialize)]
+struct CreateCharacterResponse {
+    success: bool,
+    character: Option<CharacterInfo>,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct DeleteCharacterResponse {
+    success: bool,
+    error: Option<String>,
+}
+
+/// Helper to extract auth token and account info from headers
+fn extract_auth(headers: &axum::http::HeaderMap, sessions: &AuthSessions) -> Option<(i64, String)> {
+    let auth_header = headers.get("Authorization")?;
+    let auth_str = auth_header.to_str().ok()?;
+    let token = auth_str.strip_prefix("Bearer ")?;
+    sessions.get(token).map(|r| r.value().clone())
+}
+
+/// GET /api/characters - List all characters for the authenticated account
+async fn list_characters(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let (account_id, _username) = match extract_auth(&headers, &state.auth_sessions) {
+        Some(auth) => auth,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(CharacterListResponse {
+                    success: false,
+                    characters: None,
+                    error: Some("Not authenticated".to_string()),
+                }),
+            );
+        }
+    };
+
+    match state.db.get_characters_for_account(account_id).await {
+        Ok(chars) => {
+            let char_infos: Vec<CharacterInfo> = chars.into_iter().map(|c| CharacterInfo {
+                id: c.id,
+                name: c.name,
+                level: c.level,
+                gender: c.gender,
+                skin: c.skin,
+                played_time: c.played_time,
+            }).collect();
+
+            (
+                StatusCode::OK,
+                Json(CharacterListResponse {
+                    success: true,
+                    characters: Some(char_infos),
+                    error: None,
+                }),
+            )
+        }
+        Err(e) => {
+            error!("Failed to list characters for account {}: {}", account_id, e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(CharacterListResponse {
+                    success: false,
+                    characters: None,
+                    error: Some("Failed to list characters".to_string()),
+                }),
+            )
+        }
+    }
+}
+
+/// POST /api/characters - Create a new character
+async fn create_character(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<CreateCharacterRequest>,
+) -> impl IntoResponse {
+    let (account_id, _username) = match extract_auth(&headers, &state.auth_sessions) {
+        Some(auth) => auth,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(CreateCharacterResponse {
+                    success: false,
+                    character: None,
+                    error: Some("Not authenticated".to_string()),
+                }),
+            );
+        }
+    };
+
+    // Validate character name
+    let name = req.name.trim();
+    if name.len() < 2 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(CreateCharacterResponse {
+                success: false,
+                character: None,
+                error: Some("Character name must be at least 2 characters".to_string()),
+            }),
+        );
+    }
+    if name.len() > 16 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(CreateCharacterResponse {
+                success: false,
+                character: None,
+                error: Some("Character name must be at most 16 characters".to_string()),
+            }),
+        );
+    }
+
+    // Check character limit
+    match state.db.count_characters_for_account(account_id).await {
+        Ok(count) if count >= MAX_CHARACTERS_PER_ACCOUNT => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(CreateCharacterResponse {
+                    success: false,
+                    character: None,
+                    error: Some(format!("Character limit reached (max {})", MAX_CHARACTERS_PER_ACCOUNT)),
+                }),
+            );
+        }
+        Err(e) => {
+            error!("Failed to count characters: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(CreateCharacterResponse {
+                    success: false,
+                    character: None,
+                    error: Some("Failed to check character count".to_string()),
+                }),
+            );
+        }
+        _ => {}
+    }
+
+    // Create the character
+    match state.db.create_character(account_id, name, &req.gender, &req.skin).await {
+        Ok(char_data) => {
+            info!("Created character '{}' for account {}", name, account_id);
+            (
+                StatusCode::CREATED,
+                Json(CreateCharacterResponse {
+                    success: true,
+                    character: Some(CharacterInfo {
+                        id: char_data.id,
+                        name: char_data.name,
+                        level: char_data.level,
+                        gender: char_data.gender,
+                        skin: char_data.skin,
+                        played_time: char_data.played_time,
+                    }),
+                    error: None,
+                }),
+            )
+        }
+        Err(e) => {
+            let status = if e.contains("already exists") {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (
+                status,
+                Json(CreateCharacterResponse {
+                    success: false,
+                    character: None,
+                    error: Some(e),
+                }),
+            )
+        }
+    }
+}
+
+/// DELETE /api/characters/:id - Delete a character
+async fn delete_character(
+    State(state): State<AppState>,
+    Path(character_id): Path<i64>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let (account_id, _username) = match extract_auth(&headers, &state.auth_sessions) {
+        Some(auth) => auth,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(DeleteCharacterResponse {
+                    success: false,
+                    error: Some("Not authenticated".to_string()),
+                }),
+            );
+        }
+    };
+
+    match state.db.delete_character(character_id, account_id).await {
+        Ok(true) => {
+            info!("Deleted character {} for account {}", character_id, account_id);
+            (
+                StatusCode::OK,
+                Json(DeleteCharacterResponse {
+                    success: true,
+                    error: None,
+                }),
+            )
+        }
+        Ok(false) => {
+            // Character doesn't exist or doesn't belong to this account
+            (
+                StatusCode::NOT_FOUND,
+                Json(DeleteCharacterResponse {
+                    success: false,
+                    error: Some("Character not found".to_string()),
+                }),
+            )
+        }
+        Err(e) => {
+            error!("Failed to delete character {}: {}", character_id, e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(DeleteCharacterResponse {
+                    success: false,
+                    error: Some("Failed to delete character".to_string()),
+                }),
+            )
+        }
+    }
+}
+
+// ============================================================================
 // HTTP Handlers - Matchmaking
 // ============================================================================
 
 #[derive(Deserialize)]
 struct JoinOptions {
-    name: Option<String>,
+    #[serde(rename = "characterId")]
+    character_id: i64,
 }
 
 #[derive(Serialize)]
@@ -525,7 +770,7 @@ async fn matchmake_join_or_create(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(room_name): Path<String>,
     headers: axum::http::HeaderMap,
-    Json(_options): Json<JoinOptions>,
+    Json(options): Json<JoinOptions>,
 ) -> impl IntoResponse {
     let client_ip = addr.ip().to_string();
 
@@ -571,8 +816,8 @@ async fn matchmake_join_or_create(
         }
     };
 
-    // Validate token and get authenticated user info
-    let (username, db_player_id) = match state.auth_sessions.get(&auth_token) {
+    // Validate token and get authenticated account info
+    let (account_id, _username) = match state.auth_sessions.get(&auth_token) {
         Some(auth_data) => auth_data.clone(),
         None => {
             warn!("Matchmaking rejected: Invalid or expired token");
@@ -583,75 +828,99 @@ async fn matchmake_join_or_create(
         }
     };
 
+    // Load the specified character and verify ownership
+    let character_id = options.character_id;
+    let character_data = match state.db.get_character(character_id).await {
+        Ok(Some(char)) => {
+            if char.account_id != account_id {
+                warn!("Matchmaking rejected: Character {} does not belong to account {}", character_id, account_id);
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({ "error": "Character does not belong to this account" }))
+                ).into_response();
+            }
+            char
+        }
+        Ok(None) => {
+            warn!("Matchmaking rejected: Character {} not found", character_id);
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Character not found" }))
+            ).into_response();
+        }
+        Err(e) => {
+            error!("Failed to load character {}: {}", character_id, e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to load character" }))
+            ).into_response();
+        }
+    };
+
     let room = state.get_or_create_room(&room_name).await;
     let room_id = room.id.clone();
 
-    // Create session for this player - use a separate session token from player_id
+    // Create session for this character
     let session_id = Uuid::new_v4().to_string();
-    let player_id = format!("player_{}", db_player_id);
+    let player_id = format!("char_{}", character_id);
 
-    // Try to load existing player data from database using authenticated username
-    let player_data = state.db.get_player_by_username(&username).await.ok().flatten();
-
-    // Reserve the session with authenticated user info
+    // Reserve the session with character info
     state.sessions.insert(
         session_id.clone(),
         GameSession {
             room_id: room_id.clone(),
             player_id: player_id.clone(),
-            username: username.clone(),
-            db_player_id,
+            character_name: character_data.name.clone(),
+            character_id,
+            account_id,
             auth_token: auth_token.clone(),
         },
     );
 
-    // Pre-create player with saved data or defaults
-    if let Some(data) = player_data {
-        // Load saved player
-        info!("Loading saved player: {} (db_id: {}) at ({}, {}) as {} {}",
-            username, db_player_id, data.x, data.y, data.gender, data.skin);
-        room.reserve_player_with_data(
-            &player_id,
-            &username,
-            data.x as i32,
-            data.y as i32,
-            data.hp,
-            data.max_hp,
-            data.level,
-            data.exp,
-            data.exp_to_next_level,
-            data.gold,
-            &data.inventory_json,
-            &data.gender,
-            &data.skin,
-            data.equipped_head.clone(),
-            data.equipped_body.clone(),
-            data.equipped_weapon.clone(),
-            data.equipped_back.clone(),
-            data.equipped_feet.clone(),
-            data.equipped_ring.clone(),
-            data.equipped_gloves.clone(),
-            data.equipped_necklace.clone(),
-            data.equipped_belt.clone(),
-            data.is_admin,
-        ).await;
-    } else {
-        // New player with defaults (shouldn't happen - auth creates player)
-        room.reserve_player(&player_id, &username, "male", "tan").await;
-    }
+    // Load saved character into the game room
+    info!("Loading character: {} (id: {}) at ({}, {}) as {} {}",
+        character_data.name, character_id, character_data.x, character_data.y,
+        character_data.gender, character_data.skin);
+
+    room.reserve_player_with_data(
+        &player_id,
+        &character_data.name,
+        character_data.x as i32,
+        character_data.y as i32,
+        character_data.hp,
+        character_data.max_hp,
+        character_data.level,
+        character_data.exp,
+        character_data.exp_to_next_level,
+        character_data.gold,
+        &character_data.inventory_json,
+        &character_data.gender,
+        &character_data.skin,
+        character_data.equipped_head.clone(),
+        character_data.equipped_body.clone(),
+        character_data.equipped_weapon.clone(),
+        character_data.equipped_back.clone(),
+        character_data.equipped_feet.clone(),
+        character_data.equipped_ring.clone(),
+        character_data.equipped_gloves.clone(),
+        character_data.equipped_necklace.clone(),
+        character_data.equipped_belt.clone(),
+        character_data.is_admin,
+    ).await;
 
     // Load quest state from database
-    match state.db.load_quest_state(db_player_id).await {
+    match state.db.load_character_quest_state(character_id).await {
         Ok(quest_state) => {
             let active_count = quest_state.active_quests.len();
             let completed_count = quest_state.completed_quests.len();
             room.set_player_quest_state(&player_id, quest_state).await;
             if active_count > 0 || completed_count > 0 {
-                info!("Loaded quest state for {}: {} active, {} completed", username, active_count, completed_count);
+                info!("Loaded quest state for {}: {} active, {} completed",
+                    character_data.name, active_count, completed_count);
             }
         }
         Err(e) => {
-            tracing::warn!("Failed to load quest state for {}: {}", username, e);
+            tracing::warn!("Failed to load quest state for character {}: {}", character_id, e);
             // Continue with empty quest state (default)
         }
     }
@@ -662,8 +931,8 @@ async fn matchmake_join_or_create(
     let session_token = state.token_signer.create_token(&session_id, &room_id);
 
     info!(
-        "Matchmaking: room={}, player={} (db_id: {})",
-        room_id, username, db_player_id
+        "Matchmaking: room={}, character={} (id: {})",
+        room_id, character_data.name, character_id
     );
 
     Json(MatchmakeResponse {
@@ -728,10 +997,10 @@ async fn ws_handler(
 
             // Valid session, upgrade to WebSocket
             let player_id = session.player_id.clone();
-            let username = session.username.clone();
-            let db_player_id = session.db_player_id;
+            let character_name = session.character_name.clone();
+            let character_id = session.character_id;
             ws.on_upgrade(move |socket| {
-                handle_socket(socket, state, room_id, player_id, session_id, username, db_player_id)
+                handle_socket(socket, state, room_id, player_id, session_id, character_name, character_id)
             })
         }
         _ => {
@@ -747,8 +1016,8 @@ async fn handle_socket(
     room_id: String,
     player_id: String,
     session_id: String,
-    username: String,
-    _db_player_id: i64,  // Used for future persistence binding
+    character_name: String,
+    _character_id: i64,  // Used for future persistence binding
 ) {
     let (mut sender, mut receiver) = socket.split();
 
@@ -908,23 +1177,23 @@ async fn handle_socket(
         _ = &mut recv_task => send_task.abort(),
     }
 
-    // Cleanup - save player data before removing
-    info!("Player {} disconnected from room {}", player_id, room_id);
+    // Cleanup - save character data before removing
+    info!("Character {} disconnected from room {}", character_name, room_id);
 
     let should_save = state.sessions.get(&session_id)
         .map(|s| state.auth_sessions.contains_key(&s.auth_token))
         .unwrap_or(false);
 
     if should_save {
-        // Get db_player_id from session
-        let db_player_id = state.sessions.get(&session_id)
-            .map(|s| s.db_player_id)
+        // Get character_id from session
+        let character_id = state.sessions.get(&session_id)
+            .map(|s| s.character_id)
             .unwrap_or(0);
 
-        // Save player state to database
+        // Save character state to database
         if let Some(save_data) = room.get_player_save_data(&player_id).await {
-            if let Err(e) = state.db.save_player(
-                &username,
+            if let Err(e) = state.db.save_character(
+                character_id,
                 save_data.x,
                 save_data.y,
                 save_data.hp,
@@ -944,25 +1213,25 @@ async fn handle_socket(
                 save_data.equipped_necklace.as_deref(),
                 save_data.equipped_belt.as_deref(),
             ).await {
-                error!("Failed to save player {} on disconnect: {}", username, e);
+                error!("Failed to save character {} on disconnect: {}", character_name, e);
             } else {
-                info!("Saved player {} to database on disconnect", username);
+                info!("Saved character {} to database on disconnect", character_name);
             }
         }
 
         // Save quest state to database
-        if db_player_id > 0 {
+        if character_id > 0 {
             if let Some(quest_state) = room.get_player_quest_state(&player_id).await {
-                if let Err(e) = state.db.save_quest_state(db_player_id, &quest_state).await {
-                    error!("Failed to save quest state for {} on disconnect: {}", username, e);
+                if let Err(e) = state.db.save_character_quest_state(character_id, &quest_state).await {
+                    error!("Failed to save quest state for {} on disconnect: {}", character_name, e);
                 } else if !quest_state.active_quests.is_empty() || !quest_state.completed_quests.is_empty() {
                     info!("Saved quest state for {}: {} active, {} completed",
-                        username, quest_state.active_quests.len(), quest_state.completed_quests.len());
+                        character_name, quest_state.active_quests.len(), quest_state.completed_quests.len());
                 }
             }
         }
     } else {
-        warn!("Skipping save for {} on disconnect: invalid auth", username);
+        warn!("Skipping save for {} on disconnect: invalid auth", character_name);
     }
 
     // SECURITY: Unregister player sender before cleanup
@@ -1091,24 +1360,25 @@ async fn main() {
             interval.tick().await;
 
             let mut saved_count = 0;
-            // Iterate through all active sessions and save their players
+            // Iterate through all active sessions and save their characters
             for session in save_state.sessions.iter() {
                 let session_data = session.value().clone();
                 let room_id = &session_data.room_id;
                 let player_id = &session_data.player_id;
-                let username = &session_data.username;
+                let character_name = &session_data.character_name;
+                let character_id = session_data.character_id;
                 let auth_token = &session_data.auth_token;
 
                 if !save_state.auth_sessions.contains_key(auth_token) {
-                    warn!("Auto-save skipped for {}: auth token no longer valid", username);
+                    warn!("Auto-save skipped for {}: auth token no longer valid", character_name);
                     continue;
                 }
 
-                // Get the room and player save data
+                // Get the room and character save data
                 if let Some(room) = save_state.rooms.get(room_id) {
                     if let Some(save_data) = room.get_player_save_data(player_id).await {
-                        if let Err(e) = save_state.db.save_player(
-                            username,
+                        if let Err(e) = save_state.db.save_character(
+                            character_id,
                             save_data.x,
                             save_data.y,
                             save_data.hp,
@@ -1128,22 +1398,21 @@ async fn main() {
                             save_data.equipped_necklace.as_deref(),
                             save_data.equipped_belt.as_deref(),
                         ).await {
-                            warn!("Auto-save failed for player {}: {}", username, e);
+                            warn!("Auto-save failed for character {}: {}", character_name, e);
                         } else {
                             saved_count += 1;
                         }
                     }
 
                     // Also save quest state
-                    let db_player_id = session_data.db_player_id;
                     if let Some(quest_state) = room.get_player_quest_state(player_id).await {
-                        let _ = save_state.db.save_quest_state(db_player_id, &quest_state).await;
+                        let _ = save_state.db.save_character_quest_state(character_id, &quest_state).await;
                     }
                 }
             }
 
             if saved_count > 0 {
-                info!("Auto-saved {} player(s) to database", saved_count);
+                info!("Auto-saved {} character(s) to database", saved_count);
             }
         }
     });
@@ -1156,6 +1425,9 @@ async fn main() {
         .route("/api/register", post(register_account))
         .route("/api/login", post(login_account))
         .route("/api/logout", post(logout_account))
+        // Characters
+        .route("/api/characters", get(list_characters).post(create_character))
+        .route("/api/characters/:id", delete(delete_character))
         // Matchmaking
         .route("/matchmake/joinOrCreate/:room", post(matchmake_join_or_create))
         // WebSocket

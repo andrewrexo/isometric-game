@@ -11,17 +11,15 @@ pub enum ScreenState {
     /// Move to character select with auth session
     #[cfg(not(target_arch = "wasm32"))]
     ToCharacterSelect(AuthSession),
+    /// Move to character creation screen
+    #[cfg(not(target_arch = "wasm32"))]
+    ToCharacterCreate(AuthSession),
     /// Start the game with the selected character
     #[cfg(not(target_arch = "wasm32"))]
     StartGame {
         session: AuthSession,
         character_id: i64,
         character_name: String,
-    },
-    /// Start game directly after login (simpler account=character model)
-    #[cfg(not(target_arch = "wasm32"))]
-    StartGameDirect {
-        session: AuthSession,
     },
     /// Guest mode (dev only)
     StartGuestMode,
@@ -175,8 +173,8 @@ impl Screen for LoginScreen {
 
                 match result {
                     Ok(session) => {
-                        // Server uses simple account=character model, go directly to game
-                        return ScreenState::StartGameDirect { session };
+                        // Go to character select screen
+                        return ScreenState::ToCharacterSelect(session);
                     }
                     Err(e) => {
                         self.error_message = Some(e.to_string());
@@ -320,17 +318,19 @@ impl Screen for LoginScreen {
 // Character Select Screen
 // ============================================================================
 
+/// Maximum characters per account
+#[cfg(not(target_arch = "wasm32"))]
+const MAX_CHARACTERS: usize = 3;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub struct CharacterSelectScreen {
     session: AuthSession,
     characters: Vec<CharacterInfo>,
     selected_index: usize,
-    creating_new: bool,
-    new_char_name: String,
     error_message: Option<String>,
     auth_client: AuthClient,
-    loading: bool,
     font: BitmapFont,
+    confirm_delete: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -345,18 +345,26 @@ impl CharacterSelectScreen {
             session,
             characters,
             selected_index: 0,
-            creating_new: false,
-            new_char_name: String::new(),
             error_message: None,
             auth_client,
-            loading: false,
             font: BitmapFont::default(),
+            confirm_delete: false,
         }
     }
 
     /// Load font asynchronously - call this after creating the screen
     pub async fn load_font(&mut self) {
         self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
+    }
+
+    /// Refresh the character list from the server
+    pub fn refresh_characters(&mut self) {
+        if let Ok(chars) = self.auth_client.get_characters(&self.session.token) {
+            self.characters = chars;
+            if self.selected_index >= self.characters.len() && !self.characters.is_empty() {
+                self.selected_index = self.characters.len() - 1;
+            }
+        }
     }
 
     /// Draw text with pixel font for sharp rendering
@@ -367,77 +375,28 @@ impl CharacterSelectScreen {
     fn measure_text_sharp(&self, text: &str, font_size: f32) -> TextDimensions {
         self.font.measure_text(text, font_size)
     }
-
-    fn refresh_characters(&mut self) {
-        if let Ok(chars) = self.auth_client.get_characters(&self.session.token) {
-            self.characters = chars;
-            if self.selected_index >= self.characters.len() && !self.characters.is_empty() {
-                self.selected_index = self.characters.len() - 1;
-            }
-        }
-    }
-
-    fn handle_character_creation_input(&mut self) {
-        // Handle character input for name
-        while let Some(c) = get_char_pressed() {
-            if c.is_alphanumeric() || c == '_' || c == '-' || c == ' ' {
-                if self.new_char_name.len() < 16 {
-                    self.new_char_name.push(c);
-                }
-            }
-        }
-
-        // Backspace
-        if is_key_pressed(KeyCode::Backspace) {
-            self.new_char_name.pop();
-            self.error_message = None;
-        }
-    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterSelectScreen {
     fn update(&mut self) -> ScreenState {
-        if self.loading {
-            return ScreenState::Continue;
-        }
-
-        if self.creating_new {
-            self.handle_character_creation_input();
-
-            // Cancel creation
-            if is_key_pressed(KeyCode::Escape) {
-                self.creating_new = false;
-                self.new_char_name.clear();
-                self.error_message = None;
-                return ScreenState::Continue;
-            }
-
-            // Submit new character
-            if is_key_pressed(KeyCode::Enter) {
-                let name = self.new_char_name.trim();
-                if name.len() < 2 {
-                    self.error_message = Some("Name must be at least 2 characters".to_string());
-                    return ScreenState::Continue;
-                }
-
-                match self.auth_client.create_character(&self.session.token, name) {
-                    Ok(_) => {
+        // Delete confirmation mode
+        if self.confirm_delete {
+            if is_key_pressed(KeyCode::Y) {
+                // Confirm delete
+                if !self.characters.is_empty() {
+                    let char_id = self.characters[self.selected_index].id;
+                    if self.auth_client.delete_character(&self.session.token, char_id).is_ok() {
                         self.refresh_characters();
-                        self.creating_new = false;
-                        self.new_char_name.clear();
-                        // Select the newly created character (should be last)
-                        if !self.characters.is_empty() {
-                            self.selected_index = 0; // Characters are ordered by most recent
-                        }
-                    }
-                    Err(e) => {
-                        self.error_message = Some(e.to_string());
                     }
                 }
+                self.confirm_delete = false;
                 return ScreenState::Continue;
             }
-
+            if is_key_pressed(KeyCode::N) || is_key_pressed(KeyCode::Escape) {
+                self.confirm_delete = false;
+                return ScreenState::Continue;
+            }
             return ScreenState::Continue;
         }
 
@@ -453,20 +412,15 @@ impl Screen for CharacterSelectScreen {
             }
         }
 
-        // Create new character
-        if is_key_pressed(KeyCode::N) && self.characters.len() < 5 {
-            self.creating_new = true;
-            self.error_message = None;
-            return ScreenState::Continue;
+        // Create new character - go to character creation screen
+        if is_key_pressed(KeyCode::N) && self.characters.len() < MAX_CHARACTERS {
+            return ScreenState::ToCharacterCreate(self.session.clone());
         }
 
-        // Delete character
+        // Delete character - ask for confirmation
         if is_key_pressed(KeyCode::Delete) || is_key_pressed(KeyCode::X) {
             if !self.characters.is_empty() {
-                let char_id = self.characters[self.selected_index].id;
-                if self.auth_client.delete_character(&self.session.token, char_id).is_ok() {
-                    self.refresh_characters();
-                }
+                self.confirm_delete = true;
             }
         }
 
@@ -507,61 +461,21 @@ impl Screen for CharacterSelectScreen {
 
         // Title
         let title = "SELECT CHARACTER";
-        let title_size = 24.0;
-        let title_width = self.measure_text_sharp(title, title_size).width;
-        self.draw_text_sharp(title, (sw - title_width) / 2.0, 50.0, title_size, WHITE);
+        let title_width = self.measure_text_sharp(title, 16.0).width;
+        self.draw_text_sharp(title, (sw - title_width) / 2.0, 50.0, 16.0, WHITE);
 
         // Account info
         let account_text = format!("Logged in as: {}", self.session.username);
-        self.draw_text_sharp(&account_text, 20.0, 24.0, 10.0, LIGHTGRAY);
-
-        // Character creation overlay
-        if self.creating_new {
-            // Dim background
-            draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.7));
-
-            // Creation box
-            let box_w = 400.0;
-            let box_h = 200.0;
-            let box_x = (sw - box_w) / 2.0;
-            let box_y = (sh - box_h) / 2.0;
-
-            draw_rectangle(box_x, box_y, box_w, box_h, Color::from_rgba(40, 40, 60, 255));
-            draw_rectangle_lines(box_x, box_y, box_w, box_h, 2.0, WHITE);
-
-            let create_title = "CREATE NEW CHARACTER";
-            let create_title_width = self.measure_text_sharp(create_title, 16.0).width;
-            self.draw_text_sharp(create_title, box_x + (box_w - create_title_width) / 2.0, box_y + 36.0, 16.0, WHITE);
-
-            // Name input
-            let input_x = box_x + 50.0;
-            let input_y = box_y + 70.0;
-            draw_rectangle(input_x, input_y, 300.0, 36.0, Color::from_rgba(60, 60, 80, 255));
-            draw_rectangle_lines(input_x, input_y, 300.0, 36.0, 2.0, WHITE);
-
-            let cursor = if (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
-            let name_display = format!("{}{}", self.new_char_name, cursor);
-            self.draw_text_sharp(&name_display, input_x + 10.0, input_y + 24.0, 16.0, WHITE);
-
-            // Error
-            if let Some(ref error) = self.error_message {
-                self.draw_text_sharp(error, input_x, input_y + 50.0, 12.0, RED);
-            }
-
-            // Instructions
-            self.draw_text_sharp("[Enter] Create    [Escape] Cancel", box_x + 90.0, box_y + 160.0, 12.0, LIGHTGRAY);
-
-            return;
-        }
+        self.draw_text_sharp(&account_text, 20.0, 24.0, 16.0, LIGHTGRAY);
 
         // Character list
         let list_x = (sw - 500.0) / 2.0;
-        let list_y = 120.0;
-        let item_height = 80.0;
+        let list_y = 100.0;
+        let item_height = 70.0;
 
         if self.characters.is_empty() {
-            self.draw_text_sharp("No characters yet!", list_x, list_y + 40.0, 20.0, GRAY);
-            self.draw_text_sharp("Press [N] to create your first character", list_x, list_y + 70.0, 12.0, LIGHTGRAY);
+            self.draw_text_sharp("No characters yet!", list_x, list_y + 40.0, 16.0, GRAY);
+            self.draw_text_sharp("Press [N] to create your first character", list_x, list_y + 70.0, 16.0, LIGHTGRAY);
         } else {
             for (i, character) in self.characters.iter().enumerate() {
                 let y = list_y + i as f32 * item_height;
@@ -580,14 +494,9 @@ impl Screen for CharacterSelectScreen {
                 }
 
                 // Character info
-                self.draw_text_sharp(&character.name, list_x + 20.0, y + 28.0, 20.0, WHITE);
-                self.draw_text_sharp(
-                    &format!("Level {}", character.level),
-                    list_x + 20.0,
-                    y + 50.0,
-                    12.0,
-                    LIGHTGRAY,
-                );
+                self.draw_text_sharp(&character.name, list_x + 20.0, y + 26.0, 16.0, WHITE);
+                let class_info = format!("Level {} {} {}", character.level, character.gender, character.skin);
+                self.draw_text_sharp(&class_info, list_x + 20.0, y + 48.0, 16.0, LIGHTGRAY);
 
                 // Played time
                 let hours = character.played_time / 3600;
@@ -597,25 +506,323 @@ impl Screen for CharacterSelectScreen {
                 } else {
                     format!("{}m played", minutes)
                 };
-                self.draw_text_sharp(&time_str, list_x + 360.0, y + 38.0, 10.0, DARKGRAY);
+                self.draw_text_sharp(&time_str, list_x + 340.0, y + 36.0, 16.0, DARKGRAY);
             }
         }
 
         // Error message
         if let Some(ref error) = self.error_message {
-            let error_y = sh - 120.0;
-            self.draw_text_sharp(error, list_x, error_y, 12.0, RED);
+            let error_y = sh - 130.0;
+            self.draw_text_sharp(error, list_x, error_y, 16.0, RED);
+        }
+
+        // Delete confirmation overlay
+        if self.confirm_delete {
+            draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.7));
+
+            let box_w = 450.0;
+            let box_h = 150.0;
+            let box_x = (sw - box_w) / 2.0;
+            let box_y = (sh - box_h) / 2.0;
+
+            draw_rectangle(box_x, box_y, box_w, box_h, Color::from_rgba(60, 40, 40, 255));
+            draw_rectangle_lines(box_x, box_y, box_w, box_h, 2.0, RED);
+
+            if !self.characters.is_empty() {
+                let char_name = &self.characters[self.selected_index].name;
+                let delete_text = format!("Delete '{}'?", char_name);
+                let delete_width = self.measure_text_sharp(&delete_text, 16.0).width;
+                self.draw_text_sharp(&delete_text, box_x + (box_w - delete_width) / 2.0, box_y + 50.0, 16.0, WHITE);
+            }
+
+            self.draw_text_sharp("[Y] Yes, delete    [N] No, cancel", box_x + 70.0, box_y + 100.0, 16.0, LIGHTGRAY);
+            return;
         }
 
         // Instructions at bottom
         let inst_y = sh - 70.0;
-        self.draw_text_sharp("[Enter] Play", list_x, inst_y, 12.0, GREEN);
-        if self.characters.len() < 5 {
-            self.draw_text_sharp("[N] New Character", list_x + 100.0, inst_y, 12.0, YELLOW);
+        self.draw_text_sharp("[Enter] Play", list_x, inst_y, 16.0, GREEN);
+        if self.characters.len() < MAX_CHARACTERS {
+            self.draw_text_sharp("[N] New", list_x + 120.0, inst_y, 16.0, YELLOW);
         }
-        self.draw_text_sharp("[X] Delete", list_x + 240.0, inst_y, 12.0, RED);
-        self.draw_text_sharp("[Escape] Logout", list_x + 330.0, inst_y, 12.0, LIGHTGRAY);
+        self.draw_text_sharp("[X] Delete", list_x + 210.0, inst_y, 16.0, RED);
+        self.draw_text_sharp("[Esc] Logout", list_x + 330.0, inst_y, 16.0, LIGHTGRAY);
 
-        self.draw_text_sharp("[W/S or Up/Down] Navigate", list_x, inst_y + 18.0, 10.0, DARKGRAY);
+        self.draw_text_sharp("[W/S] Navigate", list_x, inst_y + 24.0, 16.0, DARKGRAY);
+    }
+}
+
+// ============================================================================
+// Character Create Screen
+// ============================================================================
+
+#[cfg(not(target_arch = "wasm32"))]
+const GENDERS: [&str; 2] = ["male", "female"];
+
+#[cfg(not(target_arch = "wasm32"))]
+const SKINS: [&str; 7] = ["tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"];
+
+#[cfg(not(target_arch = "wasm32"))]
+pub struct CharacterCreateScreen {
+    session: AuthSession,
+    name: String,
+    gender_index: usize,
+    skin_index: usize,
+    error_message: Option<String>,
+    auth_client: AuthClient,
+    font: BitmapFont,
+    active_field: CreateField,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(PartialEq, Clone, Copy)]
+enum CreateField {
+    Name,
+    Gender,
+    Skin,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl CharacterCreateScreen {
+    pub fn new(session: AuthSession, server_url: &str) -> Self {
+        Self {
+            session,
+            name: String::new(),
+            gender_index: 0,
+            skin_index: 0,
+            error_message: None,
+            auth_client: AuthClient::new(server_url),
+            font: BitmapFont::default(),
+            active_field: CreateField::Name,
+        }
+    }
+
+    pub async fn load_font(&mut self) {
+        self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
+    }
+
+    fn draw_text_sharp(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color) {
+        self.font.draw_text(text, x, y, font_size, color);
+    }
+
+    fn measure_text_sharp(&self, text: &str, font_size: f32) -> TextDimensions {
+        self.font.measure_text(text, font_size)
+    }
+
+    fn handle_name_input(&mut self) {
+        while let Some(c) = get_char_pressed() {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                if self.name.len() < 16 {
+                    self.name.push(c);
+                    self.error_message = None;
+                }
+            }
+        }
+
+        if is_key_pressed(KeyCode::Backspace) {
+            self.name.pop();
+            self.error_message = None;
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Screen for CharacterCreateScreen {
+    fn update(&mut self) -> ScreenState {
+        // Handle name input when name field is active
+        if self.active_field == CreateField::Name {
+            self.handle_name_input();
+        }
+
+        // Navigate between fields with Tab or Up/Down
+        if is_key_pressed(KeyCode::Tab) || is_key_pressed(KeyCode::Down) {
+            self.active_field = match self.active_field {
+                CreateField::Name => CreateField::Gender,
+                CreateField::Gender => CreateField::Skin,
+                CreateField::Skin => CreateField::Name,
+            };
+        }
+        if is_key_pressed(KeyCode::Up) {
+            self.active_field = match self.active_field {
+                CreateField::Name => CreateField::Skin,
+                CreateField::Gender => CreateField::Name,
+                CreateField::Skin => CreateField::Gender,
+            };
+        }
+
+        // Left/Right or A/D to cycle options
+        if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
+            match self.active_field {
+                CreateField::Gender => {
+                    self.gender_index = if self.gender_index == 0 {
+                        GENDERS.len() - 1
+                    } else {
+                        self.gender_index - 1
+                    };
+                }
+                CreateField::Skin => {
+                    self.skin_index = if self.skin_index == 0 {
+                        SKINS.len() - 1
+                    } else {
+                        self.skin_index - 1
+                    };
+                }
+                _ => {}
+            }
+        }
+        if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D) {
+            match self.active_field {
+                CreateField::Gender => {
+                    self.gender_index = (self.gender_index + 1) % GENDERS.len();
+                }
+                CreateField::Skin => {
+                    self.skin_index = (self.skin_index + 1) % SKINS.len();
+                }
+                _ => {}
+            }
+        }
+
+        // Cancel
+        if is_key_pressed(KeyCode::Escape) {
+            return ScreenState::ToCharacterSelect(self.session.clone());
+        }
+
+        // Create character
+        if is_key_pressed(KeyCode::Enter) {
+            let name = self.name.trim();
+            if name.len() < 2 {
+                self.error_message = Some("Name must be at least 2 characters".to_string());
+                return ScreenState::Continue;
+            }
+            if name.len() > 16 {
+                self.error_message = Some("Name must be at most 16 characters".to_string());
+                return ScreenState::Continue;
+            }
+
+            let gender = GENDERS[self.gender_index];
+            let skin = SKINS[self.skin_index];
+
+            match self.auth_client.create_character(&self.session.token, name, gender, skin) {
+                Ok(_) => {
+                    // Return to character select - it will refresh the list
+                    return ScreenState::ToCharacterSelect(self.session.clone());
+                }
+                Err(e) => {
+                    self.error_message = Some(e.to_string());
+                }
+            }
+        }
+
+        ScreenState::Continue
+    }
+
+    fn render(&self) {
+        let sw = screen_width();
+        let sh = screen_height();
+
+        // Background
+        clear_background(Color::from_rgba(25, 25, 35, 255));
+
+        // Draw decorative elements
+        for i in 0..15 {
+            let alpha = 0.03 + (i as f32 * 0.005);
+            let color = Color::new(0.2, 0.3, 0.4, alpha);
+            draw_line(0.0, i as f32 * 50.0, sw, i as f32 * 50.0, 1.0, color);
+        }
+
+        // Title
+        let title = "CREATE CHARACTER";
+        let title_width = self.measure_text_sharp(title, 16.0).width;
+        self.draw_text_sharp(title, (sw - title_width) / 2.0, 50.0, 16.0, WHITE);
+
+        // Form area
+        let form_x = (sw - 400.0) / 2.0;
+        let form_y = 120.0;
+        let field_height = 80.0;
+
+        // Name field
+        let name_active = self.active_field == CreateField::Name;
+        let name_y = form_y;
+        self.draw_text_sharp("Name", form_x, name_y, 16.0, if name_active { WHITE } else { GRAY });
+
+        let name_box_color = if name_active {
+            Color::from_rgba(80, 120, 180, 255)
+        } else {
+            Color::from_rgba(60, 60, 80, 255)
+        };
+        draw_rectangle(form_x, name_y + 24.0, 400.0, 40.0, name_box_color);
+        draw_rectangle_lines(form_x, name_y + 24.0, 400.0, 40.0, 2.0, if name_active { WHITE } else { GRAY });
+
+        let cursor = if name_active && (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
+        let name_display = if self.name.is_empty() && !name_active {
+            "Enter name...".to_string()
+        } else {
+            format!("{}{}", self.name, cursor)
+        };
+        let text_color = if self.name.is_empty() && !name_active { DARKGRAY } else { WHITE };
+        self.draw_text_sharp(&name_display, form_x + 12.0, name_y + 52.0, 16.0, text_color);
+
+        // Gender field
+        let gender_active = self.active_field == CreateField::Gender;
+        let gender_y = form_y + field_height;
+        self.draw_text_sharp("Gender", form_x, gender_y, 16.0, if gender_active { WHITE } else { GRAY });
+
+        let gender_box_color = if gender_active {
+            Color::from_rgba(80, 120, 180, 255)
+        } else {
+            Color::from_rgba(60, 60, 80, 255)
+        };
+        draw_rectangle(form_x, gender_y + 24.0, 400.0, 40.0, gender_box_color);
+        draw_rectangle_lines(form_x, gender_y + 24.0, 400.0, 40.0, 2.0, if gender_active { WHITE } else { GRAY });
+
+        // Left arrow
+        self.draw_text_sharp("<", form_x + 20.0, gender_y + 52.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
+        // Current gender
+        let gender_text = GENDERS[self.gender_index];
+        let gender_width = self.measure_text_sharp(gender_text, 16.0).width;
+        self.draw_text_sharp(gender_text, form_x + 200.0 - gender_width / 2.0, gender_y + 52.0, 16.0, WHITE);
+        // Right arrow
+        self.draw_text_sharp(">", form_x + 370.0, gender_y + 52.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
+
+        // Skin field
+        let skin_active = self.active_field == CreateField::Skin;
+        let skin_y = form_y + field_height * 2.0;
+        self.draw_text_sharp("Skin", form_x, skin_y, 16.0, if skin_active { WHITE } else { GRAY });
+
+        let skin_box_color = if skin_active {
+            Color::from_rgba(80, 120, 180, 255)
+        } else {
+            Color::from_rgba(60, 60, 80, 255)
+        };
+        draw_rectangle(form_x, skin_y + 24.0, 400.0, 40.0, skin_box_color);
+        draw_rectangle_lines(form_x, skin_y + 24.0, 400.0, 40.0, 2.0, if skin_active { WHITE } else { GRAY });
+
+        // Left arrow
+        self.draw_text_sharp("<", form_x + 20.0, skin_y + 52.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
+        // Current skin
+        let skin_text = SKINS[self.skin_index];
+        let skin_width = self.measure_text_sharp(skin_text, 16.0).width;
+        self.draw_text_sharp(skin_text, form_x + 200.0 - skin_width / 2.0, skin_y + 52.0, 16.0, WHITE);
+        // Right arrow
+        self.draw_text_sharp(">", form_x + 370.0, skin_y + 52.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
+
+        // Preview info
+        let preview_y = form_y + field_height * 3.0 + 20.0;
+        let preview_text = format!("Preview: {} {}", GENDERS[self.gender_index], SKINS[self.skin_index]);
+        self.draw_text_sharp(&preview_text, form_x, preview_y, 16.0, LIGHTGRAY);
+
+        // Error message
+        if let Some(ref error) = self.error_message {
+            let error_y = sh - 130.0;
+            let error_width = self.measure_text_sharp(error, 16.0).width;
+            self.draw_text_sharp(error, (sw - error_width) / 2.0, error_y, 16.0, RED);
+        }
+
+        // Instructions
+        let inst_y = sh - 70.0;
+        self.draw_text_sharp("[Enter] Create", form_x, inst_y, 16.0, GREEN);
+        self.draw_text_sharp("[Escape] Cancel", form_x + 150.0, inst_y, 16.0, LIGHTGRAY);
+
+        self.draw_text_sharp("[Tab] Switch field    [A/D] Change option", form_x, inst_y + 24.0, 16.0, DARKGRAY);
     }
 }

@@ -139,14 +139,20 @@ impl NetworkClient {
             .set("Content-Type", "application/json");
 
         let result = if let Some(token) = &self.auth_token {
-            // Authenticated matchmaking
-            log::info!("Matchmaking (authenticated): POST {}", matchmake_url);
-            let options = JoinOptions {
-                name: self.player_name.clone(),
-            };
-            request
-                .set("Authorization", &format!("Bearer {}", token))
-                .send_json(&options)
+            // Authenticated matchmaking - must have character_id
+            if let Some(char_id) = self.character_id {
+                log::info!("Matchmaking (authenticated): POST {} with character_id={}", matchmake_url, char_id);
+                let options = AuthenticatedJoinOptions {
+                    character_id: char_id,
+                };
+                request
+                    .set("Authorization", &format!("Bearer {}", token))
+                    .send_json(&options)
+            } else {
+                log::error!("Matchmaking failed: No character_id. Select a character first.");
+                self.connection_state = ConnectionState::Disconnected;
+                return;
+            }
         } else {
             // No auth token - this will fail with 401
             log::error!("Matchmaking failed: No auth token. Login required.");

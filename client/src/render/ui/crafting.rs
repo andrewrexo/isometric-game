@@ -90,7 +90,7 @@ impl Renderer {
         let recipes_text_x = main_tab_x + (main_tab_width - recipes_dims.width) / 2.0;
         self.draw_text_sharp("Crafting", recipes_text_x, main_tab_y + 19.0, TAB_FONT_SIZE, recipes_text_color);
 
-        self.draw_text_sharp("[E] Close", header_x + header_w - 80.0, header_y + 26.0, 16.0, TEXT_DIM);
+        self.draw_text_sharp("[Esc] Close", header_x + header_w - 80.0, header_y + 26.0, 16.0, TEXT_DIM);
 
         // ===== CONTENT AREA =====
         let content_y = panel_y + FRAME_THICKNESS + HEADER_HEIGHT + 4.0;
@@ -114,7 +114,7 @@ impl Renderer {
 
         if state.ui_state.shop_main_tab == 0 {
             // Recipes tab controls
-            self.draw_text_sharp("[Q/E] Tab", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            self.draw_text_sharp("[Q] Tab", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
             
             let has_multiple_categories = {
                 let mut cats: Vec<String> = state.recipe_definitions.iter()
@@ -135,7 +135,7 @@ impl Renderer {
             }
         } else {
             // Shop tab controls
-            self.draw_text_sharp("[Q/E] Tab", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
+            self.draw_text_sharp("[Q] Tab", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
             self.draw_text_sharp("[Tab] Buy/Sell", footer_x + 100.0, footer_y + 20.0, 16.0, TEXT_DIM);
             self.draw_text_sharp("[W/S] Select", footer_x + 230.0, footer_y + 20.0, 16.0, TEXT_DIM);
             self.draw_text_sharp("[+/-] Qty", footer_x + 340.0, footer_y + 20.0, 16.0, TEXT_DIM);

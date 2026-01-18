@@ -18,7 +18,7 @@ impl std::fmt::Display for AuthError {
             AuthError::InvalidCredentials => write!(f, "Invalid username or password"),
             AuthError::UsernameTaken => write!(f, "Username already taken"),
             AuthError::CharacterNameTaken => write!(f, "Character name already taken"),
-            AuthError::CharacterLimitReached => write!(f, "Character limit reached (max 5)"),
+            AuthError::CharacterLimitReached => write!(f, "Character limit reached (max 3)"),
             AuthError::Unauthorized => write!(f, "Not logged in"),
             AuthError::ServerError(e) => write!(f, "Server error: {}", e),
         }
@@ -36,6 +36,8 @@ pub struct CharacterInfo {
     pub id: i64,
     pub name: String,
     pub level: i32,
+    pub gender: String,
+    pub skin: String,
     #[serde(rename = "playedTime")]
     pub played_time: i64,
 }
@@ -65,8 +67,8 @@ struct CharacterCreateResponse {
 #[derive(Deserialize)]
 struct MatchmakeResponse {
     room: Option<RoomInfo>,
-    #[serde(rename = "sessionId")]
-    session_id: Option<String>,
+    #[serde(rename = "sessionToken")]
+    session_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -198,14 +200,16 @@ impl AuthClient {
     }
 
     /// Create a new character
-    pub fn create_character(&self, token: &str, name: &str) -> Result<CharacterInfo, AuthError> {
+    pub fn create_character(&self, token: &str, name: &str, gender: &str, skin: &str) -> Result<CharacterInfo, AuthError> {
         let url = format!("{}/api/characters", self.base_url);
 
         let response = ureq::post(&url)
             .set("Authorization", &format!("Bearer {}", token))
             .set("Content-Type", "application/json")
             .send_json(ureq::json!({
-                "name": name
+                "name": name,
+                "gender": gender,
+                "skin": skin
             }))
             .map_err(|e| {
                 let error_str = e.to_string();
@@ -278,8 +282,8 @@ impl AuthClient {
             .map_err(|e| AuthError::NetworkError(e.to_string()))?;
 
         let room = resp.room.ok_or_else(|| AuthError::ServerError("No room returned".to_string()))?;
-        let session_id = resp.session_id.ok_or_else(|| AuthError::ServerError("No session returned".to_string()))?;
+        let session_token = resp.session_token.ok_or_else(|| AuthError::ServerError("No session returned".to_string()))?;
 
-        Ok((room.room_id, session_id))
+        Ok((room.room_id, session_token))
     }
 }

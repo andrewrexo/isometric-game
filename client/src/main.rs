@@ -17,7 +17,7 @@ use render::Renderer;
 use input::{InputHandler, InputCommand};
 
 #[cfg(not(target_arch = "wasm32"))]
-use ui::{Screen, ScreenState, LoginScreen, CharacterSelectScreen};
+use ui::{Screen, ScreenState, LoginScreen, CharacterSelectScreen, CharacterCreateScreen};
 #[cfg(not(target_arch = "wasm32"))]
 use auth::AuthSession;
 
@@ -48,6 +48,7 @@ fn window_conf() -> Conf {
 enum AppState {
     Login(LoginScreen),
     CharacterSelect(CharacterSelectScreen),
+    CharacterCreate(CharacterCreateScreen),
     Playing {
         game_state: GameState,
         network: NetworkClient,
@@ -100,22 +101,6 @@ async fn main() {
                             char_screen.load_font().await;
                             app_state = AppState::CharacterSelect(char_screen);
                         }
-                        ScreenState::StartGameDirect { session } => {
-                            // Simple model: account = character, go directly to game
-                            let mut game_state = GameState::new();
-                            game_state.selected_character_name = Some(session.username.clone());
-
-                            // Authenticated matchmaking with token
-                            let network = NetworkClient::new_with_token(WS_URL, &session.token, &session.username);
-                            let input_handler = InputHandler::new();
-
-                            app_state = AppState::Playing {
-                                game_state,
-                                network,
-                                input_handler,
-                                _session: session,
-                            };
-                        }
                         ScreenState::StartGuestMode => {
                             // Guest mode - connect without auth
                             let game_state = GameState::new();
@@ -155,10 +140,29 @@ async fn main() {
                                 _session: session,
                             };
                         }
+                        ScreenState::ToCharacterCreate(session) => {
+                            let mut create_screen = CharacterCreateScreen::new(session, SERVER_URL);
+                            create_screen.load_font().await;
+                            app_state = AppState::CharacterCreate(create_screen);
+                        }
                         ScreenState::ToLogin => {
                             let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
                             login_screen.load_font().await;
                             app_state = AppState::Login(login_screen);
+                        }
+                        _ => {}
+                    }
+                }
+
+                AppState::CharacterCreate(screen) => {
+                    let result = screen.update();
+                    screen.render();
+
+                    match result {
+                        ScreenState::ToCharacterSelect(session) => {
+                            let mut char_screen = CharacterSelectScreen::new(session, SERVER_URL);
+                            char_screen.load_font().await;
+                            app_state = AppState::CharacterSelect(char_screen);
                         }
                         _ => {}
                     }
