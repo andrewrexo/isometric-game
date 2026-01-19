@@ -18,6 +18,8 @@ pub struct AccountData {
     pub last_login: Option<String>,
 }
 
+use crate::skills::{Skills, LegacySkills};
+
 /// Character data - belongs to an account
 #[derive(Debug, Clone)]
 pub struct CharacterData {
@@ -29,10 +31,7 @@ pub struct CharacterData {
     pub x: f32,
     pub y: f32,
     pub hp: i32,
-    pub max_hp: i32,
-    pub level: i32,
-    pub exp: i32,
-    pub exp_to_next_level: i32,
+    pub skills: Skills,         // Combat skills (Hitpoints, Attack, Strength, Defence)
     pub gold: i32,
     pub inventory_json: String, // JSON serialized inventory
     // Equipment slots
@@ -99,11 +98,9 @@ impl Database {
                 skin TEXT NOT NULL DEFAULT 'tan',
                 x REAL DEFAULT 16.0,
                 y REAL DEFAULT 16.0,
-                hp INTEGER DEFAULT 100,
-                max_hp INTEGER DEFAULT 100,
-                level INTEGER DEFAULT 1,
-                exp INTEGER DEFAULT 0,
-                exp_to_next_level INTEGER DEFAULT 100,
+                hp INTEGER DEFAULT 10,
+                max_hp INTEGER DEFAULT 10,
+                level INTEGER DEFAULT 3,
                 gold INTEGER DEFAULT 0,
                 equipped_head TEXT,
                 equipped_body TEXT,
@@ -115,6 +112,7 @@ impl Database {
                 equipped_necklace TEXT,
                 equipped_belt TEXT,
                 inventory_json TEXT DEFAULT '[]',
+                skills_json TEXT,
                 played_time INTEGER DEFAULT 0,
                 is_admin BOOLEAN DEFAULT FALSE,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -124,6 +122,22 @@ impl Database {
         )
         .execute(pool)
         .await?;
+
+        // Migration: Add skills_json column if it doesn't exist (for existing databases)
+        // SQLite doesn't have IF NOT EXISTS for ALTER TABLE, so we check first
+        let column_exists: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('characters') WHERE name = 'skills_json'"
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+
+        if !column_exists {
+            sqlx::query("ALTER TABLE characters ADD COLUMN skills_json TEXT")
+                .execute(pool)
+                .await
+                .ok(); // Ignore error if column already exists
+        }
 
         // Character quest tables (renamed from player_*)
         sqlx::query(
@@ -257,43 +271,59 @@ impl Database {
     /// Get all characters for an account
     pub async fn get_characters_for_account(&self, account_id: i64) -> Result<Vec<CharacterData>, sqlx::Error> {
         let rows = sqlx::query(
-            r#"SELECT id, account_id, name, gender, skin, x, y, hp, max_hp, level, exp,
-                exp_to_next_level, gold, equipped_head, equipped_body, equipped_weapon,
-                equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace,
-                equipped_belt, inventory_json, played_time, is_admin, created_at
+            r#"SELECT id, account_id, name, gender, skin, x, y, hp, gold,
+                equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet,
+                equipped_ring, equipped_gloves, equipped_necklace, equipped_belt,
+                inventory_json, skills_json, played_time, is_admin, created_at
             FROM characters WHERE account_id = ? ORDER BY created_at DESC"#,
         )
         .bind(account_id)
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(|r| CharacterData {
-            id: r.get("id"),
-            account_id: r.get("account_id"),
-            name: r.get("name"),
-            gender: r.get("gender"),
-            skin: r.get("skin"),
-            x: r.get("x"),
-            y: r.get("y"),
-            hp: r.get("hp"),
-            max_hp: r.get("max_hp"),
-            level: r.get("level"),
-            exp: r.get("exp"),
-            exp_to_next_level: r.get("exp_to_next_level"),
-            gold: r.get("gold"),
-            equipped_head: r.try_get::<String, _>("equipped_head").ok().filter(|s| !s.is_empty()),
-            equipped_body: r.try_get::<String, _>("equipped_body").ok().filter(|s| !s.is_empty()),
-            equipped_weapon: r.try_get::<String, _>("equipped_weapon").ok().filter(|s| !s.is_empty()),
-            equipped_back: r.try_get::<String, _>("equipped_back").ok().filter(|s| !s.is_empty()),
-            equipped_feet: r.try_get::<String, _>("equipped_feet").ok().filter(|s| !s.is_empty()),
-            equipped_ring: r.try_get::<String, _>("equipped_ring").ok().filter(|s| !s.is_empty()),
-            equipped_gloves: r.try_get::<String, _>("equipped_gloves").ok().filter(|s| !s.is_empty()),
-            equipped_necklace: r.try_get::<String, _>("equipped_necklace").ok().filter(|s| !s.is_empty()),
-            equipped_belt: r.try_get::<String, _>("equipped_belt").ok().filter(|s| !s.is_empty()),
-            inventory_json: r.get("inventory_json"),
-            played_time: r.get("played_time"),
-            created_at: r.get("created_at"),
-            is_admin: r.try_get::<bool, _>("is_admin").unwrap_or(false),
+        Ok(rows.into_iter().map(|r| {
+            // Try to load skills from JSON column, with legacy format migration
+            let skills = r.try_get::<String, _>("skills_json")
+                .ok()
+                .and_then(|json| {
+                    // First try the new format (hitpoints + combat)
+                    if let Ok(skills) = serde_json::from_str::<Skills>(&json) {
+                        return Some(skills);
+                    }
+                    // Fall back to legacy format (hitpoints + attack + strength + defence)
+                    // and convert to new format by summing combat XP
+                    if let Ok(legacy) = serde_json::from_str::<LegacySkills>(&json) {
+                        return Some(legacy.to_skills());
+                    }
+                    None
+                })
+                .unwrap_or_else(Skills::new);
+
+            CharacterData {
+                id: r.get("id"),
+                account_id: r.get("account_id"),
+                name: r.get("name"),
+                gender: r.get("gender"),
+                skin: r.get("skin"),
+                x: r.get("x"),
+                y: r.get("y"),
+                hp: r.get("hp"),
+                skills,
+                gold: r.get("gold"),
+                equipped_head: r.try_get::<String, _>("equipped_head").ok().filter(|s| !s.is_empty()),
+                equipped_body: r.try_get::<String, _>("equipped_body").ok().filter(|s| !s.is_empty()),
+                equipped_weapon: r.try_get::<String, _>("equipped_weapon").ok().filter(|s| !s.is_empty()),
+                equipped_back: r.try_get::<String, _>("equipped_back").ok().filter(|s| !s.is_empty()),
+                equipped_feet: r.try_get::<String, _>("equipped_feet").ok().filter(|s| !s.is_empty()),
+                equipped_ring: r.try_get::<String, _>("equipped_ring").ok().filter(|s| !s.is_empty()),
+                equipped_gloves: r.try_get::<String, _>("equipped_gloves").ok().filter(|s| !s.is_empty()),
+                equipped_necklace: r.try_get::<String, _>("equipped_necklace").ok().filter(|s| !s.is_empty()),
+                equipped_belt: r.try_get::<String, _>("equipped_belt").ok().filter(|s| !s.is_empty()),
+                inventory_json: r.get("inventory_json"),
+                played_time: r.get("played_time"),
+                created_at: r.get("created_at"),
+                is_admin: r.try_get::<bool, _>("is_admin").unwrap_or(false),
+            }
         }).collect())
     }
 
@@ -362,43 +392,59 @@ impl Database {
     /// Get a character by ID
     pub async fn get_character(&self, character_id: i64) -> Result<Option<CharacterData>, sqlx::Error> {
         let row = sqlx::query(
-            r#"SELECT id, account_id, name, gender, skin, x, y, hp, max_hp, level, exp,
-                exp_to_next_level, gold, equipped_head, equipped_body, equipped_weapon,
-                equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace,
-                equipped_belt, inventory_json, played_time, is_admin, created_at
+            r#"SELECT id, account_id, name, gender, skin, x, y, hp, gold,
+                equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet,
+                equipped_ring, equipped_gloves, equipped_necklace, equipped_belt,
+                inventory_json, skills_json, played_time, is_admin, created_at
             FROM characters WHERE id = ?"#,
         )
         .bind(character_id)
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map(|r| CharacterData {
-            id: r.get("id"),
-            account_id: r.get("account_id"),
-            name: r.get("name"),
-            gender: r.get("gender"),
-            skin: r.get("skin"),
-            x: r.get("x"),
-            y: r.get("y"),
-            hp: r.get("hp"),
-            max_hp: r.get("max_hp"),
-            level: r.get("level"),
-            exp: r.get("exp"),
-            exp_to_next_level: r.get("exp_to_next_level"),
-            gold: r.get("gold"),
-            equipped_head: r.try_get::<String, _>("equipped_head").ok().filter(|s| !s.is_empty()),
-            equipped_body: r.try_get::<String, _>("equipped_body").ok().filter(|s| !s.is_empty()),
-            equipped_weapon: r.try_get::<String, _>("equipped_weapon").ok().filter(|s| !s.is_empty()),
-            equipped_back: r.try_get::<String, _>("equipped_back").ok().filter(|s| !s.is_empty()),
-            equipped_feet: r.try_get::<String, _>("equipped_feet").ok().filter(|s| !s.is_empty()),
-            equipped_ring: r.try_get::<String, _>("equipped_ring").ok().filter(|s| !s.is_empty()),
-            equipped_gloves: r.try_get::<String, _>("equipped_gloves").ok().filter(|s| !s.is_empty()),
-            equipped_necklace: r.try_get::<String, _>("equipped_necklace").ok().filter(|s| !s.is_empty()),
-            equipped_belt: r.try_get::<String, _>("equipped_belt").ok().filter(|s| !s.is_empty()),
-            inventory_json: r.get("inventory_json"),
-            played_time: r.get("played_time"),
-            created_at: r.get("created_at"),
-            is_admin: r.try_get::<bool, _>("is_admin").unwrap_or(false),
+        Ok(row.map(|r| {
+            // Try to load skills from JSON column, with legacy format migration
+            let skills = r.try_get::<String, _>("skills_json")
+                .ok()
+                .and_then(|json| {
+                    // First try the new format (hitpoints + combat)
+                    if let Ok(skills) = serde_json::from_str::<Skills>(&json) {
+                        return Some(skills);
+                    }
+                    // Fall back to legacy format (hitpoints + attack + strength + defence)
+                    // and convert to new format by summing combat XP
+                    if let Ok(legacy) = serde_json::from_str::<LegacySkills>(&json) {
+                        return Some(legacy.to_skills());
+                    }
+                    None
+                })
+                .unwrap_or_else(Skills::new);
+
+            CharacterData {
+                id: r.get("id"),
+                account_id: r.get("account_id"),
+                name: r.get("name"),
+                gender: r.get("gender"),
+                skin: r.get("skin"),
+                x: r.get("x"),
+                y: r.get("y"),
+                hp: r.get("hp"),
+                skills,
+                gold: r.get("gold"),
+                equipped_head: r.try_get::<String, _>("equipped_head").ok().filter(|s| !s.is_empty()),
+                equipped_body: r.try_get::<String, _>("equipped_body").ok().filter(|s| !s.is_empty()),
+                equipped_weapon: r.try_get::<String, _>("equipped_weapon").ok().filter(|s| !s.is_empty()),
+                equipped_back: r.try_get::<String, _>("equipped_back").ok().filter(|s| !s.is_empty()),
+                equipped_feet: r.try_get::<String, _>("equipped_feet").ok().filter(|s| !s.is_empty()),
+                equipped_ring: r.try_get::<String, _>("equipped_ring").ok().filter(|s| !s.is_empty()),
+                equipped_gloves: r.try_get::<String, _>("equipped_gloves").ok().filter(|s| !s.is_empty()),
+                equipped_necklace: r.try_get::<String, _>("equipped_necklace").ok().filter(|s| !s.is_empty()),
+                equipped_belt: r.try_get::<String, _>("equipped_belt").ok().filter(|s| !s.is_empty()),
+                inventory_json: r.get("inventory_json"),
+                played_time: r.get("played_time"),
+                created_at: r.get("created_at"),
+                is_admin: r.try_get::<bool, _>("is_admin").unwrap_or(false),
+            }
         }))
     }
 
@@ -439,10 +485,7 @@ impl Database {
         x: f32,
         y: f32,
         hp: i32,
-        max_hp: i32,
-        level: i32,
-        exp: i32,
-        exp_to_next_level: i32,
+        skills: &Skills,
         gold: i32,
         inventory_json: &str,
         equipped_head: Option<&str>,
@@ -455,10 +498,17 @@ impl Database {
         equipped_necklace: Option<&str>,
         equipped_belt: Option<&str>,
     ) -> Result<(), sqlx::Error> {
+        // Serialize skills to JSON for the skills_json column
+        let skills_json = serde_json::to_string(skills).unwrap_or_else(|_| "{}".to_string());
+
+        // For backward compatibility, we also write to legacy columns with derived values
+        let max_hp = skills.hitpoints.level;
+        let level = skills.combat_level();
+
         sqlx::query(
             r#"UPDATE characters SET
-                x = ?, y = ?, hp = ?, max_hp = ?, level = ?, exp = ?,
-                exp_to_next_level = ?, gold = ?, inventory_json = ?,
+                x = ?, y = ?, hp = ?, max_hp = ?, level = ?,
+                gold = ?, inventory_json = ?, skills_json = ?,
                 equipped_head = ?, equipped_body = ?, equipped_weapon = ?,
                 equipped_back = ?, equipped_feet = ?, equipped_ring = ?,
                 equipped_gloves = ?, equipped_necklace = ?, equipped_belt = ?
@@ -469,10 +519,9 @@ impl Database {
         .bind(hp)
         .bind(max_hp)
         .bind(level)
-        .bind(exp)
-        .bind(exp_to_next_level)
         .bind(gold)
         .bind(inventory_json)
+        .bind(&skills_json)
         .bind(equipped_head)
         .bind(equipped_body)
         .bind(equipped_weapon)

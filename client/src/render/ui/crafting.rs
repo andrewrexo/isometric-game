@@ -302,7 +302,7 @@ impl Renderer {
 
             if recipe.level_required > 1 {
                 let (level_color, level_icon) = if let Some(player) = state.get_local_player() {
-                    if player.level >= recipe.level_required {
+                    if player.combat_level() >= recipe.level_required {
                         (Color::new(0.392, 0.784, 0.392, 1.0), "[OK]")
                     } else {
                         (Color::new(0.784, 0.314, 0.314, 1.0), "[!!]")

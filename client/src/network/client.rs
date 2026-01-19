@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType};
 use crate::game::npc::{Npc, NpcType, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -466,9 +466,9 @@ impl NetworkClient {
                             let direction = extract_i32(player_value, "direction");
                             let hp = extract_i32(player_value, "hp");
                             let max_hp = extract_i32(player_value, "maxHp");
-                            let level = extract_i32(player_value, "level");
-                            let exp = extract_i32(player_value, "exp");
-                            let exp_to_next_level = extract_i32(player_value, "expToNextLevel");
+                            // Skill levels (consolidated combat system)
+                            let hitpoints_level = extract_i32(player_value, "hitpointsLevel");
+                            let combat_skill_level = extract_i32(player_value, "combatSkillLevel");
                             let gold = extract_i32(player_value, "gold");
                             let equipped_head = extract_string(player_value, "equipped_head").filter(|s| !s.is_empty());
                             let equipped_body = extract_string(player_value, "equipped_body").filter(|s| !s.is_empty());
@@ -518,14 +518,12 @@ impl NetworkClient {
                                 if let Some(max_hp) = max_hp {
                                     player.max_hp = max_hp;
                                 }
-                                if let Some(level) = level {
-                                    player.level = level;
+                                // Update skill levels
+                                if let Some(level) = hitpoints_level {
+                                    player.skills.hitpoints.level = level;
                                 }
-                                if let Some(exp) = exp {
-                                    player.exp = exp;
-                                }
-                                if let Some(exp_to_next_level) = exp_to_next_level {
-                                    player.exp_to_next_level = exp_to_next_level;
+                                if let Some(level) = combat_skill_level {
+                                    player.skills.combat.level = level;
                                 }
                                 // Update equipment
                                 player.equipped_head = equipped_head.clone();
@@ -764,41 +762,73 @@ impl NetworkClient {
                 }
             }
 
-            "expGained" => {
+            "skillXp" => {
                 if let Some(value) = data {
                     let player_id = extract_string(value, "player_id").unwrap_or_default();
-                    let amount = extract_i32(value, "amount").unwrap_or(0);
-                    let total_exp = extract_i32(value, "total_exp").unwrap_or(0);
-                    let exp_to_next_level = extract_i32(value, "exp_to_next_level").unwrap_or(100);
+                    let skill_name = extract_string(value, "skill").unwrap_or_default();
+                    let xp_gained = extract_i32(value, "xp_gained").unwrap_or(0) as i64;
+                    let total_xp = extract_i32(value, "total_xp").unwrap_or(0) as i64;
+                    let level = extract_i32(value, "level").unwrap_or(1);
 
-                    log::debug!("Player {} gained {} EXP (total: {}/{})",
-                        player_id, amount, total_exp, exp_to_next_level);
+                    log::debug!("Player {} gained {} {} XP (total: {}, level: {})",
+                        player_id, xp_gained, skill_name, total_xp, level);
 
                     if let Some(player) = state.players.get_mut(&player_id) {
-                        player.exp = total_exp;
-                        player.exp_to_next_level = exp_to_next_level;
+                        // Update the specific skill
+                        if let Some(skill_type) = SkillType::from_str(&skill_name) {
+                            let skill = player.skills.get_mut(skill_type);
+                            skill.xp = total_xp;
+                            skill.level = level;
+
+                            // Update max_hp if hitpoints changed
+                            if skill_type == SkillType::Hitpoints {
+                                player.max_hp = level;
+                            }
+                        }
+
+                        // Create floating XP event for local player
+                        if state.local_player_id.as_ref() == Some(&player_id) {
+                            state.skill_xp_events.push(SkillXpEvent {
+                                x: player.x,
+                                y: player.y,
+                                skill: skill_name,
+                                xp_gained,
+                                time: macroquad::time::get_time(),
+                            });
+                        }
                     }
                 }
             }
 
-            "levelUp" => {
+            "skillLevelUp" => {
                 if let Some(value) = data {
                     let player_id = extract_string(value, "player_id").unwrap_or_default();
+                    let skill_name = extract_string(value, "skill").unwrap_or_default();
                     let new_level = extract_i32(value, "new_level").unwrap_or(1);
-                    let new_max_hp = extract_i32(value, "new_max_hp").unwrap_or(100);
 
-                    log::info!("Player {} leveled up to {}!", player_id, new_level);
+                    log::info!("Player {} leveled up {} to {}!", player_id, skill_name, new_level);
 
                     // Get player position for floating text
                     if let Some(player) = state.players.get_mut(&player_id) {
-                        player.level = new_level;
-                        player.max_hp = new_max_hp;
-                        player.hp = new_max_hp; // Full heal on level up
+                        // Update the specific skill level
+                        if let Some(skill_type) = SkillType::from_str(&skill_name) {
+                            let skill = player.skills.get_mut(skill_type);
+                            skill.level = new_level;
+
+                            // Update max_hp and current HP if hitpoints leveled up
+                            if skill_type == SkillType::Hitpoints {
+                                let old_max = player.max_hp;
+                                player.max_hp = new_level;
+                                // Heal the difference (new HP from the level)
+                                player.hp += new_level - old_max;
+                            }
+                        }
 
                         // Create floating level up event
                         state.level_up_events.push(LevelUpEvent {
                             x: player.x,
                             y: player.y,
+                            skill: skill_name,
                             new_level,
                             time: macroquad::time::get_time(),
                         });
@@ -1113,9 +1143,11 @@ impl NetworkClient {
                                 .map(|slot_type| {
                                     EquipmentStats {
                                         slot_type,
-                                        level_required: extract_i32(item_value, "level_required").unwrap_or(1),
-                                        damage_bonus: extract_i32(item_value, "damage_bonus").unwrap_or(0),
-                                        defense_bonus: extract_i32(item_value, "defense_bonus").unwrap_or(0),
+                                        attack_level_required: extract_i32(item_value, "attack_level_required").unwrap_or(1),
+                                        defence_level_required: extract_i32(item_value, "defence_level_required").unwrap_or(1),
+                                        attack_bonus: extract_i32(item_value, "attack_bonus").unwrap_or(0),
+                                        strength_bonus: extract_i32(item_value, "strength_bonus").unwrap_or(0),
+                                        defence_bonus: extract_i32(item_value, "defence_bonus").unwrap_or(0),
                                     }
                                 });
 

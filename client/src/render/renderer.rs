@@ -106,6 +106,8 @@ pub struct Renderer {
     pub(crate) gold_nugget_texture: Option<Texture2D>,
     /// Circular stone backdrop for shop item icons
     pub(crate) circular_stone_texture: Option<Texture2D>,
+    /// Menu button icons (inventory, character, settings, skills, social)
+    pub(crate) menu_button_icons: Option<Texture2D>,
 }
 
 impl Renderer {
@@ -265,6 +267,19 @@ impl Renderer {
             }
         };
 
+        // Load menu button icons sprite sheet
+        let menu_button_icons = match load_texture("assets/ui/background_icons.png").await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                log::info!("Loaded menu button icons: {}x{}", tex.width(), tex.height());
+                Some(tex)
+            }
+            Err(e) => {
+                log::warn!("Failed to load menu button icons: {}", e);
+                None
+            }
+        };
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
@@ -277,6 +292,7 @@ impl Renderer {
             quest_complete_texture,
             gold_nugget_texture,
             circular_stone_texture,
+            menu_button_icons,
         }
     }
 
@@ -1495,7 +1511,7 @@ impl Renderer {
             // ===== PLAYER NAME + LEVEL =====
             let name_y = panel_y + 6.0;
             let name = &player.name;
-            let level_text = format!(" Lv.{}", player.level);
+            let level_text = format!(" Lv.{}", player.combat_level());
             self.draw_text_sharp(name, (panel_x + padding).floor(), (name_y + 12.0).floor(), 16.0, TEXT_TITLE);
             let name_w = self.measure_text_sharp(name, 16.0).width;
             self.draw_text_sharp(&level_text, (panel_x + padding + name_w).floor(), (name_y + 12.0).floor(), 16.0, TEXT_DIM);
@@ -1651,6 +1667,9 @@ impl Renderer {
             self.render_crafting(state, hovered, &mut layout);
         }
 
+        // Skills panel (when open)
+        self.render_skills_panel(state, hovered, &mut layout);
+
         // Quick slots (always visible at bottom, above exp bar)
         self.render_quick_slots(state, hovered, &mut layout);
 
@@ -1672,8 +1691,9 @@ impl Renderer {
         if let Some(ref context_menu) = state.ui_state.context_menu {
             self.render_context_menu(context_menu, state, &mut layout);
         } else {
-            // Only render item tooltip if context menu is not open
+            // Only render tooltips if context menu is not open
             self.render_item_tooltip(state);
+            self.render_skill_tooltip(state, hovered);
         }
 
         // Render dragged item at cursor (on top of everything)

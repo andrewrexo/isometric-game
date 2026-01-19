@@ -95,20 +95,22 @@ impl ItemRegistry {
             .values()
             .map(|item| {
                 // Extract equipment stats if present and has valid slot
-                let (equipment_slot, level_required, damage_bonus, defense_bonus) =
+                let (equipment_slot, attack_level_required, defence_level_required, attack_bonus, strength_bonus, defence_bonus) =
                     if let Some(ref equip) = item.equipment {
                         if equip.slot_type != EquipmentSlot::None {
                             (
                                 Some(equip.slot_type.as_str().to_string()),
-                                Some(equip.level_required),
-                                Some(equip.damage_bonus),
-                                Some(equip.defense_bonus),
+                                Some(equip.attack_level_required),
+                                Some(equip.defence_level_required),
+                                Some(equip.attack_bonus),
+                                Some(equip.strength_bonus),
+                                Some(equip.defence_bonus),
                             )
                         } else {
-                            (None, None, None, None)
+                            (None, None, None, None, None, None)
                         }
                     } else {
-                        (None, None, None, None)
+                        (None, None, None, None, None, None)
                     };
 
                 ClientItemDef {
@@ -121,9 +123,11 @@ impl ItemRegistry {
                     base_price: item.base_price,
                     sellable: item.sellable,
                     equipment_slot,
-                    level_required,
-                    damage_bonus,
-                    defense_bonus,
+                    attack_level_required,
+                    defence_level_required,
+                    attack_bonus,
+                    strength_bonus,
+                    defence_bonus,
                 }
             })
             .collect();

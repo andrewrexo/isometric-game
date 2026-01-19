@@ -48,7 +48,17 @@ pub struct DamageEvent {
 pub struct LevelUpEvent {
     pub x: f32,
     pub y: f32,
+    pub skill: String,
     pub new_level: i32,
+    pub time: f64,
+}
+
+/// Floating skill XP gain text
+pub struct SkillXpEvent {
+    pub x: f32,
+    pub y: f32,
+    pub skill: String,
+    pub xp_gained: i64,
     pub time: f64,
 }
 
@@ -179,7 +189,7 @@ pub struct UiState {
     // Menu button panel states
     pub character_open: bool,
     pub social_open: bool,
-    pub map_open: bool,
+    pub skills_open: bool,
     // Mouse hover state for UI elements
     pub hovered_element: Option<UiElementId>,
     // Context menu state
@@ -224,7 +234,7 @@ impl Default for UiState {
             escape_menu_open: false,
             character_open: false,
             social_open: false,
-            map_open: false,
+            skills_open: false,
             hovered_element: None,
             context_menu: None,
             drag_state: None,
@@ -267,6 +277,7 @@ pub struct GameState {
     // Combat feedback
     pub damage_events: Vec<DamageEvent>,
     pub level_up_events: Vec<LevelUpEvent>,
+    pub skill_xp_events: Vec<SkillXpEvent>,
 
     // Chat bubbles above players
     pub chat_bubbles: Vec<ChatBubble>,
@@ -317,6 +328,7 @@ impl GameState {
             selected_entity_id: None,
             damage_events: Vec::new(),
             level_up_events: Vec::new(),
+            skill_xp_events: Vec::new(),
             chat_bubbles: Vec::new(),
             inventory: Inventory::new(),
             item_registry: ItemRegistry::new(),
@@ -386,6 +398,9 @@ impl GameState {
 
         // Clean up old level up events (older than 2.0 seconds)
         self.level_up_events.retain(|event| current_time - event.time < 2.0);
+
+        // Clean up old skill XP events (older than 1.5 seconds)
+        self.skill_xp_events.retain(|event| current_time - event.time < 1.5);
 
         // Clean up old chat bubbles (older than 5.0 seconds)
         self.chat_bubbles.retain(|bubble| current_time - bubble.time < 5.0);

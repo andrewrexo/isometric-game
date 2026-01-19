@@ -52,8 +52,10 @@ impl Renderer {
         // Get item definition from registry
         let item_def = state.item_registry.get_or_placeholder(&item_id);
 
-        // Get player level for requirement checking
-        let player_level = state.get_local_player().map(|p| p.level).unwrap_or(1);
+        // Get player combat level for requirement checking (single combat skill)
+        let player_combat_level = state.get_local_player()
+            .map(|p| p.skills.combat.level)
+            .unwrap_or(1);
 
         // Get mouse position for tooltip placement
         let (mouse_x, mouse_y) = mouse_position();
@@ -87,24 +89,42 @@ impl Renderer {
         }
 
         if let Some(ref equip) = item_def.equipment {
-            if equip.damage_bonus != 0 {
-                let damage_text = if equip.damage_bonus > 0 {
-                    format!("+{} Damage", equip.damage_bonus)
+            if equip.attack_bonus != 0 {
+                let attack_text = if equip.attack_bonus > 0 {
+                    format!("+{} Attack", equip.attack_bonus)
                 } else {
-                    format!("{} Damage", equip.damage_bonus)
+                    format!("{} Attack", equip.attack_bonus)
                 };
-                max_w = max_w.max(self.measure_text_sharp(&damage_text, small_font_size).width);
+                max_w = max_w.max(self.measure_text_sharp(&attack_text, small_font_size).width);
             }
-            if equip.defense_bonus != 0 {
-                let defense_text = if equip.defense_bonus > 0 {
-                    format!("+{} Defense", equip.defense_bonus)
+            if equip.strength_bonus != 0 {
+                let strength_text = if equip.strength_bonus > 0 {
+                    format!("+{} Strength", equip.strength_bonus)
                 } else {
-                    format!("{} Defense", equip.defense_bonus)
+                    format!("{} Strength", equip.strength_bonus)
                 };
-                max_w = max_w.max(self.measure_text_sharp(&defense_text, small_font_size).width);
+                max_w = max_w.max(self.measure_text_sharp(&strength_text, small_font_size).width);
             }
-            let req_text = format!("Requires Level {}", equip.level_required);
-            max_w = max_w.max(self.measure_text_sharp(&req_text, small_font_size).width);
+            if equip.defence_bonus != 0 {
+                let defence_text = if equip.defence_bonus > 0 {
+                    format!("+{} Defence", equip.defence_bonus)
+                } else {
+                    format!("{} Defence", equip.defence_bonus)
+                };
+                max_w = max_w.max(self.measure_text_sharp(&defence_text, small_font_size).width);
+            }
+            // Measure requirement text
+            let is_weapon = equip.slot_type == "weapon";
+            let req_text = if is_weapon && equip.attack_level_required > 1 {
+                format!("Requires {} Attack", equip.attack_level_required)
+            } else if !is_weapon && equip.defence_level_required > 1 {
+                format!("Requires {} Defence", equip.defence_level_required)
+            } else {
+                String::new()
+            };
+            if !req_text.is_empty() {
+                max_w = max_w.max(self.measure_text_sharp(&req_text, small_font_size).width);
+            }
         }
 
         let tooltip_width = (max_w + padding * 2.0).ceil().min(max_tooltip_width);
@@ -124,13 +144,20 @@ impl Renderer {
         if has_equipment {
             total_h += 2.0; // Small gap
             if let Some(ref equip) = item_def.equipment {
-                if equip.damage_bonus != 0 {
+                if equip.attack_bonus != 0 {
                     total_h += line_height;
                 }
-                if equip.defense_bonus != 0 {
+                if equip.strength_bonus != 0 {
                     total_h += line_height;
                 }
-                total_h += line_height; // Level requirement
+                if equip.defence_bonus != 0 {
+                    total_h += line_height;
+                }
+                // Level requirement line (only if > 1)
+                let is_weapon = equip.slot_type == "weapon";
+                if (is_weapon && equip.attack_level_required > 1) || (!is_weapon && equip.defence_level_required > 1) {
+                    total_h += line_height;
+                }
             }
         }
 
@@ -200,35 +227,50 @@ impl Renderer {
             let stat_green = Color::new(0.392, 0.784, 0.392, 1.0);  // rgba(100, 200, 100)
             let stat_red = Color::new(1.0, 0.392, 0.392, 1.0);      // rgba(255, 100, 100)
 
-            // Damage bonus
-            if equip.damage_bonus != 0 {
-                let damage_text = if equip.damage_bonus > 0 {
-                    format!("+{} Damage", equip.damage_bonus)
+            // Attack bonus
+            if equip.attack_bonus != 0 {
+                let attack_text = if equip.attack_bonus > 0 {
+                    format!("+{} Attack", equip.attack_bonus)
                 } else {
-                    format!("{} Damage", equip.damage_bonus)
+                    format!("{} Attack", equip.attack_bonus)
                 };
-                let damage_color = if equip.damage_bonus > 0 { stat_green } else { stat_red };
-                self.draw_text_sharp(&damage_text, tooltip_x + padding, y, small_font_size, damage_color);
+                let attack_color = if equip.attack_bonus > 0 { stat_green } else { stat_red };
+                self.draw_text_sharp(&attack_text, tooltip_x + padding, y, small_font_size, attack_color);
                 y += line_height;
             }
 
-            // Defense bonus
-            if equip.defense_bonus != 0 {
-                let defense_text = if equip.defense_bonus > 0 {
-                    format!("+{} Defense", equip.defense_bonus)
+            // Strength bonus
+            if equip.strength_bonus != 0 {
+                let strength_text = if equip.strength_bonus > 0 {
+                    format!("+{} Strength", equip.strength_bonus)
                 } else {
-                    format!("{} Defense", equip.defense_bonus)
+                    format!("{} Strength", equip.strength_bonus)
                 };
-                let defense_color = if equip.defense_bonus > 0 { stat_green } else { stat_red };
-                self.draw_text_sharp(&defense_text, tooltip_x + padding, y, small_font_size, defense_color);
+                let strength_color = if equip.strength_bonus > 0 { stat_green } else { stat_red };
+                self.draw_text_sharp(&strength_text, tooltip_x + padding, y, small_font_size, strength_color);
                 y += line_height;
             }
 
-            // Level requirement
-            let meets_requirement = player_level >= equip.level_required;
-            let req_color = if meets_requirement { stat_green } else { stat_red };
-            let req_text = format!("Requires Level {}", equip.level_required);
-            self.draw_text_sharp(&req_text, tooltip_x + padding, y, small_font_size, req_color);
+            // Defence bonus
+            if equip.defence_bonus != 0 {
+                let defence_text = if equip.defence_bonus > 0 {
+                    format!("+{} Defence", equip.defence_bonus)
+                } else {
+                    format!("{} Defence", equip.defence_bonus)
+                };
+                let defence_color = if equip.defence_bonus > 0 { stat_green } else { stat_red };
+                self.draw_text_sharp(&defence_text, tooltip_x + padding, y, small_font_size, defence_color);
+                y += line_height;
+            }
+
+            // Level requirements - check highest requirement against combat level
+            let level_required = equip.attack_level_required.max(equip.defence_level_required);
+            if level_required > 1 {
+                let meets_req = player_combat_level >= level_required;
+                let req_color = if meets_req { stat_green } else { stat_red };
+                let req_text = format!("Requires {} Combat", level_required);
+                self.draw_text_sharp(&req_text, tooltip_x + padding, y, small_font_size, req_color);
+            }
         }
     }
 

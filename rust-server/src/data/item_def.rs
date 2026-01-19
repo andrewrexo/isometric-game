@@ -64,12 +64,26 @@ impl EquipmentSlot {
 pub struct EquipmentStats {
     #[serde(default)]
     pub slot_type: EquipmentSlot,
+
+    /// Attack level required to equip (for weapons)
     #[serde(default)]
-    pub level_required: i32,
+    pub attack_level_required: i32,
+
+    /// Defence level required to equip (for armor)
     #[serde(default)]
-    pub damage_bonus: i32,
+    pub defence_level_required: i32,
+
+    /// Attack bonus (accuracy) - affects hit chance
     #[serde(default)]
-    pub defense_bonus: i32,
+    pub attack_bonus: i32,
+
+    /// Strength bonus - affects max hit damage
+    #[serde(default)]
+    pub strength_bonus: i32,
+
+    /// Defence bonus - affects chance to avoid hits
+    #[serde(default)]
+    pub defence_bonus: i32,
 }
 
 // ============================================================================

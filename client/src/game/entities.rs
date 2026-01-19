@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::render::animation::{PlayerAnimation, AnimationState};
+use super::skills::Skills;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
@@ -107,9 +108,7 @@ pub struct Player {
     pub max_hp: i32,
     pub mp: i32,
     pub max_mp: i32,
-    pub level: i32,
-    pub exp: i32,
-    pub exp_to_next_level: i32,
+    pub skills: Skills,
 
     // Death state
     pub is_dead: bool,
@@ -152,13 +151,11 @@ impl Player {
             vel_y: 0.0,
             direction: Direction::Down,
             is_moving: false,
-            hp: 100,
-            max_hp: 100,
+            hp: 10,
+            max_hp: 10,
             mp: 50,
             max_mp: 50,
-            level: 1,
-            exp: 0,
-            exp_to_next_level: 100,
+            skills: Skills::new(),
             is_dead: false,
             death_time: 0.0,
             gender,
@@ -181,6 +178,11 @@ impl Player {
         self.is_dead = true;
         self.death_time = macroquad::time::get_time();
         self.hp = 0;
+    }
+
+    /// Get the combat level (calculated from skills)
+    pub fn combat_level(&self) -> i32 {
+        self.skills.combat_level()
     }
 
     pub fn respawn(&mut self, x: f32, y: f32, hp: i32) {

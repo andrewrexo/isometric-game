@@ -154,16 +154,17 @@ pub enum ServerMessage {
         y: i32,
         hp: i32,
     },
-    ExpGained {
+    SkillXp {
         player_id: String,
-        amount: i32,
-        total_exp: i32,
-        exp_to_next_level: i32,
+        skill: String,
+        xp_gained: i64,
+        total_xp: i64,
+        level: i32,
     },
-    LevelUp {
+    SkillLevelUp {
         player_id: String,
+        skill: String,
         new_level: i32,
-        new_max_hp: i32,
     },
     ItemDropped {
         id: String,
@@ -345,9 +346,11 @@ pub struct ClientItemDef {
     pub sellable: bool,
     // Equipment-specific fields (None for non-equipment items)
     pub equipment_slot: Option<String>,
-    pub level_required: Option<i32>,
-    pub damage_bonus: Option<i32>,
-    pub defense_bonus: Option<i32>,
+    pub attack_level_required: Option<i32>,
+    pub defence_level_required: Option<i32>,
+    pub attack_bonus: Option<i32>,
+    pub strength_bonus: Option<i32>,
+    pub defence_bonus: Option<i32>,
 }
 
 /// A dialogue choice for branching dialogue
@@ -428,8 +431,8 @@ impl ServerMessage {
             ServerMessage::NpcRespawned { .. } => "npcRespawned",
             ServerMessage::PlayerDied { .. } => "playerDied",
             ServerMessage::PlayerRespawned { .. } => "playerRespawned",
-            ServerMessage::ExpGained { .. } => "expGained",
-            ServerMessage::LevelUp { .. } => "levelUp",
+            ServerMessage::SkillXp { .. } => "skillXp",
+            ServerMessage::SkillLevelUp { .. } => "skillLevelUp",
             ServerMessage::ItemDropped { .. } => "itemDropped",
             ServerMessage::ItemPickedUp { .. } => "itemPickedUp",
             ServerMessage::ItemDespawned { .. } => "itemDespawned",
@@ -521,9 +524,10 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     pmap.push((Value::String("velY".into()), Value::Integer((p.vel_y as i64).into())));
                     pmap.push((Value::String("hp".into()), Value::Integer((p.hp as i64).into())));
                     pmap.push((Value::String("maxHp".into()), Value::Integer((p.max_hp as i64).into())));
-                    pmap.push((Value::String("level".into()), Value::Integer((p.level as i64).into())));
-                    pmap.push((Value::String("exp".into()), Value::Integer((p.exp as i64).into())));
-                    pmap.push((Value::String("expToNextLevel".into()), Value::Integer((p.exp_to_next_level as i64).into())));
+                    pmap.push((Value::String("combatLevel".into()), Value::Integer((p.combat_level as i64).into())));
+                    // Individual skill levels
+                    pmap.push((Value::String("hitpointsLevel".into()), Value::Integer((p.hitpoints_level as i64).into())));
+                    pmap.push((Value::String("combatSkillLevel".into()), Value::Integer((p.combat_skill_level as i64).into())));
                     pmap.push((Value::String("gold".into()), Value::Integer((p.gold as i64).into())));
                     pmap.push((Value::String("gender".into()), Value::String(p.gender.clone().into())));
                     pmap.push((Value::String("skin".into()), Value::String(p.skin.clone().into())));
@@ -763,11 +767,12 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("hp".into()), Value::Integer((*hp as i64).into())));
             Value::Map(map)
         }
-        ServerMessage::ExpGained {
+        ServerMessage::SkillXp {
             player_id,
-            amount,
-            total_exp,
-            exp_to_next_level,
+            skill,
+            xp_gained,
+            total_xp,
+            level,
         } => {
             let mut map = Vec::new();
             map.push((
@@ -775,36 +780,40 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                 Value::String(player_id.clone().into()),
             ));
             map.push((
-                Value::String("amount".into()),
-                Value::Integer((*amount as i64).into()),
+                Value::String("skill".into()),
+                Value::String(skill.clone().into()),
             ));
             map.push((
-                Value::String("total_exp".into()),
-                Value::Integer((*total_exp as i64).into()),
+                Value::String("xp_gained".into()),
+                Value::Integer((*xp_gained).into()),
             ));
             map.push((
-                Value::String("exp_to_next_level".into()),
-                Value::Integer((*exp_to_next_level as i64).into()),
+                Value::String("total_xp".into()),
+                Value::Integer((*total_xp).into()),
+            ));
+            map.push((
+                Value::String("level".into()),
+                Value::Integer((*level as i64).into()),
             ));
             Value::Map(map)
         }
-        ServerMessage::LevelUp {
+        ServerMessage::SkillLevelUp {
             player_id,
+            skill,
             new_level,
-            new_max_hp,
         } => {
             let mut map = Vec::new();
             map.push((
                 Value::String("player_id".into()),
                 Value::String(player_id.clone().into()),
+            ));
+            map.push((
+                Value::String("skill".into()),
+                Value::String(skill.clone().into()),
             ));
             map.push((
                 Value::String("new_level".into()),
                 Value::Integer((*new_level as i64).into()),
-            ));
-            map.push((
-                Value::String("new_max_hp".into()),
-                Value::Integer((*new_max_hp as i64).into()),
             ));
             Value::Map(map)
         }
@@ -1077,14 +1086,20 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     if let Some(ref slot) = i.equipment_slot {
                         imap.push((Value::String("equipment_slot".into()), Value::String(slot.clone().into())));
                     }
-                    if let Some(level) = i.level_required {
-                        imap.push((Value::String("level_required".into()), Value::Integer((level as i64).into())));
+                    if let Some(level) = i.attack_level_required {
+                        imap.push((Value::String("attack_level_required".into()), Value::Integer((level as i64).into())));
                     }
-                    if let Some(dmg) = i.damage_bonus {
-                        imap.push((Value::String("damage_bonus".into()), Value::Integer((dmg as i64).into())));
+                    if let Some(level) = i.defence_level_required {
+                        imap.push((Value::String("defence_level_required".into()), Value::Integer((level as i64).into())));
                     }
-                    if let Some(def) = i.defense_bonus {
-                        imap.push((Value::String("defense_bonus".into()), Value::Integer((def as i64).into())));
+                    if let Some(bonus) = i.attack_bonus {
+                        imap.push((Value::String("attack_bonus".into()), Value::Integer((bonus as i64).into())));
+                    }
+                    if let Some(bonus) = i.strength_bonus {
+                        imap.push((Value::String("strength_bonus".into()), Value::Integer((bonus as i64).into())));
+                    }
+                    if let Some(def) = i.defence_bonus {
+                        imap.push((Value::String("defence_bonus".into()), Value::Integer((def as i64).into())));
                     }
                     Value::Map(imap)
                 })

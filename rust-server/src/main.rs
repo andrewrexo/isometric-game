@@ -35,6 +35,7 @@ mod npc;
 mod protocol;
 mod quest;
 mod shop;
+mod skills;
 mod tilemap;
 mod world;
 
@@ -550,7 +551,7 @@ async fn list_characters(
             let char_infos: Vec<CharacterInfo> = chars.into_iter().map(|c| CharacterInfo {
                 id: c.id,
                 name: c.name,
-                level: c.level,
+                level: c.skills.combat_level(),
                 gender: c.gender,
                 skin: c.skin,
                 played_time: c.played_time,
@@ -659,7 +660,7 @@ async fn create_character(
                     character: Some(CharacterInfo {
                         id: char_data.id,
                         name: char_data.name,
-                        level: char_data.level,
+                        level: char_data.skills.combat_level(),
                         gender: char_data.gender,
                         skin: char_data.skin,
                         played_time: char_data.played_time,
@@ -888,10 +889,7 @@ async fn matchmake_join_or_create(
         character_data.x as i32,
         character_data.y as i32,
         character_data.hp,
-        character_data.max_hp,
-        character_data.level,
-        character_data.exp,
-        character_data.exp_to_next_level,
+        character_data.skills.clone(),
         character_data.gold,
         &character_data.inventory_json,
         &character_data.gender,
@@ -1197,10 +1195,7 @@ async fn handle_socket(
                 save_data.x,
                 save_data.y,
                 save_data.hp,
-                save_data.max_hp,
-                save_data.level,
-                save_data.exp,
-                save_data.exp_to_next_level,
+                &save_data.skills,
                 save_data.gold,
                 &save_data.inventory_json,
                 save_data.equipped_head.as_deref(),
@@ -1382,10 +1377,7 @@ async fn main() {
                             save_data.x,
                             save_data.y,
                             save_data.hp,
-                            save_data.max_hp,
-                            save_data.level,
-                            save_data.exp,
-                            save_data.exp_to_next_level,
+                            &save_data.skills,
                             save_data.gold,
                             &save_data.inventory_json,
                             save_data.equipped_head.as_deref(),

@@ -15,13 +15,13 @@ impl NpcType {
         match self {
             NpcType::Slime => NpcStats {
                 name: "Slime",
-                max_hp: 50,
-                damage: 5,
+                max_hp: 15,
+                damage: 2,
                 attack_range: 1,      // Must be adjacent
                 aggro_range: 5,       // Aggro within 5 tiles
                 chase_range: 8,       // Chase up to 8 tiles from spawn
                 move_cooldown_ms: 500, // Moves every 500ms (2 tiles/sec, slower than player)
-                attack_cooldown_ms: 1500,
+                attack_cooldown_ms: 2000,
                 respawn_time_ms: 10000,
                 exp_reward: 25,
             },

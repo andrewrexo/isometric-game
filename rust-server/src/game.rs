@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::chunk::ChunkCoord;
 use crate::entity::{EntityPrototype, EntityRegistry};
 use crate::data::ItemRegistry;
+use crate::skills::{Skills, SkillType, calculate_hit, calculate_max_hit, roll_damage};
 use crate::item::{self, GroundItem, Inventory, GOLD_ITEM_ID};
 use crate::npc::{Npc, NpcType, NpcUpdate};
 use crate::protocol::{ServerMessage, QuestObjectiveData};
@@ -30,7 +31,6 @@ const STARTING_HP: i32 = 100;
 // Combat constants
 const ATTACK_RANGE: i32 = 1; // Maximum distance to attack (in tiles)
 const ATTACK_COOLDOWN_MS: u64 = 700; // Slightly shorter than client (800ms) to account for network latency
-const BASE_DAMAGE: i32 = 10; // Base damage per attack
 
 // ============================================================================
 // Player Save Data (for database persistence)
@@ -41,10 +41,7 @@ pub struct PlayerSaveData {
     pub x: f32,
     pub y: f32,
     pub hp: i32,
-    pub max_hp: i32,
-    pub level: i32,
-    pub exp: i32,
-    pub exp_to_next_level: i32,
+    pub skills: Skills,
     pub gold: i32,
     pub inventory_json: String,
     pub gender: String,
@@ -133,10 +130,7 @@ pub struct Player {
     pub last_move_tick: u64, // Tick-based movement cooldown
     pub direction: Direction,
     pub hp: i32,
-    pub max_hp: i32,
-    pub level: i32,
-    pub exp: i32,
-    pub exp_to_next_level: i32,
+    pub skills: Skills, // Combat skills (Hitpoints determines max HP)
     pub active: bool, // Whether WebSocket is connected
     pub target_id: Option<String>, // Currently targeted entity (player or NPC)
     pub last_attack_time: u64, // Timestamp of last attack (ms)
@@ -163,14 +157,9 @@ pub struct Player {
 
 const PLAYER_RESPAWN_TIME_MS: u64 = 5000; // 5 seconds to respawn
 
-/// Calculate EXP required for a given level
-fn exp_for_level(level: i32) -> i32 {
-    // Simple formula: 100 * level^1.5
-    (100.0 * (level as f32).powf(1.5)) as i32
-}
-
 impl Player {
     pub fn new(id: &str, name: &str, spawn_x: i32, spawn_y: i32, gender: &str, skin: &str) -> Self {
+        let skills = Skills::new(); // HP 10, Attack/Strength/Defence 1
         Self {
             id: id.to_string(),
             name: name.to_string(),
@@ -182,11 +171,8 @@ impl Player {
             move_dy: 0,
             last_move_tick: 0,
             direction: Direction::Down,
-            hp: STARTING_HP,
-            max_hp: STARTING_HP,
-            level: 1,
-            exp: 0,
-            exp_to_next_level: exp_for_level(1),
+            hp: skills.hitpoints.level, // HP = Hitpoints level
+            skills,
             active: false,
             target_id: None,
             last_attack_time: 0,
@@ -209,6 +195,16 @@ impl Player {
         }
     }
 
+    /// Max HP is determined by Hitpoints skill level
+    pub fn max_hp(&self) -> i32 {
+        self.skills.hitpoints.level
+    }
+
+    /// Combat level calculated from all combat skills
+    pub fn combat_level(&self) -> i32 {
+        self.skills.combat_level()
+    }
+
     /// Get all equipped item IDs for stat calculation
     fn all_equipped(&self) -> [&Option<String>; 9] {
         [
@@ -224,14 +220,14 @@ impl Player {
         ]
     }
 
-    /// Calculate total damage bonus from equipped items
-    pub fn damage_bonus(&self, item_registry: &ItemRegistry) -> i32 {
+    /// Calculate total attack bonus (accuracy) from equipped items
+    pub fn attack_bonus(&self, item_registry: &ItemRegistry) -> i32 {
         let mut bonus = 0;
         for equipped in self.all_equipped() {
             if let Some(item_id) = equipped {
                 if let Some(def) = item_registry.get(item_id) {
                     if let Some(equip) = &def.equipment {
-                        bonus += equip.damage_bonus;
+                        bonus += equip.attack_bonus;
                     }
                 }
             }
@@ -239,14 +235,14 @@ impl Player {
         bonus
     }
 
-    /// Calculate total defense bonus from equipped items
-    pub fn defense_bonus(&self, item_registry: &ItemRegistry) -> i32 {
+    /// Calculate total strength bonus (max hit) from equipped items
+    pub fn strength_bonus(&self, item_registry: &ItemRegistry) -> i32 {
         let mut bonus = 0;
         for equipped in self.all_equipped() {
             if let Some(item_id) = equipped {
                 if let Some(def) = item_registry.get(item_id) {
                     if let Some(equip) = &def.equipment {
-                        bonus += equip.defense_bonus;
+                        bonus += equip.strength_bonus;
                     }
                 }
             }
@@ -254,24 +250,55 @@ impl Player {
         bonus
     }
 
-    /// Award EXP and handle level up. Returns true if leveled up.
-    pub fn award_exp(&mut self, amount: i32) -> bool {
-        self.exp += amount;
-
-        // Check for level up
-        if self.exp >= self.exp_to_next_level {
-            self.exp -= self.exp_to_next_level;
-            self.level += 1;
-            self.exp_to_next_level = exp_for_level(self.level);
-
-            // Level up bonuses: +10 max HP, full heal
-            self.max_hp += 10;
-            self.hp = self.max_hp;
-
-            tracing::info!("{} leveled up to {}! (Max HP: {})", self.name, self.level, self.max_hp);
-            return true;
+    /// Calculate total defence bonus from equipped items
+    pub fn defence_bonus(&self, item_registry: &ItemRegistry) -> i32 {
+        let mut bonus = 0;
+        for equipped in self.all_equipped() {
+            if let Some(item_id) = equipped {
+                if let Some(def) = item_registry.get(item_id) {
+                    if let Some(equip) = &def.equipment {
+                        bonus += equip.defence_bonus;
+                    }
+                }
+            }
         }
-        false
+        bonus
+    }
+
+    /// Award combat XP based on damage dealt.
+    /// Combat skill gets 4 XP per damage.
+    /// Hitpoints gets 1.33 XP per damage (1/3 of combat rate).
+    /// Returns a vector of (SkillType, xp_gained, total_xp, level, leveled_up) for skills that gained XP.
+    pub fn award_combat_xp(&mut self, damage: i32) -> Vec<(SkillType, i64, i64, i32, bool)> {
+        use crate::skills::{COMBAT_XP_PER_DAMAGE, HITPOINTS_XP_PER_DAMAGE};
+
+        let mut results = Vec::new();
+
+        // Combat XP = 4 per damage (full amount to single Combat skill)
+        let combat_xp = (damage as f64 * COMBAT_XP_PER_DAMAGE) as i64;
+        // Hitpoints XP = 1.33 per damage
+        let hp_xp = (damage as f64 * HITPOINTS_XP_PER_DAMAGE) as i64;
+
+        // Award Combat XP
+        let combat_leveled = self.skills.combat.add_xp(combat_xp);
+        if combat_leveled {
+            tracing::info!("{} leveled up Combat to {}!", self.name, self.skills.combat.level);
+        }
+        results.push((SkillType::Combat, combat_xp, self.skills.combat.xp, self.skills.combat.level, combat_leveled));
+
+        // Award Hitpoints XP
+        let old_hp_level = self.skills.hitpoints.level;
+        let hp_leveled = self.skills.hitpoints.add_xp(hp_xp);
+        if hp_leveled {
+            // Hitpoints level up means max HP increased
+            let new_max = self.skills.hitpoints.level;
+            tracing::info!("{} leveled up Hitpoints to {}! (Max HP: {})", self.name, new_max, new_max);
+            // Heal the difference (new levels worth of HP)
+            self.hp += new_max - old_hp_level;
+        }
+        results.push((SkillType::Hitpoints, hp_xp, self.skills.hitpoints.xp, self.skills.hitpoints.level, hp_leveled));
+
+        results
     }
 
     pub fn is_alive(&self) -> bool {
@@ -294,7 +321,7 @@ impl Player {
     pub fn respawn(&mut self) {
         self.x = self.spawn_x;
         self.y = self.spawn_y;
-        self.hp = self.max_hp;
+        self.hp = self.max_hp(); // Use method since max_hp is now derived from skills
         self.is_dead = false;
         self.death_time = 0;
         self.target_id = None;
@@ -312,9 +339,10 @@ pub struct PlayerUpdate {
     pub vel_y: i32,
     pub hp: i32,
     pub max_hp: i32,
-    pub level: i32,
-    pub exp: i32,
-    pub exp_to_next_level: i32,
+    pub combat_level: i32,
+    // Individual skill levels
+    pub hitpoints_level: i32,
+    pub combat_skill_level: i32,
     pub gold: i32,
     // Character appearance
     pub gender: String,
@@ -507,10 +535,7 @@ impl GameRoom {
         x: i32,
         y: i32,
         hp: i32,
-        max_hp: i32,
-        level: i32,
-        exp: i32,
-        exp_to_next_level: i32,
+        skills: Skills,
         gold: i32,
         inventory_json: &str,
         gender: &str,
@@ -530,11 +555,8 @@ impl GameRoom {
         let mut player = Player::new(player_id, name, x, y, gender, skin);
 
         // Restore saved stats
-        player.hp = hp;
-        player.max_hp = max_hp;
-        player.level = level;
-        player.exp = exp;
-        player.exp_to_next_level = exp_to_next_level;
+        player.hp = hp.min(skills.hitpoints.level); // Cap HP at max (hitpoints level)
+        player.skills = skills;
         player.inventory.gold = gold;
         player.equipped_head = equipped_head;
         player.equipped_body = equipped_body;
@@ -574,8 +596,8 @@ impl GameRoom {
         }
 
         tracing::info!(
-            "Restored player {} at ({}, {}) with {} HP, level {}, {} gold, appearance: {} {}",
-            name, x, y, hp, level, gold, gender, skin
+            "Restored player {} at ({}, {}) with {} HP, combat level {}, {} gold, appearance: {} {}",
+            name, x, y, hp, player.combat_level(), gold, gender, skin
         );
 
         players.insert(player_id.to_string(), player);
@@ -616,10 +638,7 @@ impl GameRoom {
                 x: p.x as f32,
                 y: p.y as f32,
                 hp: p.hp,
-                max_hp: p.max_hp,
-                level: p.level,
-                exp: p.exp,
-                exp_to_next_level: p.exp_to_next_level,
+                skills: p.skills.clone(),
                 gold: p.inventory.gold,
                 inventory_json,
                 gender: p.gender.clone(),
@@ -884,42 +903,38 @@ impl GameRoom {
                 }
             }
             "/setlevel" => {
-                // /setlevel <level>
+                // /setlevel <level> - Sets all combat skills to the given level
+                use crate::skills::Skill;
+
                 if parts.len() < 2 {
                     self.send_system_message(player_id, "Usage: /setlevel <level>").await;
                     return;
                 }
 
                 let level: i32 = match parts[1].parse() {
-                    Ok(l) if l >= 1 && l <= 100 => l,
+                    Ok(l) if l >= 1 && l <= 99 => l,
                     _ => {
-                        self.send_system_message(player_id, "Level must be between 1 and 100").await;
+                        self.send_system_message(player_id, "Level must be between 1 and 99").await;
                         return;
                     }
                 };
 
-                // Update player level and get new max_hp
-                let new_max_hp = {
+                // Update combat skills and heal to full
+                {
                     let mut players = self.players.write().await;
                     if let Some(player) = players.get_mut(player_id) {
-                        player.level = level;
-                        player.max_hp = 100 + (level - 1) * 10; // Same formula as level_up()
-                        player.hp = player.max_hp; // Heal to full
-                        tracing::info!("Player {} set level to {}", player_id, level);
-                        player.max_hp
+                        player.skills.hitpoints = Skill::new(level);
+                        player.skills.combat = Skill::new(level);
+                        player.hp = player.max_hp(); // Heal to full
+                        tracing::info!("Player {} set all skills to level {}", player_id, level);
                     } else {
                         return;
                     }
                 };
 
-                self.send_system_message(player_id, &format!("Level set to {}", level)).await;
-
-                // Broadcast the level change to all players
-                self.broadcast(ServerMessage::LevelUp {
-                    player_id: player_id.to_string(),
-                    new_level: level,
-                    new_max_hp,
-                }).await;
+                let combat_level = (level + level) / 2; // (HP + Combat) / 2
+                self.send_system_message(player_id, &format!("Skills set to level {} (Combat Level: {})", level, combat_level)).await;
+                // TODO: Phase 5 will add proper skill level broadcast messages
             }
             "/help" => {
                 if is_admin {
@@ -1006,7 +1021,7 @@ impl GameRoom {
                     if let Some(name) = target_name {
                         // Find player by name
                         if let Some(player) = players.values_mut().find(|p| p.name.eq_ignore_ascii_case(name)) {
-                            player.hp = player.max_hp;
+                            player.hp = player.max_hp();
                             player.is_dead = false;
                             Some(player.name.clone())
                         } else {
@@ -1015,7 +1030,7 @@ impl GameRoom {
                     } else {
                         // Heal self
                         if let Some(player) = players.get_mut(player_id) {
-                            player.hp = player.max_hp;
+                            player.hp = player.max_hp();
                             player.is_dead = false;
                             Some(player.name.clone())
                         } else {
@@ -1115,8 +1130,9 @@ impl GameRoom {
             .unwrap()
             .as_millis() as u64;
 
-        // Get attacker info including damage bonus from equipment
-        let (attacker_name, attacker_x, attacker_y, attacker_dir, last_attack, damage_bonus) = {
+        // Get attacker info including combat stats
+        let (attacker_name, attacker_x, attacker_y, attacker_dir, last_attack,
+             combat_level, attack_bonus, strength_bonus) = {
             let players = self.players.read().await;
             let player = match players.get(player_id) {
                 Some(p) => p,
@@ -1131,12 +1147,17 @@ impl GameRoom {
                 return;
             }
 
-            let dmg_bonus = player.damage_bonus(&self.item_registry);
-            (player.name.clone(), player.x, player.y, player.direction, player.last_attack_time, dmg_bonus)
+            let atk_bonus = player.attack_bonus(&self.item_registry);
+            let str_bonus = player.strength_bonus(&self.item_registry);
+            (
+                player.name.clone(),
+                player.x, player.y, player.direction,
+                player.last_attack_time,
+                player.skills.combat.level,
+                atk_bonus,
+                str_bonus,
+            )
         };
-
-        // Calculate base damage with equipment bonus
-        let base_attack_damage = BASE_DAMAGE + damage_bonus;
 
         // Check cooldown
         if current_time - last_attack < ATTACK_COOLDOWN_MS {
@@ -1208,23 +1229,43 @@ impl GameRoom {
             }
         }
 
-        // Apply damage to target
+        // Apply damage to target using hit/miss mechanics
+        // 1. Roll attack vs defence to determine if we hit
+        // 2. If hit, calculate max hit from strength and roll damage
         let (target_hp, target_name, target_died, actual_damage) = if is_npc {
-            // NPCs don't have defense from equipment
+            // NPCs use their level as both attack and defence level (no equipment bonuses)
             let mut npcs = self.npcs.write().await;
             if let Some(npc) = npcs.get_mut(&target_id) {
-                let died = npc.take_damage(base_attack_damage, current_time);
-                let name = npc.name();
-                tracing::info!(
-                    "{} deals {} damage to {} (HP: {})",
-                    attacker_name, base_attack_damage, name, npc.hp
-                );
-                (npc.hp, name, died, base_attack_damage)
+                // NPC's defence = level, no equipment bonus
+                let npc_defence_level = npc.level;
+                let npc_defence_bonus = 0;
+
+                // Check if attack hits (combat_level used for both attack and strength)
+                if !calculate_hit(combat_level, attack_bonus, npc_defence_level, npc_defence_bonus) {
+                    // Miss - deal 0 damage
+                    let name = npc.name();
+                    tracing::info!(
+                        "{} misses {} (atk {} + {} vs def {} + {})",
+                        attacker_name, name, combat_level, attack_bonus, npc_defence_level, npc_defence_bonus
+                    );
+                    (npc.hp, name, false, 0)
+                } else {
+                    // Hit - calculate and apply damage
+                    let max_hit = calculate_max_hit(combat_level, strength_bonus);
+                    let damage = roll_damage(max_hit);
+                    let died = npc.take_damage(damage, current_time);
+                    let name = npc.name();
+                    tracing::info!(
+                        "{} hits {} for {} damage (max: {}, HP: {})",
+                        attacker_name, name, damage, max_hit, npc.hp
+                    );
+                    (npc.hp, name, died, damage)
+                }
             } else {
                 return;
             }
         } else {
-            // Players can have defense from equipment
+            // Players have defence from skills and equipment
             let mut players = self.players.write().await;
             if let Some(target) = players.get_mut(&target_id) {
                 if target.is_dead {
@@ -1234,20 +1275,36 @@ impl GameRoom {
                 if target.is_god_mode {
                     return;
                 }
-                // Calculate actual damage after defense (minimum 1 damage)
-                let defense = target.defense_bonus(&self.item_registry);
-                let actual_dmg = (base_attack_damage - defense).max(1);
-                target.hp = (target.hp - actual_dmg).max(0);
-                let name = target.name.clone();
-                let died = target.hp <= 0;
-                if died {
-                    target.die(current_time);
+
+                // Get target's defence stats (uses combat level for defence)
+                let target_combat_level = target.skills.combat.level;
+                let target_defence_bonus = target.defence_bonus(&self.item_registry);
+
+                // Check if attack hits
+                if !calculate_hit(combat_level, attack_bonus, target_combat_level, target_defence_bonus) {
+                    // Miss - deal 0 damage
+                    let name = target.name.clone();
+                    tracing::info!(
+                        "{} misses {} (cmb {} + {} vs cmb {} + {})",
+                        attacker_name, name, combat_level, attack_bonus, target_combat_level, target_defence_bonus
+                    );
+                    (target.hp, name, false, 0)
+                } else {
+                    // Hit - calculate and apply damage
+                    let max_hit = calculate_max_hit(combat_level, strength_bonus);
+                    let damage = roll_damage(max_hit);
+                    target.hp = (target.hp - damage).max(0);
+                    let name = target.name.clone();
+                    let died = target.hp <= 0;
+                    if died {
+                        target.die(current_time);
+                    }
+                    tracing::info!(
+                        "{} hits {} for {} damage (max: {}, HP: {})",
+                        attacker_name, name, damage, max_hit, target.hp
+                    );
+                    (target.hp, name, died, damage)
                 }
-                tracing::info!(
-                    "{} deals {} damage to {} (HP: {}) [base: {}, defense: {}]",
-                    attacker_name, actual_dmg, name, target.hp, base_attack_damage, defense
-                );
-                (target.hp, name, died, actual_dmg)
             } else {
                 return;
             }
@@ -1298,42 +1355,42 @@ impl GameRoom {
                     npc_type.stats().exp_reward * npc_level
                 };
 
-                // Award EXP to killer
-                let _leveled_up = if exp_reward > 0 {
+                // Award combat XP to killer based on damage dealt
+                // Use exp_reward as a proxy for "damage" in XP calculation
+                let xp_results: Option<Vec<(SkillType, i64, i64, i32, bool)>> = if exp_reward > 0 {
                     let mut players = self.players.write().await;
                     if let Some(killer) = players.get_mut(player_id) {
-                        let leveled = killer.award_exp(exp_reward);
-
-                        // Send ExpGained message
-                        let exp_msg = ServerMessage::ExpGained {
-                            player_id: player_id.to_string(),
-                            amount: exp_reward,
-                            total_exp: killer.exp,
-                            exp_to_next_level: killer.exp_to_next_level,
-                        };
-                        drop(players);
-                        self.broadcast(exp_msg).await;
-
-                        if leveled {
-                            // Get updated player info for LevelUp message
-                            let players = self.players.read().await;
-                            if let Some(killer) = players.get(player_id) {
-                                let level_msg = ServerMessage::LevelUp {
-                                    player_id: player_id.to_string(),
-                                    new_level: killer.level,
-                                    new_max_hp: killer.max_hp,
-                                };
-                                drop(players);
-                                self.broadcast(level_msg).await;
-                            }
-                        }
-                        leveled
+                        Some(killer.award_combat_xp(exp_reward))
                     } else {
-                        false
+                        None
                     }
                 } else {
-                    false
+                    None
                 };
+
+                // Send skill XP and level-up messages (after releasing write lock)
+                if let Some(results) = xp_results {
+                    for (skill_type, xp_gained, total_xp, level, leveled_up) in results {
+                        // Send XP gain message
+                        self.send_to_player(player_id, ServerMessage::SkillXp {
+                            player_id: player_id.to_string(),
+                            skill: skill_type.as_str().to_string(),
+                            xp_gained,
+                            total_xp,
+                            level,
+                        }).await;
+
+                        // Send level-up message if applicable
+                        if leveled_up {
+                            tracing::info!("Player {} leveled up {} to {}", player_id, skill_type.as_str(), level);
+                            self.broadcast(ServerMessage::SkillLevelUp {
+                                player_id: player_id.to_string(),
+                                skill: skill_type.as_str().to_string(),
+                                new_level: level,
+                            }).await;
+                        }
+                    }
+                }
 
                 // Broadcast NPC death
                 let death_msg = ServerMessage::NpcDied {
@@ -2082,7 +2139,7 @@ impl GameRoom {
                         use crate::data::UseEffect;
                         match &def.use_effect {
                             Some(UseEffect::Heal { amount }) => {
-                                player.hp = (player.hp + amount).min(player.max_hp);
+                                player.hp = (player.hp + amount).min(player.max_hp());
                                 format!("heal:{}", amount)
                             }
                             Some(UseEffect::RestoreMana { amount }) => {
@@ -2167,15 +2224,15 @@ impl GameRoom {
             _ => return,
         };
 
-        // Check level requirement
-        if player.level < recipe.level_required {
+        // Check level requirement (use combat level for now, will add crafting skill later)
+        if player.combat_level() < recipe.level_required {
             drop(players);
             self.send_to_player(
                 player_id,
                 ServerMessage::CraftResult {
                     success: false,
                     recipe_id: recipe_id.to_string(),
-                    error: Some(format!("Requires level {}", recipe.level_required)),
+                    error: Some(format!("Requires combat level {}", recipe.level_required)),
                     items_gained: vec![],
                 },
             )
@@ -2621,7 +2678,7 @@ impl GameRoom {
             match player.inventory.slots.get(slot_idx) {
                 Some(Some(slot)) => Some((
                     slot.item_id.clone(),
-                    player.level,
+                    player.skills.combat.level,
                     player.equipped_head.clone(),
                     player.equipped_body.clone(),
                     player.equipped_weapon.clone(),
@@ -2636,7 +2693,7 @@ impl GameRoom {
             }
         };
 
-        let (item_id, player_level, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace, equipped_belt) = match item_info {
+        let (item_id, combat_level, equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet, equipped_ring, equipped_gloves, equipped_necklace, equipped_belt) = match item_info {
             Some(info) => info,
             None => {
                 self.send_to_player(player_id, ServerMessage::EquipResult {
@@ -2679,13 +2736,15 @@ impl GameRoom {
 
         let slot_type_str = equip_slot.as_str().to_string();
 
-        // Check level requirement
-        if player_level < equip_stats.level_required {
+        // Check skill level requirements
+        // Both attack and defence requirements are checked against the unified combat level
+        let level_required = equip_stats.attack_level_required.max(equip_stats.defence_level_required);
+        if level_required > 0 && combat_level < level_required {
             self.send_to_player(player_id, ServerMessage::EquipResult {
                 success: false,
                 slot_type: slot_type_str,
                 item_id: None,
-                error: Some(format!("Requires level {}", equip_stats.level_required)),
+                error: Some(format!("Requires Combat level {}", level_required)),
             }).await;
             return;
         }
@@ -3131,10 +3190,10 @@ impl GameRoom {
                     vel_x: player.move_dx,
                     vel_y: player.move_dy,
                     hp: player.hp,
-                    max_hp: player.max_hp,
-                    level: player.level,
-                    exp: player.exp,
-                    exp_to_next_level: player.exp_to_next_level,
+                    max_hp: player.max_hp(),
+                    combat_level: player.combat_level(),
+                    hitpoints_level: player.skills.hitpoints.level,
+                    combat_skill_level: player.skills.combat.level,
                     gold: player.inventory.gold,
                     gender: player.gender.clone(),
                     skin: player.skin.clone(),
@@ -3163,7 +3222,7 @@ impl GameRoom {
 
         let mut npc_updates = Vec::new();
         let mut respawned_npcs = Vec::new();
-        let mut npc_attacks: Vec<(String, String, i32)> = Vec::new(); // (npc_id, target_id, damage)
+        let mut npc_attacks: Vec<(String, String, i32, i32)> = Vec::new(); // (npc_id, target_id, npc_level, max_hit)
         {
             let mut npcs = self.npcs.write().await;
 
@@ -3191,8 +3250,9 @@ impl GameRoom {
                     .collect();
 
                 // Run NPC AI update
-                if let Some((target_id, damage)) = npc.update(delta_time, &player_positions, &other_npc_positions, current_time) {
-                    npc_attacks.push((npc.id.clone(), target_id, damage));
+                if let Some((target_id, max_hit)) = npc.update(delta_time, &player_positions, &other_npc_positions, current_time) {
+                    // Store NPC level and max hit for hit/miss calculation during attack processing
+                    npc_attacks.push((npc.id.clone(), target_id, npc.level, max_hit));
                 }
 
                 // Update position in collision map after movement
@@ -3205,9 +3265,9 @@ impl GameRoom {
             }
         }
 
-        // Process NPC attacks on players
-        for (npc_id, target_id, damage) in npc_attacks {
-            let (target_hp, target_x, target_y, died): (i32, f32, f32, bool) = {
+        // Process NPC attacks on players using hit/miss mechanics
+        for (npc_id, target_id, npc_level, max_hit) in npc_attacks {
+            let (target_hp, target_x, target_y, died, damage): (i32, f32, f32, bool, i32) = {
                 let mut players = self.players.write().await;
                 if let Some(target) = players.get_mut(&target_id) {
                     if target.is_dead {
@@ -3217,21 +3277,41 @@ impl GameRoom {
                     if target.is_god_mode {
                         continue;
                     }
-                    target.hp = (target.hp - damage).max(0);
-                    let died = target.hp <= 0;
-                    if died {
-                        target.die(current_time);
+
+                    // NPC uses its level as attack level, no equipment bonuses
+                    let npc_attack_level = npc_level;
+                    let npc_attack_bonus = 0;
+
+                    // Player uses their combat skill level and equipment bonus
+                    let player_defence_level = target.skills.combat.level;
+                    let player_defence_bonus = target.defence_bonus(&self.item_registry);
+
+                    // Roll hit/miss
+                    if !calculate_hit(npc_attack_level, npc_attack_bonus, player_defence_level, player_defence_bonus) {
+                        // Miss - deal 0 damage
+                        tracing::debug!(
+                            "NPC {} misses {} (atk {} vs def {} + {})",
+                            npc_id, target_id, npc_attack_level, player_defence_level, player_defence_bonus
+                        );
+                        (target.hp, target.x as f32, target.y as f32, false, 0)
+                    } else {
+                        // Hit - roll damage and apply
+                        let damage = roll_damage(max_hit);
+                        target.hp = (target.hp - damage).max(0);
+                        let died = target.hp <= 0;
+                        if died {
+                            target.die(current_time);
+                        }
+                        tracing::debug!(
+                            "NPC {} hits {} for {} damage (max: {}, HP: {})",
+                            npc_id, target_id, damage, max_hit, target.hp
+                        );
+                        (target.hp, target.x as f32, target.y as f32, died, damage)
                     }
-                    (target.hp, target.x as f32, target.y as f32, died)
                 } else {
                     continue;
                 }
             };
-
-            tracing::debug!(
-                "NPC {} attacks {} for {} damage (HP: {})",
-                npc_id, target_id, damage, target_hp
-            );
 
             // Broadcast damage event
             self.broadcast(ServerMessage::DamageEvent {

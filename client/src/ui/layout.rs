@@ -50,8 +50,11 @@ pub enum UiElementId {
     MenuButtonCharacter,
     MenuButtonInventory,
     MenuButtonSocial,
-    MenuButtonMap,
+    MenuButtonSkills,
     MenuButtonSettings,
+
+    // Skills Panel
+    SkillSlot(usize),
 }
 
 /// A single interactive UI element with its bounds

@@ -7,13 +7,14 @@ animation_type = "blob"
 description = "A gelatinous creature that oozes through the forest."
 
 [slime.stats]
-max_hp = 50
-damage = 5
+level = 1
+max_hp = 15
+damage = 2
 attack_range = 1
 aggro_range = 5
 chase_range = 8
 move_cooldown_ms = 500
-attack_cooldown_ms = 1500
+attack_cooldown_ms = 2000
 respawn_time_ms = 10000
 
 [slime.rewards]

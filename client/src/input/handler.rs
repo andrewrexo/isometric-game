@@ -193,9 +193,10 @@ impl InputHandler {
                                     let can_equip = if let Some(ref equip) = item_def.equipment {
                                         // Check slot type matches target
                                         let slot_matches = equip.slot_type == *target_slot_type;
-                                        // Check level requirement
+                                        // Check level requirement - combat level covers all requirements
+                                        let level_required = equip.attack_level_required.max(equip.defence_level_required);
                                         let level_ok = state.get_local_player()
-                                            .map(|p| p.level >= equip.level_required)
+                                            .map(|p| p.skills.combat.level >= level_required)
                                             .unwrap_or(false);
                                         slot_matches && level_ok
                                     } else {
@@ -443,7 +444,7 @@ impl InputHandler {
                             state.ui_state.character_open = true;
                             state.ui_state.inventory_open = false;
                             state.ui_state.social_open = false;
-                            state.ui_state.map_open = false;
+                            state.ui_state.skills_open = false;
                         }
                         return commands;
                     }
@@ -455,7 +456,7 @@ impl InputHandler {
                             state.ui_state.inventory_open = true;
                             state.ui_state.character_open = false;
                             state.ui_state.social_open = false;
-                            state.ui_state.map_open = false;
+                            state.ui_state.skills_open = false;
                         }
                         return commands;
                     }
@@ -467,16 +468,16 @@ impl InputHandler {
                             state.ui_state.social_open = true;
                             state.ui_state.inventory_open = false;
                             state.ui_state.character_open = false;
-                            state.ui_state.map_open = false;
+                            state.ui_state.skills_open = false;
                         }
                         return commands;
                     }
-                    UiElementId::MenuButtonMap => {
-                        // Toggle map panel, close others if opening
-                        if state.ui_state.map_open {
-                            state.ui_state.map_open = false;
+                    UiElementId::MenuButtonSkills => {
+                        // Toggle skills panel, close others if opening
+                        if state.ui_state.skills_open {
+                            state.ui_state.skills_open = false;
                         } else {
-                            state.ui_state.map_open = true;
+                            state.ui_state.skills_open = true;
                             state.ui_state.inventory_open = false;
                             state.ui_state.character_open = false;
                             state.ui_state.social_open = false;
@@ -1481,11 +1482,11 @@ impl InputHandler {
         if is_key_pressed(KeyCode::Escape) {
             // Check if any panel is open and close it
             if state.ui_state.inventory_open || state.ui_state.character_open
-                || state.ui_state.social_open || state.ui_state.map_open {
+                || state.ui_state.social_open || state.ui_state.skills_open {
                 state.ui_state.inventory_open = false;
                 state.ui_state.character_open = false;
                 state.ui_state.social_open = false;
-                state.ui_state.map_open = false;
+                state.ui_state.skills_open = false;
             } else if state.selected_entity_id.is_some() {
                 commands.push(InputCommand::ClearTarget);
             } else {
@@ -1502,7 +1503,7 @@ impl InputHandler {
                 state.ui_state.inventory_open = true;
                 state.ui_state.character_open = false;
                 state.ui_state.social_open = false;
-                state.ui_state.map_open = false;
+                state.ui_state.skills_open = false;
             }
         }
 
