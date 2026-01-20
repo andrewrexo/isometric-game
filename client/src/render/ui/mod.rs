@@ -2,6 +2,7 @@
 
 pub mod common;
 pub mod inventory;
+pub mod gear;
 pub mod quick_slots;
 pub mod quest;
 pub mod dialogue;

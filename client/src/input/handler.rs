@@ -480,6 +480,7 @@ impl InputHandler {
                         } else {
                             state.ui_state.character_open = true;
                             state.ui_state.inventory_open = false;
+                            state.ui_state.gear_panel_open = false;
                             state.ui_state.social_open = false;
                             state.ui_state.skills_open = false;
                         }
@@ -491,6 +492,20 @@ impl InputHandler {
                             state.ui_state.inventory_open = false;
                         } else {
                             state.ui_state.inventory_open = true;
+                            state.ui_state.gear_panel_open = false;
+                            state.ui_state.character_open = false;
+                            state.ui_state.social_open = false;
+                            state.ui_state.skills_open = false;
+                        }
+                        return commands;
+                    }
+                    UiElementId::MenuButtonGear => {
+                        // Toggle gear panel, close others if opening
+                        if state.ui_state.gear_panel_open {
+                            state.ui_state.gear_panel_open = false;
+                        } else {
+                            state.ui_state.gear_panel_open = true;
+                            state.ui_state.inventory_open = false;
                             state.ui_state.character_open = false;
                             state.ui_state.social_open = false;
                             state.ui_state.skills_open = false;
@@ -504,6 +519,7 @@ impl InputHandler {
                         } else {
                             state.ui_state.social_open = true;
                             state.ui_state.inventory_open = false;
+                            state.ui_state.gear_panel_open = false;
                             state.ui_state.character_open = false;
                             state.ui_state.skills_open = false;
                         }
@@ -516,6 +532,7 @@ impl InputHandler {
                         } else {
                             state.ui_state.skills_open = true;
                             state.ui_state.inventory_open = false;
+                            state.ui_state.gear_panel_open = false;
                             state.ui_state.character_open = false;
                             state.ui_state.social_open = false;
                         }
@@ -1518,9 +1535,11 @@ impl InputHandler {
         // Escape key - close any open panel first, then clear target, then open escape menu
         if is_key_pressed(KeyCode::Escape) {
             // Check if any panel is open and close it
-            if state.ui_state.inventory_open || state.ui_state.character_open
-                || state.ui_state.social_open || state.ui_state.skills_open {
+            if state.ui_state.inventory_open || state.ui_state.gear_panel_open
+                || state.ui_state.character_open || state.ui_state.social_open
+                || state.ui_state.skills_open {
                 state.ui_state.inventory_open = false;
+                state.ui_state.gear_panel_open = false;
                 state.ui_state.character_open = false;
                 state.ui_state.social_open = false;
                 state.ui_state.skills_open = false;
@@ -1538,6 +1557,20 @@ impl InputHandler {
                 state.ui_state.inventory_open = false;
             } else {
                 state.ui_state.inventory_open = true;
+                state.ui_state.gear_panel_open = false;
+                state.ui_state.character_open = false;
+                state.ui_state.social_open = false;
+                state.ui_state.skills_open = false;
+            }
+        }
+
+        // Toggle gear panel (G key) with mutual exclusivity
+        if is_key_pressed(KeyCode::G) {
+            if state.ui_state.gear_panel_open {
+                state.ui_state.gear_panel_open = false;
+            } else {
+                state.ui_state.gear_panel_open = true;
+                state.ui_state.inventory_open = false;
                 state.ui_state.character_open = false;
                 state.ui_state.social_open = false;
                 state.ui_state.skills_open = false;

@@ -49,6 +49,7 @@ pub enum UiElementId {
     // Menu Buttons
     MenuButtonCharacter,
     MenuButtonInventory,
+    MenuButtonGear,
     MenuButtonSocial,
     MenuButtonSkills,
     MenuButtonSettings,

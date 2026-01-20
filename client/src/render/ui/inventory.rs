@@ -169,7 +169,7 @@ impl Renderer {
 
         self.draw_text_sharp(&gold_text, coin_x + icon_size + icon_margin, header_y + 26.0, 16.0, TEXT_GOLD);
 
-        // ===== INVENTORY GRID (left side) =====
+        // ===== INVENTORY GRID =====
         let content_y = inv_y + FRAME_THICKNESS + HEADER_HEIGHT + 10.0;
         let grid_x = inv_x + GRID_PADDING;
         let grid_y = content_y;
@@ -233,92 +233,6 @@ impl Renderer {
             }
         }
 
-        // ===== VERTICAL DIVIDER =====
-        let divider_x = inv_x + GRID_PADDING + 5.0 * (INV_SLOT_SIZE + SLOT_SPACING) + 8.0;
-        let divider_top = content_y;
-        let divider_bottom = inv_y + INV_HEIGHT - FRAME_THICKNESS - FOOTER_HEIGHT - 5.0;
-
-        // Divider line with highlight
-        draw_line(divider_x, divider_top, divider_x, divider_bottom, 2.0, FRAME_MID);
-        draw_line(divider_x + 1.0, divider_top, divider_x + 1.0, divider_bottom, 1.0, FRAME_INNER);
-
-        // ===== EQUIPMENT PANEL (right side) =====
-        let equip_x = divider_x + 12.0;
-        let equip_y = content_y;
-        let equip_panel_w = EQUIP_PANEL_WIDTH - 20.0;
-
-        // Equipment header
-        self.draw_text_sharp("GEAR", equip_x + (equip_panel_w - self.measure_text_sharp("GEAR", 16.0).width) / 2.0, equip_y + 16.0, 16.0, TEXT_TITLE);
-
-        // Decorative line under header
-        draw_line(equip_x + 2.0, equip_y + 22.0, equip_x + equip_panel_w - 2.0, equip_y + 22.0, 1.0, HEADER_BORDER);
-
-        // Equipment slots - arranged in body-shaped layout
-        let slot_step = EQUIP_SLOT_SIZE + EQUIP_SLOT_SPACING;
-        let grid_width = 3.0 * EQUIP_SLOT_SIZE + 2.0 * EQUIP_SLOT_SPACING;
-        let grid_start_x = equip_x + (equip_panel_w - grid_width) / 2.0;
-        let grid_start_y = equip_y + 28.0;
-
-        let equipment_slots: [(&str, i32, i32); 9] = [
-            ("head", 1, 0),
-            ("back", 0, 1),
-            ("body", 1, 1),
-            ("weapon", 2, 1),
-            ("gloves", 0, 2),
-            ("ring", 2, 2),
-            ("necklace", 0, 3),
-            ("belt", 2, 3),
-            ("feet", 1, 4),
-        ];
-
-        for (slot_type, col, row) in equipment_slots.iter() {
-            let slot_x = grid_start_x + (*col as f32) * slot_step;
-            let slot_y = grid_start_y + (*row as f32) * slot_step;
-
-            let bounds = Rect::new(slot_x, slot_y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE);
-            layout.add(UiElementId::EquipmentSlot(slot_type.to_string()), bounds);
-
-            let is_hovered = matches!(hovered, Some(UiElementId::EquipmentSlot(s)) if s == *slot_type);
-            let is_dragging = matches!(&state.ui_state.drag_state, Some(drag) if matches!(&drag.source, DragSource::Equipment(s) if s == *slot_type));
-
-            let has_item = state.get_local_player().map(|p| {
-                match *slot_type {
-                    "head" => p.equipped_head.is_some(),
-                    "body" => p.equipped_body.is_some(),
-                    "weapon" => p.equipped_weapon.is_some(),
-                    "back" => p.equipped_back.is_some(),
-                    "feet" => p.equipped_feet.is_some(),
-                    "ring" => p.equipped_ring.is_some(),
-                    "gloves" => p.equipped_gloves.is_some(),
-                    "necklace" => p.equipped_necklace.is_some(),
-                    "belt" => p.equipped_belt.is_some(),
-                    _ => false,
-                }
-            }).unwrap_or(false);
-
-            self.draw_equipment_slot(slot_x, slot_y, EQUIP_SLOT_SIZE, slot_type, has_item, is_hovered, is_dragging);
-
-            if !is_dragging {
-                if let Some(local_player) = state.get_local_player() {
-                    let item_id = match *slot_type {
-                        "head" => local_player.equipped_head.as_ref(),
-                        "body" => local_player.equipped_body.as_ref(),
-                        "weapon" => local_player.equipped_weapon.as_ref(),
-                        "back" => local_player.equipped_back.as_ref(),
-                        "feet" => local_player.equipped_feet.as_ref(),
-                        "ring" => local_player.equipped_ring.as_ref(),
-                        "gloves" => local_player.equipped_gloves.as_ref(),
-                        "necklace" => local_player.equipped_necklace.as_ref(),
-                        "belt" => local_player.equipped_belt.as_ref(),
-                        _ => None,
-                    };
-                    if let Some(id) = item_id {
-                        self.draw_item_icon(id, slot_x, slot_y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, state, false);
-                    }
-                }
-            }
-        }
-
         // ===== FOOTER SECTION =====
         let footer_x = inv_x + FRAME_THICKNESS;
         let footer_y = inv_y + INV_HEIGHT - FRAME_THICKNESS - FOOTER_HEIGHT;
@@ -328,8 +242,7 @@ impl Renderer {
         draw_line(footer_x + 10.0, footer_y, footer_x + footer_w - 10.0, footer_y, 1.0, HEADER_BORDER);
 
         self.draw_text_sharp("[I] Close", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
-        self.draw_text_sharp("Right-click: Options", footer_x + 100.0, footer_y + 20.0, 16.0, Color::new(0.392, 0.392, 0.431, 1.0));
-        self.draw_text_sharp("Drag to move", footer_x + 270.0, footer_y + 20.0, 16.0, Color::new(0.314, 0.314, 0.353, 1.0));
+        self.draw_text_sharp("Right-click: Options", footer_x + 90.0, footer_y + 20.0, 16.0, Color::new(0.392, 0.392, 0.431, 1.0));
     }
 
     pub(crate) fn draw_item_icon(&self, item_id: &str, x: f32, y: f32, slot_width: f32, slot_height: f32, state: &GameState, with_backdrop: bool) {

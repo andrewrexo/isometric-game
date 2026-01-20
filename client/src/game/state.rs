@@ -226,6 +226,7 @@ pub struct UiState {
     pub character_open: bool,
     pub social_open: bool,
     pub skills_open: bool,
+    pub gear_panel_open: bool,
     // Mouse hover state for UI elements
     pub hovered_element: Option<UiElementId>,
     // Context menu state
@@ -271,6 +272,7 @@ impl Default for UiState {
             character_open: false,
             social_open: false,
             skills_open: false,
+            gear_panel_open: false,
             hovered_element: None,
             context_menu: None,
             drag_state: None,
