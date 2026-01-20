@@ -114,8 +114,13 @@ impl Renderer {
     }
 
     pub(crate) fn render_inventory(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let inv_x = (screen_width() - INV_WIDTH) / 2.0;
-        let inv_y = (screen_height() - INV_HEIGHT) / 2.0;
+        let screen_w = screen_width();
+        let screen_h = screen_height();
+
+        // Position panel on right side, above the menu buttons (like gear panel)
+        let inv_x = screen_w - INV_WIDTH - 16.0;
+        let button_area_height = MENU_BUTTON_SIZE + EXP_BAR_GAP;
+        let inv_y = screen_h - button_area_height - INV_HEIGHT - 8.0;
 
         // Draw panel frame with corner accents
         self.draw_panel_frame(inv_x, inv_y, INV_WIDTH, INV_HEIGHT);
