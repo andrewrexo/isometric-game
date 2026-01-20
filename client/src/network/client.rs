@@ -1,7 +1,7 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
 use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType};
-use crate::game::npc::{Npc, NpcType, NpcState};
+use crate::game::npc::{Npc, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
 
@@ -577,8 +577,7 @@ impl NetworkClient {
                                 npc.hostile = hostile;
                             } else {
                                 // New NPC - add to state
-                                let mut npc = Npc::new(id.clone(), NpcType::from_u8(npc_type), x, y);
-                                npc.entity_type = entity_type;
+                                let mut npc = Npc::new(id.clone(), entity_type, x, y);
                                 npc.display_name = display_name;
                                 npc.direction = Direction::from_u8(direction);
                                 npc.hp = hp;

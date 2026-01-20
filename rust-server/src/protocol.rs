@@ -611,7 +611,6 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                         Value::String("id".into()),
                         Value::String(n.id.clone().into()),
                     ));
-                    nmap.push((Value::String("npc_type".into()), Value::Integer((n.npc_type as i64).into())));
                     nmap.push((Value::String("entity_type".into()), Value::String(n.entity_type.clone().into())));
                     nmap.push((Value::String("display_name".into()), Value::String(n.display_name.clone().into())));
                     nmap.push((Value::String("x".into()), Value::Integer((n.x as i64).into())));

@@ -2,48 +2,6 @@ use serde::Serialize;
 use crate::game::Direction;
 
 // ============================================================================
-// NPC Types and Stats
-// ============================================================================
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NpcType {
-    Slime,
-}
-
-impl NpcType {
-    pub fn stats(&self) -> NpcStats {
-        match self {
-            NpcType::Slime => NpcStats {
-                name: "Slime",
-                max_hp: 15,
-                damage: 2,
-                attack_range: 1,      // Must be adjacent
-                aggro_range: 5,       // Aggro within 5 tiles
-                chase_range: 8,       // Chase up to 8 tiles from spawn
-                move_cooldown_ms: 500, // Moves every 500ms (2 tiles/sec, slower than player)
-                attack_cooldown_ms: 2000,
-                respawn_time_ms: 10000,
-                exp_reward: 25,
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct NpcStats {
-    pub name: &'static str,
-    pub max_hp: i32,
-    pub damage: i32,
-    pub attack_range: i32,    // Grid tiles
-    pub aggro_range: i32,     // Grid tiles
-    pub chase_range: i32,     // Grid tiles from spawn
-    pub move_cooldown_ms: u64, // Time between grid moves
-    pub attack_cooldown_ms: u64,
-    pub respawn_time_ms: u64,
-    pub exp_reward: i32,
-}
-
-// ============================================================================
 // NPC State
 // ============================================================================
 
@@ -64,6 +22,7 @@ pub enum NpcState {
 #[derive(Debug, Clone)]
 pub struct PrototypeStats {
     pub display_name: String,
+    pub sprite: String,
     pub damage: i32,
     pub attack_range: i32,
     pub aggro_range: i32,
@@ -78,11 +37,10 @@ pub struct PrototypeStats {
 #[derive(Debug, Clone)]
 pub struct Npc {
     pub id: String,
-    pub npc_type: NpcType,
-    /// Reference to entity prototype ID (e.g., "slime", "slime_king")
-    pub prototype_id: Option<String>,
-    /// Stats from prototype (overrides npc_type stats when present)
-    pub proto_stats: Option<PrototypeStats>,
+    /// Reference to entity prototype ID (e.g., "pig", "elder_villager")
+    pub prototype_id: String,
+    /// Stats from prototype
+    pub stats: PrototypeStats,
     // Grid position (server authoritative)
     pub x: i32,
     pub y: i32,
@@ -100,29 +58,6 @@ pub struct Npc {
 }
 
 impl Npc {
-    pub fn new(id: &str, npc_type: NpcType, x: i32, y: i32, level: i32) -> Self {
-        let stats = npc_type.stats();
-        Self {
-            id: id.to_string(),
-            npc_type,
-            prototype_id: None,
-            proto_stats: None,
-            x,
-            y,
-            spawn_x: x,
-            spawn_y: y,
-            direction: Direction::Down,
-            hp: stats.max_hp,
-            max_hp: stats.max_hp,
-            level,
-            state: NpcState::Idle,
-            target_id: None,
-            last_attack_time: 0,
-            last_move_time: 0,
-            death_time: 0,
-        }
-    }
-
     /// Create an NPC from an entity prototype
     pub fn from_prototype(
         id: &str,
@@ -132,8 +67,9 @@ impl Npc {
         y: i32,
         level: i32,
     ) -> Self {
-        let proto_stats = PrototypeStats {
+        let stats = PrototypeStats {
             display_name: prototype.display_name.clone(),
+            sprite: prototype.sprite.clone(),
             damage: prototype.stats.damage,
             attack_range: prototype.stats.attack_range,
             aggro_range: prototype.stats.aggro_range,
@@ -147,9 +83,7 @@ impl Npc {
 
         Self {
             id: id.to_string(),
-            npc_type: NpcType::Slime, // Fallback type for compatibility
-            prototype_id: Some(prototype_id.to_string()),
-            proto_stats: Some(proto_stats),
+            prototype_id: prototype_id.to_string(),
             x,
             y,
             spawn_x: x,
@@ -163,55 +97,50 @@ impl Npc {
             last_attack_time: 0,
             last_move_time: 0,
             death_time: 0,
+            stats,
         }
     }
 
-    // Helper methods to get stats (prefer prototype stats over npc_type stats)
+    // Helper methods to get stats
     fn get_damage(&self) -> i32 {
-        self.proto_stats.as_ref().map(|s| s.damage).unwrap_or_else(|| self.npc_type.stats().damage)
+        self.stats.damage
     }
 
     fn get_attack_range(&self) -> i32 {
-        self.proto_stats.as_ref().map(|s| s.attack_range).unwrap_or_else(|| self.npc_type.stats().attack_range)
+        self.stats.attack_range
     }
 
     fn get_aggro_range(&self) -> i32 {
-        self.proto_stats.as_ref().map(|s| s.aggro_range).unwrap_or_else(|| self.npc_type.stats().aggro_range)
+        self.stats.aggro_range
     }
 
     fn get_chase_range(&self) -> i32 {
-        self.proto_stats.as_ref().map(|s| s.chase_range).unwrap_or_else(|| self.npc_type.stats().chase_range)
+        self.stats.chase_range
     }
 
     fn get_move_cooldown_ms(&self) -> u64 {
-        self.proto_stats.as_ref().map(|s| s.move_cooldown_ms).unwrap_or_else(|| self.npc_type.stats().move_cooldown_ms)
+        self.stats.move_cooldown_ms
     }
 
     fn get_attack_cooldown_ms(&self) -> u64 {
-        self.proto_stats.as_ref().map(|s| s.attack_cooldown_ms).unwrap_or_else(|| self.npc_type.stats().attack_cooldown_ms)
+        self.stats.attack_cooldown_ms
     }
 
     fn get_respawn_time_ms(&self) -> u64 {
-        self.proto_stats.as_ref().map(|s| s.respawn_time_ms).unwrap_or_else(|| self.npc_type.stats().respawn_time_ms)
+        self.stats.respawn_time_ms
     }
 
     pub fn is_hostile(&self) -> bool {
-        self.proto_stats.as_ref().map(|s| s.hostile).unwrap_or(true)
+        self.stats.hostile
     }
 
     pub fn name(&self) -> String {
-        if let Some(ref stats) = self.proto_stats {
-            format!("{} Lv.{}", stats.display_name, self.level)
-        } else {
-            let stats = self.npc_type.stats();
-            format!("{} Lv.{}", stats.name, self.level)
-        }
+        format!("{} Lv.{}", self.stats.display_name, self.level)
     }
 
     pub fn exp_reward(&self) -> i32 {
-        let base = self.proto_stats.as_ref().map(|s| s.exp_base).unwrap_or_else(|| self.npc_type.stats().exp_reward);
         // Scale EXP by NPC level
-        base * self.level
+        self.stats.exp_base * self.level
     }
 
     pub fn is_alive(&self) -> bool {
@@ -481,8 +410,7 @@ impl Npc {
 #[derive(Debug, Clone, Serialize)]
 pub struct NpcUpdate {
     pub id: String,
-    pub npc_type: u8,
-    /// Entity prototype ID (e.g., "slime", "slime_king") for client-side lookup
+    /// Entity prototype ID (e.g., "pig", "elder_villager") for client-side lookup
     pub entity_type: String,
     /// Display name to show above NPC
     pub display_name: String,
@@ -499,15 +427,10 @@ pub struct NpcUpdate {
 
 impl From<&Npc> for NpcUpdate {
     fn from(npc: &Npc) -> Self {
-        let display_name = npc.proto_stats.as_ref()
-            .map(|s| s.display_name.clone())
-            .unwrap_or_else(|| npc.npc_type.stats().name.to_string());
-
         Self {
             id: npc.id.clone(),
-            npc_type: npc.npc_type as u8,
-            entity_type: npc.prototype_id.clone().unwrap_or_else(|| "slime".to_string()),
-            display_name,
+            entity_type: npc.stats.sprite.clone(),
+            display_name: npc.stats.display_name.clone(),
             x: npc.x,
             y: npc.y,
             direction: npc.direction as u8,

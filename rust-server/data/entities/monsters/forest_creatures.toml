@@ -1,0 +1,246 @@
+# Forest Creatures - various wildlife enemies
+
+# =============================================================================
+# Slime
+# =============================================================================
+
+[slime]
+display_name = "Slime"
+sprite = "slime"
+animation_type = "standard"
+description = "A gelatinous blob that oozes through the forest."
+
+[slime.stats]
+level = 1
+max_hp = 12
+damage = 2
+attack_range = 1
+aggro_range = 4
+chase_range = 6
+move_cooldown_ms = 600
+attack_cooldown_ms = 2000
+respawn_time_ms = 10000
+
+[slime.rewards]
+exp_base = 20
+gold_min = 3
+gold_max = 10
+
+[[slime.loot]]
+item_id = "slime_core"
+drop_chance = 0.25
+quantity_min = 1
+quantity_max = 1
+
+[slime.behaviors]
+hostile = true
+
+# =============================================================================
+# Snail
+# =============================================================================
+
+[snail]
+display_name = "Snail"
+sprite = "snail"
+animation_type = "standard"
+description = "A slow but surprisingly aggressive snail."
+
+[snail.stats]
+level = 1
+max_hp = 20
+damage = 1
+attack_range = 1
+aggro_range = 3
+chase_range = 5
+move_cooldown_ms = 800
+attack_cooldown_ms = 2500
+respawn_time_ms = 10000
+
+[snail.rewards]
+exp_base = 15
+gold_min = 2
+gold_max = 8
+
+[[snail.loot]]
+item_id = "snail_shell"
+drop_chance = 0.30
+quantity_min = 1
+quantity_max = 1
+
+[snail.behaviors]
+hostile = true
+
+# =============================================================================
+# Shell Snail (variant)
+# =============================================================================
+
+[shell_snail]
+display_name = "Shell Snail"
+sprite = "snail2"
+animation_type = "standard"
+description = "A snail with an extra tough shell."
+
+[shell_snail.stats]
+level = 2
+max_hp = 35
+damage = 2
+attack_range = 1
+aggro_range = 3
+chase_range = 5
+move_cooldown_ms = 900
+attack_cooldown_ms = 2500
+respawn_time_ms = 12000
+
+[shell_snail.rewards]
+exp_base = 25
+gold_min = 5
+gold_max = 12
+
+[[shell_snail.loot]]
+item_id = "snail_shell"
+drop_chance = 0.50
+quantity_min = 1
+quantity_max = 2
+
+[shell_snail.behaviors]
+hostile = true
+
+# =============================================================================
+# Hedgehog
+# =============================================================================
+
+[hedgehog]
+display_name = "Hedgehog"
+sprite = "hedgehog"
+animation_type = "standard"
+description = "A prickly critter that curls into a ball when threatened."
+
+[hedgehog.stats]
+level = 2
+max_hp = 25
+damage = 4
+attack_range = 1
+aggro_range = 4
+chase_range = 6
+move_cooldown_ms = 450
+attack_cooldown_ms = 1800
+respawn_time_ms = 10000
+
+[hedgehog.rewards]
+exp_base = 30
+gold_min = 5
+gold_max = 15
+
+[[hedgehog.loot]]
+item_id = "hedgehog_spine"
+drop_chance = 0.25
+quantity_min = 1
+quantity_max = 3
+
+[hedgehog.behaviors]
+hostile = true
+
+# =============================================================================
+# Worm
+# =============================================================================
+
+[worm]
+display_name = "Worm"
+sprite = "worm"
+animation_type = "standard"
+description = "A giant worm that burrows through the earth."
+
+[worm.stats]
+level = 1
+max_hp = 10
+damage = 1
+attack_range = 1
+aggro_range = 3
+chase_range = 4
+move_cooldown_ms = 700
+attack_cooldown_ms = 2200
+respawn_time_ms = 8000
+
+[worm.rewards]
+exp_base = 12
+gold_min = 1
+gold_max = 5
+
+[[worm.loot]]
+item_id = "worm_segment"
+drop_chance = 0.20
+quantity_min = 1
+quantity_max = 2
+
+[worm.behaviors]
+hostile = true
+
+# =============================================================================
+# Piglet (baby pig)
+# =============================================================================
+
+[piglet_mob]
+display_name = "Piglet"
+sprite = "piglet"
+animation_type = "standard"
+description = "An adorable baby pig. Still quite feisty!"
+
+[piglet_mob.stats]
+level = 1
+max_hp = 8
+damage = 1
+attack_range = 1
+aggro_range = 3
+chase_range = 5
+move_cooldown_ms = 400
+attack_cooldown_ms = 1500
+respawn_time_ms = 8000
+
+[piglet_mob.rewards]
+exp_base = 10
+gold_min = 1
+gold_max = 5
+
+[[piglet_mob.loot]]
+item_id = "piglet"
+drop_chance = 0.15
+quantity_min = 1
+quantity_max = 1
+
+[piglet_mob.behaviors]
+hostile = true
+
+# =============================================================================
+# Spring Creature
+# =============================================================================
+
+[springs]
+display_name = "Springy"
+sprite = "springs"
+animation_type = "standard"
+description = "A bouncy creature made of coiled springs."
+
+[springs.stats]
+level = 2
+max_hp = 18
+damage = 3
+attack_range = 1
+aggro_range = 5
+chase_range = 7
+move_cooldown_ms = 350
+attack_cooldown_ms = 1600
+respawn_time_ms = 10000
+
+[springs.rewards]
+exp_base = 28
+gold_min = 4
+gold_max = 12
+
+[[springs.loot]]
+item_id = "spring_coil"
+drop_chance = 0.20
+quantity_min = 1
+quantity_max = 1
+
+[springs.behaviors]
+hostile = true

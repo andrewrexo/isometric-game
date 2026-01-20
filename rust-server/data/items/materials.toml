@@ -25,10 +25,86 @@ sellable = false
 # max_stack = 99
 # base_price = 10
 
-# [goblin_ear]
-# display_name = "Goblin Ear"
-# sprite = "item_goblin_ear"
-# description = "A trophy from a slain goblin. Some collectors pay well for these."
-# category = "material"
-# max_stack = 99
-# base_price = 3
+# =============================================================================
+# Monster Drops
+# =============================================================================
+
+[slime_core]
+display_name = "Slime Core"
+sprite = "slime_core"
+description = "A gelatinous core from a slime. Used in alchemy."
+category = "material"
+max_stack = 99
+base_price = 8
+
+[snail_shell]
+display_name = "Snail Shell"
+sprite = "snail_shell"
+description = "A sturdy shell from a snail. Surprisingly durable."
+category = "material"
+max_stack = 99
+base_price = 6
+
+[hedgehog_spine]
+display_name = "Hedgehog Spine"
+sprite = "hedgehog_spine"
+description = "A sharp spine from a hedgehog. Good for crafting needles."
+category = "material"
+max_stack = 99
+base_price = 10
+
+[worm_segment]
+display_name = "Worm Segment"
+sprite = "worm_segment"
+description = "A segment of giant worm. Bait or alchemy ingredient."
+category = "material"
+max_stack = 99
+base_price = 4
+
+[spring_coil]
+display_name = "Spring Coil"
+sprite = "spring_coil"
+description = "A coiled spring from a springy creature. Bouncy!"
+category = "material"
+max_stack = 99
+base_price = 12
+
+[spider_silk]
+display_name = "Spider Silk"
+sprite = "spider_silk"
+description = "Strong, flexible silk from a giant spider."
+category = "material"
+max_stack = 99
+base_price = 15
+
+[spider_fang]
+display_name = "Spider Fang"
+sprite = "spider_fang"
+description = "A venomous fang from a giant spider."
+category = "material"
+max_stack = 99
+base_price = 25
+
+[crow_feather]
+display_name = "Crow Feather"
+sprite = "crow_feather"
+description = "A dark feather from a crow. Used for fletching."
+category = "material"
+max_stack = 99
+base_price = 5
+
+[reaper_scythe_fragment]
+display_name = "Scythe Fragment"
+sprite = "reaper_scythe_fragment"
+description = "A fragment of a reaper's scythe. Radiates dark energy."
+category = "material"
+max_stack = 99
+base_price = 100
+
+[dark_essence]
+display_name = "Dark Essence"
+sprite = "dark_essence"
+description = "Concentrated darkness from a reaper. Dangerous but valuable."
+category = "material"
+max_stack = 99
+base_price = 50

@@ -5,7 +5,7 @@
 # ============================================================================
 [elder_villager]
 display_name = "Village Elder"
-sprite = "elder_villager"
+sprite = "village_elder"
 animation_type = "humanoid"
 description = "The wise elder of the village. He knows much about the dangers lurking in the nearby forest."
 

@@ -5,7 +5,7 @@ pub const CHUNK_SIZE: u32 = 32;
 /// Entity spawn point data parsed from Tiled map
 #[derive(Debug, Clone)]
 pub struct EntitySpawn {
-    /// Prototype ID from entity registry (e.g., "slime", "slime_king")
+    /// Prototype ID from entity registry (e.g., "pig", "elder_villager")
     pub entity_id: String,
     /// World X coordinate
     pub world_x: i32,
@@ -217,7 +217,7 @@ impl Chunk {
             let base_y = coord.y * CHUNK_SIZE as i32;
 
             chunk.entity_spawns.push(EntitySpawn {
-                entity_id: "slime".to_string(),
+                entity_id: "pig".to_string(),
                 world_x: base_x + 19,
                 world_y: base_y + 9,
                 level: 1,
@@ -227,7 +227,7 @@ impl Chunk {
                 unique_id: None,
             });
             chunk.entity_spawns.push(EntitySpawn {
-                entity_id: "slime".to_string(),
+                entity_id: "pig".to_string(),
                 world_x: base_x + 19,
                 world_y: base_y + 8,
                 level: 1,
@@ -237,7 +237,7 @@ impl Chunk {
                 unique_id: None,
             });
             chunk.entity_spawns.push(EntitySpawn {
-                entity_id: "slime".to_string(),
+                entity_id: "pig".to_string(),
                 world_x: base_x + 8,
                 world_y: base_y + 12,
                 level: 1,
@@ -247,7 +247,7 @@ impl Chunk {
                 unique_id: None,
             });
             chunk.entity_spawns.push(EntitySpawn {
-                entity_id: "poison_slime".to_string(),
+                entity_id: "pig".to_string(),
                 world_x: base_x + 20,
                 world_y: base_y + 15,
                 level: 2,
@@ -257,14 +257,14 @@ impl Chunk {
                 unique_id: None,
             });
             chunk.entity_spawns.push(EntitySpawn {
-                entity_id: "slime_king".to_string(),
+                entity_id: "pig".to_string(),
                 world_x: base_x + 15,
                 world_y: base_y + 20,
                 level: 3,
                 respawn: true,
                 respawn_time_override: Some(300000), // 5 minutes
                 facing: None,
-                unique_id: Some("boss_slime_king_1".to_string()),
+                unique_id: Some("piggy_boss".to_string()),
             });
         }
 

@@ -252,10 +252,10 @@ impl Default for NpcAnimation {
 }
 
 impl NpcAnimation {
-    /// Animation speeds for each state
-    const IDLE_FPS: f32 = 3.0;
+    /// Animation speeds for each state (matched to player speeds)
+    const IDLE_FPS: f32 = 2.0;
     const WALK_FPS: f32 = 10.0;
-    const ATTACK_FPS: f32 = 8.0;
+    const ATTACK_FPS: f32 = 6.0;
 
     /// Frame counts for each state
     const IDLE_FRAMES: u32 = 2;

@@ -9,7 +9,7 @@ use crate::entity::{EntityPrototype, EntityRegistry};
 use crate::data::ItemRegistry;
 use crate::skills::{Skills, SkillType, calculate_hit, calculate_max_hit, roll_damage};
 use crate::item::{self, GroundItem, Inventory, GOLD_ITEM_ID};
-use crate::npc::{Npc, NpcType, NpcUpdate};
+use crate::npc::{Npc, NpcUpdate};
 use crate::protocol::{ServerMessage, QuestObjectiveData};
 use crate::quest::{QuestRegistry, QuestRunner, PlayerQuestState, QuestEvent};
 use crate::shop::{ShopRegistry, ShopDefinition, ShopStockItem};
@@ -421,26 +421,24 @@ impl GameRoom {
                     .unwrap_or_else(|| format!("npc_{}", npc_counter));
                 npc_counter += 1;
 
-                let npc = if let Some(prototype) = entity_registry.get(&spawn.entity_id) {
+                if let Some(prototype) = entity_registry.get(&spawn.entity_id) {
                     // Spawn from prototype
                     tracing::info!(
                         "Spawning {} at ({}, {}) level {}",
                         spawn.entity_id, spawn.world_x, spawn.world_y, spawn.level
                     );
-                    Npc::from_prototype(
+                    let npc = Npc::from_prototype(
                         &npc_id,
                         &spawn.entity_id,
                         prototype,
                         spawn.world_x,
                         spawn.world_y,
                         spawn.level,
-                    )
+                    );
+                    npcs.insert(npc_id, npc);
                 } else {
-                    // Fallback to legacy NpcType if prototype not found
-                    tracing::warn!("Prototype '{}' not found, using fallback", spawn.entity_id);
-                    Npc::new(&npc_id, NpcType::Slime, spawn.world_x, spawn.world_y, spawn.level)
-                };
-                npcs.insert(npc_id, npc);
+                    tracing::warn!("Prototype '{}' not found, skipping spawn", spawn.entity_id);
+                }
             }
         }
 
@@ -742,27 +740,26 @@ impl GameRoom {
     }
 
     /// Spawn an NPC at a specific location (admin command)
-    pub async fn spawn_npc_at(&self, prototype_id: &str, x: f32, y: f32) -> String {
-        let npc_id = format!("admin_npc_{}", Uuid::new_v4());
-
-        let npc = if let Some(prototype) = self.entity_registry.get(prototype_id) {
-            Npc::from_prototype(
-                &npc_id,
-                prototype_id,
-                prototype,
-                x as i32,
-                y as i32,
-                1, // Default level
-            )
-        } else {
-            // Fallback to legacy NpcType
-            Npc::new(&npc_id, NpcType::Slime, x as i32, y as i32, 1)
+    pub async fn spawn_npc_at(&self, prototype_id: &str, x: f32, y: f32) -> Option<String> {
+        let Some(prototype) = self.entity_registry.get(prototype_id) else {
+            tracing::warn!("Cannot spawn NPC: prototype '{}' not found", prototype_id);
+            return None;
         };
+
+        let npc_id = format!("admin_npc_{}", Uuid::new_v4());
+        let npc = Npc::from_prototype(
+            &npc_id,
+            prototype_id,
+            prototype,
+            x as i32,
+            y as i32,
+            1, // Default level
+        );
 
         let mut npcs = self.npcs.write().await;
         npcs.insert(npc_id.clone(), npc);
         tracing::info!("Admin spawned NPC {} at ({}, {})", prototype_id, x, y);
-        npc_id
+        Some(npc_id)
     }
 
     pub async fn handle_move(&self, player_id: &str, dx: f32, dy: f32) {
@@ -1008,9 +1005,10 @@ impl GameRoom {
                 }
 
                 // Spawn the NPC
-                let spawned_id = self.spawn_npc_at(npc_id, spawn_x as f32, spawn_y as f32).await;
-                self.send_system_message(player_id, &format!("Spawned {} at ({}, {}) [id: {}]", npc_id, spawn_x, spawn_y, spawned_id)).await;
-                tracing::info!("Admin {} spawned {} at ({}, {})", player_id, npc_id, spawn_x, spawn_y);
+                if let Some(spawned_id) = self.spawn_npc_at(npc_id, spawn_x as f32, spawn_y as f32).await {
+                    self.send_system_message(player_id, &format!("Spawned {} at ({}, {}) [id: {}]", npc_id, spawn_x, spawn_y, spawned_id)).await;
+                    tracing::info!("Admin {} spawned {} at ({}, {})", player_id, npc_id, spawn_x, spawn_y);
+                }
             }
             "/heal" => {
                 // /heal [player_name]
@@ -1337,22 +1335,18 @@ impl GameRoom {
             tracing::info!("{} killed {}", attacker_name, target_name);
             if is_npc {
                 // Get NPC info for exp and loot
-                let (prototype_id, npc_level, npc_type) = {
+                let (prototype_id, npc_level) = {
                     let npcs = self.npcs.read().await;
                     npcs.get(&target_id)
-                        .map(|n| (n.prototype_id.clone(), n.level, n.npc_type))
-                        .unwrap_or((None, 1, NpcType::Slime))
+                        .map(|n| (n.prototype_id.clone(), n.level))
+                        .unwrap_or(("unknown".to_string(), 1))
                 };
 
-                // Calculate EXP reward - use prototype if available
-                let exp_reward = if let Some(ref proto_id) = prototype_id {
-                    if let Some(prototype) = self.entity_registry.get(proto_id) {
-                        crate::entity::calculate_exp_reward(prototype, npc_level)
-                    } else {
-                        npc_type.stats().exp_reward * npc_level
-                    }
+                // Calculate EXP reward from prototype
+                let exp_reward = if let Some(prototype) = self.entity_registry.get(&prototype_id) {
+                    crate::entity::calculate_exp_reward(prototype, npc_level)
                 } else {
-                    npc_type.stats().exp_reward * npc_level
+                    0 // No prototype found, no exp
                 };
 
                 // Award combat XP to killer based on damage dealt
@@ -1400,25 +1394,20 @@ impl GameRoom {
                 self.broadcast(death_msg).await;
 
                 // Process quest kill event
-                let entity_type = prototype_id.clone().unwrap_or_else(|| npc_type.stats().name.to_string());
-                self.process_quest_kill(player_id, &entity_type).await;
+                self.process_quest_kill(player_id, &prototype_id).await;
 
-                // Spawn item drops - use prototype loot table if available
+                // Spawn item drops from prototype loot table
                 let current_time = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_millis() as u64;
 
-                let drops = if let Some(ref proto_id) = prototype_id {
-                    if let Some(prototype) = self.entity_registry.get(proto_id) {
-                        crate::entity::generate_loot_from_prototype(
-                            prototype, target_x, target_y, player_id, current_time, npc_level
-                        )
-                    } else {
-                        item::generate_drops(npc_type, target_x, target_y, player_id, current_time)
-                    }
+                let drops = if let Some(prototype) = self.entity_registry.get(&prototype_id) {
+                    crate::entity::generate_loot_from_prototype(
+                        prototype, target_x, target_y, player_id, current_time, npc_level
+                    )
                 } else {
-                    item::generate_drops(npc_type, target_x, target_y, player_id, current_time)
+                    vec![] // No prototype found, no drops
                 };
 
                 for item in drops {
@@ -1739,7 +1728,7 @@ impl GameRoom {
                 let dx = (npc.x - player_x) as f32;
                 let dy = (npc.y - player_y) as f32;
                 let distance = (dx * dx + dy * dy).sqrt();
-                let entity_type = npc.prototype_id.clone().unwrap_or_else(|| "slime".to_string());
+                let entity_type = npc.prototype_id.clone();
                 (entity_type, distance, npc.is_alive())
             })
         };
@@ -2375,7 +2364,6 @@ impl GameRoom {
         }
 
         // Get prototype and merchant config
-        let prototype_id = prototype_id.unwrap_or_else(|| "unknown".to_string());
         let merchant_config = match self.entity_registry.get(&prototype_id) {
             Some(proto) => match &proto.merchant {
                 Some(config) => config.clone(),
@@ -2577,7 +2565,6 @@ impl GameRoom {
         }
 
         // Get prototype and merchant config
-        let prototype_id = prototype_id.unwrap_or_else(|| "unknown".to_string());
         let merchant_config = match self.entity_registry.get(&prototype_id) {
             Some(proto) => match &proto.merchant {
                 Some(config) => config.clone(),
@@ -3395,9 +3382,7 @@ impl GameRoom {
                         // Find all NPCs of this type to broadcast stock updates
                         let npc_ids: Vec<String> = npcs
                             .iter()
-                            .filter(|(_, npc)| {
-                                npc.prototype_id.as_ref() == Some(&proto.id)
-                            })
+                            .filter(|(_, npc)| npc.prototype_id == proto.id)
                             .map(|(npc_id, _)| npc_id.clone())
                             .collect();
 

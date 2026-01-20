@@ -10,7 +10,7 @@ pub enum QuestEvent {
     /// Player killed a monster
     MonsterKilled {
         player_id: String,
-        /// Entity prototype ID (e.g., "slime", "slime_king")
+        /// Entity prototype ID (e.g., "pig", "elder_villager")
         entity_type: String,
         /// Level of the killed monster
         level: i32,

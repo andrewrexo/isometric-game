@@ -2,30 +2,6 @@ use super::entities::Direction;
 use crate::render::animation::{NpcAnimation, NpcAnimationState};
 
 // ============================================================================
-// NPC Types
-// ============================================================================
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NpcType {
-    Slime = 0,
-}
-
-impl NpcType {
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => NpcType::Slime,
-            _ => NpcType::Slime,
-        }
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            NpcType::Slime => "Slime",
-        }
-    }
-}
-
-// ============================================================================
 // NPC State
 // ============================================================================
 
@@ -58,10 +34,9 @@ impl NpcState {
 #[derive(Debug, Clone)]
 pub struct Npc {
     pub id: String,
-    pub npc_type: NpcType,
-    /// Entity prototype ID (e.g., "pig", "elder_villager")
+    /// Entity prototype ID (e.g., "pig", "elder_villager") - determines sprite
     pub entity_type: String,
-    /// Display name from server
+    /// Display name from server (e.g., "Piggy Lv.1")
     pub display_name: String,
     pub x: f32,
     pub y: f32,
@@ -77,27 +52,29 @@ pub struct Npc {
     pub hostile: bool,
     /// Track if we've played the attack animation for current attack cycle
     attack_anim_played: bool,
+    /// Timer to track when to allow the next attack animation (seconds)
+    attack_cooldown_timer: f32,
 }
 
 impl Npc {
-    pub fn new(id: String, npc_type: NpcType, x: f32, y: f32) -> Self {
+    pub fn new(id: String, entity_type: String, x: f32, y: f32) -> Self {
         Self {
             id,
-            npc_type,
-            entity_type: "pig".to_string(),
-            display_name: npc_type.name().to_string(),
+            entity_type,
+            display_name: String::new(), // Set by server
             x,
             y,
             target_x: x,
             target_y: y,
             direction: Direction::Down,
-            hp: 50,
-            max_hp: 50,
+            hp: 1,
+            max_hp: 1,
             level: 1,
             state: NpcState::Idle,
             animation: NpcAnimation::default(),
             hostile: true,
             attack_anim_played: false,
+            attack_cooldown_timer: 0.0,
         }
     }
 
@@ -117,13 +94,8 @@ impl Npc {
     pub fn set_server_position(&mut self, new_x: f32, new_y: f32) {
         self.target_x = new_x;
         self.target_y = new_y;
-
-        // Calculate direction from movement
-        let dx = new_x - self.x;
-        let dy = new_y - self.y;
-        if dx.abs() > 0.01 || dy.abs() > 0.01 {
-            self.direction = Direction::from_velocity(dx, dy);
-        }
+        // Direction is updated during interpolation, not here
+        // This prevents snappy direction changes when server sends new targets
     }
 
     /// Smooth interpolation toward grid position
@@ -148,14 +120,27 @@ impl Npc {
         } else {
             self.x += (dx / dist) * move_dist;
             self.y += (dy / dist) * move_dist;
+
+            // Update direction from actual movement vector (anti-moonwalk)
+            self.direction = Direction::from_velocity(dx, dy);
+        }
+
+        // Update attack cooldown timer
+        if self.attack_cooldown_timer > 0.0 {
+            self.attack_cooldown_timer -= delta;
+            if self.attack_cooldown_timer <= 0.0 {
+                // Cooldown expired, ready for next attack animation
+                self.attack_anim_played = false;
+                self.attack_cooldown_timer = 0.0;
+            }
         }
 
         // Update animation state based on NPC state
-        // For attacking: play attack animation once, then show idle until state changes
+        // For attacking: play attack animation once, then show idle until cooldown expires
         let anim_state = match self.state {
             NpcState::Attacking => {
                 if self.attack_anim_played {
-                    // Already played attack animation, show idle until next attack cycle
+                    // Already played attack animation, show idle until cooldown expires
                     NpcAnimationState::Idle
                 } else {
                     NpcAnimationState::Attacking
@@ -168,13 +153,16 @@ impl Npc {
         self.animation.set_state(anim_state);
         self.animation.update(delta);
 
-        // Mark attack animation as played when it finishes
-        if self.state == NpcState::Attacking && self.animation.is_finished() {
+        // Mark attack animation as played when it finishes, start cooldown timer
+        if self.state == NpcState::Attacking && self.animation.is_finished() && !self.attack_anim_played {
             self.attack_anim_played = true;
+            // Server attack cooldown is 2 seconds, so wait ~1.5s before allowing next animation
+            self.attack_cooldown_timer = 1.5;
         }
-        // Reset flag when not attacking (ready for next attack cycle)
+        // Reset flag immediately when not attacking
         if self.state != NpcState::Attacking {
             self.attack_anim_played = false;
+            self.attack_cooldown_timer = 0.0;
         }
     }
 }
