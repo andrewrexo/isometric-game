@@ -40,6 +40,7 @@ pub struct PrototypeStats {
     pub wander_radius: i32,
     pub wander_pause_min_ms: u64,
     pub wander_pause_max_ms: u64,
+    pub hp_regen_percent_per_sec: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +70,8 @@ pub struct Npc {
     pub wander_target: Option<(i32, i32)>,
     /// Timestamp until which the NPC should remain idle before wandering
     pub idle_until: u64,
+    /// Last time HP regen was applied
+    pub last_regen_time: u64,
 }
 
 impl Npc {
@@ -99,6 +102,7 @@ impl Npc {
             wander_radius: prototype.behaviors.wander_radius,
             wander_pause_min_ms: prototype.behaviors.wander_pause_min_ms,
             wander_pause_max_ms: prototype.behaviors.wander_pause_max_ms,
+            hp_regen_percent_per_sec: prototype.stats.hp_regen_percent_per_sec,
         };
 
         Self {
@@ -120,6 +124,7 @@ impl Npc {
             just_attacked: false,
             wander_target: None,
             idle_until: 0,
+            last_regen_time: 0,
             stats,
         }
     }
@@ -210,6 +215,22 @@ impl Npc {
         self.last_move_time = 0;
         self.wander_target = None;
         self.idle_until = 0;
+        self.last_regen_time = 0;
+    }
+
+    /// Apply passive HP regeneration based on prototype stats
+    pub fn apply_regen(&mut self, current_time: u64) {
+        const REGEN_INTERVAL_MS: u64 = 15000;
+        if self.state == NpcState::Dead {
+            return;
+        }
+        if current_time - self.last_regen_time >= REGEN_INTERVAL_MS {
+            self.last_regen_time = current_time;
+            if self.hp < self.max_hp && self.hp > 0 {
+                let regen = ((self.max_hp as f32 * self.stats.hp_regen_percent_per_sec) / 100.0).ceil() as i32;
+                self.hp = (self.hp + regen).min(self.max_hp);
+            }
+        }
     }
 
     /// Pick a random wander target within radius of spawn point
@@ -493,8 +514,7 @@ impl Npc {
                 let dist = Self::grid_distance(self.x, self.y, self.spawn_x, self.spawn_y);
 
                 if dist == 0 {
-                    // Reached spawn, go idle and heal
-                    self.hp = self.max_hp;
+                    // Reached spawn, go idle (HP regenerates passively over time)
                     self.state = NpcState::Idle;
                     self.wander_target = None;
                     // Set idle pause before wandering again

@@ -185,6 +185,9 @@ impl EntityRegistry {
             respawn_time_ms: raw.stats.respawn_time_ms
                 .or_else(|| parent.map(|p| p.stats.respawn_time_ms))
                 .unwrap_or(10000),
+            hp_regen_percent_per_sec: raw.stats.hp_regen_percent_per_sec
+                .or_else(|| parent.map(|p| p.stats.hp_regen_percent_per_sec))
+                .unwrap_or(2.0),
         };
 
         // Merge rewards

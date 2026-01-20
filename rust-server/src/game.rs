@@ -31,6 +31,8 @@ const STARTING_HP: i32 = 100;
 // Combat constants
 const ATTACK_RANGE: i32 = 1; // Maximum distance to attack (in tiles)
 const ATTACK_COOLDOWN_MS: u64 = 700; // Slightly shorter than client (800ms) to account for network latency
+const PLAYER_HP_REGEN_PERCENT: f32 = 2.0;
+const REGEN_INTERVAL_MS: u64 = 15000;
 
 // ============================================================================
 // Player Save Data (for database persistence)
@@ -153,6 +155,8 @@ pub struct Player {
     // Admin privileges
     pub is_admin: bool,
     pub is_god_mode: bool, // Invincibility for admins
+    // HP regeneration tracking
+    pub last_regen_time: u64,
 }
 
 const PLAYER_RESPAWN_TIME_MS: u64 = 5000; // 5 seconds to respawn
@@ -192,6 +196,7 @@ impl Player {
             equipped_belt: None,
             is_admin: false,
             is_god_mode: false,
+            last_regen_time: 0,
         }
     }
 
@@ -325,6 +330,22 @@ impl Player {
         self.is_dead = false;
         self.death_time = 0;
         self.target_id = None;
+        self.last_regen_time = 0;
+    }
+
+    /// Apply passive HP regeneration
+    pub fn apply_regen(&mut self, current_time: u64) {
+        if self.is_dead {
+            return;
+        }
+        if current_time - self.last_regen_time >= REGEN_INTERVAL_MS {
+            self.last_regen_time = current_time;
+            let max_hp = self.max_hp();
+            if self.hp < max_hp && self.hp > 0 {
+                let regen = ((max_hp as f32 * PLAYER_HP_REGEN_PERCENT) / 100.0).ceil() as i32;
+                self.hp = (self.hp + regen).min(max_hp);
+            }
+        }
     }
 }
 
@@ -3162,6 +3183,11 @@ impl GameRoom {
                 }
             }
 
+            // Apply HP regen to all players
+            for player in players.values_mut() {
+                player.apply_regen(current_time);
+            }
+
             // Generate player updates
             for player in players.values() {
                 if !player.active {
@@ -3246,6 +3272,9 @@ impl GameRoom {
                 if npc.is_alive() {
                     npc_positions.insert(npc.id.clone(), (npc.x, npc.y));
                 }
+
+                // Apply HP regen
+                npc.apply_regen(current_time);
 
                 // Add to updates (all NPCs including dead ones for client awareness)
                 npc_updates.push(NpcUpdate::from(&*npc));

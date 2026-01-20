@@ -46,6 +46,7 @@ pub struct RawEntityStats {
     pub move_cooldown_ms: Option<u64>,
     pub attack_cooldown_ms: Option<u64>,
     pub respawn_time_ms: Option<u64>,
+    pub hp_regen_percent_per_sec: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -163,6 +164,7 @@ pub struct ResolvedStats {
     pub move_cooldown_ms: u64,
     pub attack_cooldown_ms: u64,
     pub respawn_time_ms: u64,
+    pub hp_regen_percent_per_sec: f32,
 }
 
 impl Default for ResolvedStats {
@@ -176,6 +178,7 @@ impl Default for ResolvedStats {
             move_cooldown_ms: 500,
             attack_cooldown_ms: 800,
             respawn_time_ms: 10000,
+            hp_regen_percent_per_sec: 2.0,
         }
     }
 }
