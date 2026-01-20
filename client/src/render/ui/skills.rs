@@ -7,12 +7,12 @@ use crate::ui::{UiElementId, UiLayout};
 use super::super::Renderer;
 use super::common::*;
 
-/// Skills panel dimensions
-const SKILLS_PANEL_WIDTH: f32 = 200.0;
-const SKILLS_PANEL_HEIGHT: f32 = 175.0;
-
-/// Compact header for skills panel
-const SKILLS_HEADER_HEIGHT: f32 = 28.0;
+/// Skills panel dimensions (compact: just fits the 3x3 grid with padding)
+const SKILLS_PANEL_PADDING: f32 = 8.0;
+const SKILLS_GRID_WIDTH: f32 = 3.0 * SKILL_SLOT_SIZE + 2.0 * SKILL_SLOT_SPACING; // 128
+const SKILLS_PANEL_WIDTH: f32 = SKILLS_GRID_WIDTH + SKILLS_PANEL_PADDING * 2.0 + FRAME_THICKNESS * 2.0; // 152
+const SKILLS_HEADER_HEIGHT: f32 = 24.0;
+const SKILLS_PANEL_HEIGHT: f32 = FRAME_THICKNESS * 2.0 + SKILLS_HEADER_HEIGHT + SKILLS_PANEL_PADDING + SKILLS_GRID_WIDTH + SKILLS_PANEL_PADDING; // 176
 
 /// Skill slot dimensions
 const SKILL_SLOT_SIZE: f32 = 40.0;
@@ -20,6 +20,10 @@ const SKILL_SLOT_SPACING: f32 = 4.0;
 const SKILL_GRID_COLS: usize = 3;
 const SKILL_GRID_ROWS: usize = 3;
 const TOTAL_SKILL_SLOTS: usize = 8;
+
+/// UI icons sprite sheet: 24x24 icons in 10 columns
+const UI_ICON_SIZE: f32 = 24.0;
+const UI_ICON_COLS: usize = 10;
 
 /// Active skills in display order (consolidated combat system)
 const ACTIVE_SKILLS: [SkillType; 2] = [
@@ -37,10 +41,10 @@ impl Renderer {
         let screen_w = screen_width();
         let screen_h = screen_height();
 
-        // Position panel on right side, above bottom bar
-        let exp_bar_top = screen_h - EXP_BAR_HEIGHT;
+        // Position panel on right side, above the menu buttons
         let panel_x = screen_w - SKILLS_PANEL_WIDTH - 16.0;
-        let panel_y = exp_bar_top - EXP_BAR_GAP - SKILLS_PANEL_HEIGHT - MENU_BUTTON_SIZE - 8.0;
+        let button_area_height = MENU_BUTTON_SIZE + EXP_BAR_GAP;
+        let panel_y = screen_h - button_area_height - SKILLS_PANEL_HEIGHT - 8.0;
 
         // Draw panel frame
         self.draw_panel_frame(panel_x, panel_y, SKILLS_PANEL_WIDTH, SKILLS_PANEL_HEIGHT);
@@ -53,11 +57,11 @@ impl Renderer {
 
         draw_rectangle(header_x, header_y, header_w, SKILLS_HEADER_HEIGHT, HEADER_BG);
         draw_line(
-            header_x + 10.0,
+            header_x + 6.0,
             header_y + SKILLS_HEADER_HEIGHT,
-            header_x + header_w - 10.0,
+            header_x + header_w - 6.0,
             header_y + SKILLS_HEADER_HEIGHT,
-            2.0,
+            1.0,
             HEADER_BORDER,
         );
 
@@ -68,11 +72,11 @@ impl Renderer {
         let header_text = format!("Skills (Cmb: {})", combat_level);
         let text_dims = self.measure_text_sharp(&header_text, 16.0);
         let text_x = header_x + (header_w - text_dims.width) / 2.0;
-        self.draw_text_sharp(&header_text, text_x, header_y + 20.0, 16.0, TEXT_TITLE);
+        self.draw_text_sharp(&header_text, text_x, header_y + 17.0, 16.0, TEXT_TITLE);
 
         // Grid area
-        let grid_x = panel_x + FRAME_THICKNESS + GRID_PADDING;
-        let grid_y = header_y + SKILLS_HEADER_HEIGHT + 8.0;
+        let grid_x = panel_x + FRAME_THICKNESS + SKILLS_PANEL_PADDING;
+        let grid_y = header_y + SKILLS_HEADER_HEIGHT + SKILLS_PANEL_PADDING;
 
         // Draw skill slots (8 total in 3x3 grid, last slot empty)
         for slot_index in 0..TOTAL_SKILL_SLOTS {
@@ -117,16 +121,46 @@ impl Renderer {
         draw_line(x + 2.0, y + 2.0, x + size - 2.0, y + 2.0, 2.0, SLOT_INNER_SHADOW);
         draw_line(x + 2.0, y + 2.0, x + 2.0, y + size - 2.0, 2.0, SLOT_INNER_SHADOW);
 
-        // Draw skill letter (placeholder until icons are added)
-        let letter = match skill_type {
-            SkillType::Hitpoints => "H",
-            SkillType::Combat => "C",
+        // Draw skill icon from ui_icons.png spritesheet
+        // Row 7 (index 6), Col 1 (index 0) = heart for Hitpoints
+        // Row 7 (index 6), Col 3 (index 2) = shield for Combat
+        let (icon_col, icon_row) = match skill_type {
+            SkillType::Hitpoints => (0, 6), // Row 7, Col 1
+            SkillType::Combat => (2, 6),    // Row 7, Col 3
         };
-        let icon_color = self.get_skill_icon_color(skill_type);
-        let letter_dims = self.measure_text_sharp(letter, 20.0);
-        let letter_x = x + (size - letter_dims.width) / 2.0;
-        let letter_y = y + size / 2.0 + 4.0; // Center vertically, slightly up for level
-        self.draw_text_sharp(letter, letter_x, letter_y, 20.0, icon_color);
+
+        if let Some(ref texture) = self.ui_icons {
+            let src_x = icon_col as f32 * UI_ICON_SIZE;
+            let src_y = icon_row as f32 * UI_ICON_SIZE;
+            let src_rect = Rect::new(src_x, src_y, UI_ICON_SIZE, UI_ICON_SIZE);
+
+            // Center the 24x24 icon in the 40x40 slot, slightly up to leave room for level
+            let icon_x = x + (size - UI_ICON_SIZE) / 2.0;
+            let icon_y = y + (size - UI_ICON_SIZE) / 2.0 - 2.0;
+
+            draw_texture_ex(
+                texture,
+                icon_x,
+                icon_y,
+                WHITE,
+                DrawTextureParams {
+                    source: Some(src_rect),
+                    dest_size: Some(Vec2::new(UI_ICON_SIZE, UI_ICON_SIZE)),
+                    ..Default::default()
+                },
+            );
+        } else {
+            // Fallback to letter if texture not loaded
+            let letter = match skill_type {
+                SkillType::Hitpoints => "H",
+                SkillType::Combat => "C",
+            };
+            let icon_color = self.get_skill_icon_color(skill_type);
+            let letter_dims = self.measure_text_sharp(letter, 20.0);
+            let letter_x = x + (size - letter_dims.width) / 2.0;
+            let letter_y = y + size / 2.0 + 4.0;
+            self.draw_text_sharp(letter, letter_x, letter_y, 20.0, icon_color);
+        }
 
         // Level number in bottom-right corner
         let level_text = format!("{}", level);

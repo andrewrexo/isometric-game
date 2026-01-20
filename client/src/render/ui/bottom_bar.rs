@@ -1,4 +1,4 @@
-//! Bottom bar UI components: experience bar and menu buttons
+//! Top bar UI components: experience bar and menu buttons
 
 use macroquad::prelude::*;
 use crate::game::GameState;
@@ -18,28 +18,24 @@ const ICON_SOCIAL: usize = 4;
 const ICON_SIZE: f32 = 32.0;
 
 impl Renderer {
-    /// Returns the Y position where the exp bar starts (for other UI to position above it)
-    pub fn get_exp_bar_top(&self) -> f32 {
-        screen_height() - EXP_BAR_HEIGHT
+    /// Returns the Y position where UI below the top bar can start
+    pub fn get_top_bar_bottom(&self) -> f32 {
+        EXP_BAR_HEIGHT + EXP_BAR_GAP
     }
 
-    /// Render the experience bar at the bottom of the screen
+    /// Render the experience bar at the top of the screen
     pub(crate) fn render_exp_bar(&self, state: &GameState) {
         let screen_w = screen_width();
-        let screen_h = screen_height();
 
-        // Bar fills full width, sits at very bottom
+        // Bar fills full width, sits at very top
         let bar_height = EXP_BAR_HEIGHT;
         let bar_x = 0.0;
-        let bar_y = screen_h - bar_height;
+        let bar_y = 0.0;
         let bar_width = screen_w;
 
-        // Background
-        draw_rectangle(bar_x, bar_y, bar_width, bar_height, PANEL_BG_DARK);
-
-        // Top border only
-        let border_color = Color::new(FRAME_MID.r, FRAME_MID.g, FRAME_MID.b, 0.8);
-        draw_line(bar_x, bar_y, bar_x + bar_width, bar_y, 1.0, border_color);
+        // Background (slightly transparent)
+        let bg_color = Color::new(PANEL_BG_DARK.r, PANEL_BG_DARK.g, PANEL_BG_DARK.b, 0.75);
+        draw_rectangle(bar_x, bar_y, bar_width, bar_height, bg_color);
 
         // Get player skill data - show total level and combat level
         let (combat_level, total_level, avg_progress) = if let Some(player) = state.get_local_player() {
@@ -52,11 +48,14 @@ impl Renderer {
             (6, 13, 0.0) // Default: HP 10 + Combat 3 = 13, combat level = (10+3)/2 = 6
         };
 
-        // Draw fill bar showing average skill progress
+        // Draw fill bar showing average skill progress (matching HP bar style)
         let fill_width = bar_width * avg_progress;
         if fill_width > 0.0 {
-            let exp_green = Color::new(0.18, 0.72, 0.35, 1.0);
-            draw_rectangle(bar_x, bar_y + 1.0, fill_width, bar_height - 1.0, exp_green);
+            let fill_height = bar_height - 2.0;
+            let exp_green = Color::new(0.2, 0.7, 0.3, 0.65);
+            draw_rectangle(bar_x, bar_y + 1.0, fill_width, fill_height, exp_green);
+            // Highlight on top half
+            draw_rectangle(bar_x, bar_y + 1.0, fill_width, fill_height / 2.0, Color::new(1.0, 1.0, 1.0, 0.15));
         }
 
         // Show combat level and total level
@@ -74,10 +73,10 @@ impl Renderer {
     /// Render the menu buttons in the bottom-right corner
     pub(crate) fn render_menu_buttons(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
         let screen_w = screen_width();
+        let screen_h = screen_height();
 
-        // Position above the exp bar with gap
-        let exp_bar_top = self.get_exp_bar_top();
-        let button_y = exp_bar_top - EXP_BAR_GAP - MENU_BUTTON_SIZE;
+        // Position at bottom of screen, aligned with quick slots
+        let button_y = screen_h - EXP_BAR_GAP - MENU_BUTTON_SIZE;
 
         // 5 buttons: Inventory, Character, Skills, Social, Settings
         let num_buttons = 5;

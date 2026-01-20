@@ -108,6 +108,8 @@ pub struct Renderer {
     pub(crate) circular_stone_texture: Option<Texture2D>,
     /// Menu button icons (inventory, character, settings, skills, social)
     pub(crate) menu_button_icons: Option<Texture2D>,
+    /// UI icons sprite sheet (24x24 icons in 10x10 grid)
+    pub(crate) ui_icons: Option<Texture2D>,
 }
 
 impl Renderer {
@@ -280,6 +282,19 @@ impl Renderer {
             }
         };
 
+        // Load UI icons sprite sheet (24x24 icons in 10x10 grid)
+        let ui_icons = match load_texture("assets/ui/ui_icons.png").await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                log::info!("Loaded UI icons: {}x{}", tex.width(), tex.height());
+                Some(tex)
+            }
+            Err(e) => {
+                log::warn!("Failed to load UI icons: {}", e);
+                None
+            }
+        };
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
@@ -293,6 +308,7 @@ impl Renderer {
             gold_nugget_texture,
             circular_stone_texture,
             menu_button_icons,
+            ui_icons,
         }
     }
 
@@ -1471,9 +1487,9 @@ impl Renderer {
             }
         }
 
-        // Chat messages (bottom-left, above the exp bar) with text wrapping
+        // Chat messages (bottom-left) with text wrapping
         let chat_x = 10.0;
-        let chat_y = self.get_exp_bar_top() - 20.0;
+        let chat_y = screen_height() - 20.0;
         let line_height = 18.0;
         let max_chat_width = 400.0;
         let font_size = 16.0;
@@ -1495,14 +1511,13 @@ impl Renderer {
             let panel_width = 160.0;
             let panel_height = 44.0;
             let panel_x = (screen_width() - panel_width - 12.0).floor();
-            let panel_y = 12.0;
+            let panel_y = 25.0;
 
-            // ===== PANEL BACKGROUND =====
-            draw_rectangle(panel_x - 2.0, panel_y - 2.0, panel_width + 4.0, panel_height + 4.0, FRAME_OUTER);
-            draw_rectangle(panel_x - 1.0, panel_y - 1.0, panel_width + 2.0, panel_height + 2.0, FRAME_MID);
-            let panel_bg = Color::new(PANEL_BG_MID.r, PANEL_BG_MID.g, PANEL_BG_MID.b, 0.92);
-            draw_rectangle(panel_x, panel_y, panel_width, panel_height, panel_bg);
-            draw_line(panel_x + 1.0, panel_y + 1.0, panel_x + panel_width - 1.0, panel_y + 1.0, 1.0, FRAME_INNER);
+            // ===== PANEL BACKGROUND (same style as menu buttons, no hover) =====
+            let border_alpha = Color::new(SLOT_BORDER.r, SLOT_BORDER.g, SLOT_BORDER.b, 0.9);
+            draw_rectangle(panel_x - 1.0, panel_y - 1.0, panel_width + 2.0, panel_height + 2.0, border_alpha);
+            let bg_alpha = Color::new(SLOT_BG_EMPTY.r, SLOT_BG_EMPTY.g, SLOT_BG_EMPTY.b, 0.85);
+            draw_rectangle(panel_x, panel_y, panel_width, panel_height, bg_alpha);
 
             let padding = 8.0;
             let bar_width = panel_width - padding * 2.0;
@@ -1511,17 +1526,18 @@ impl Renderer {
             // ===== PLAYER NAME + LEVEL =====
             let name_y = panel_y + 6.0;
             let name = &player.name;
-            let level_text = format!(" Lv.{}", player.combat_level());
-            self.draw_text_sharp(name, (panel_x + padding).floor(), (name_y + 12.0).floor(), 16.0, TEXT_TITLE);
+            let level_text = format!(" Lv.{}", player.skills.total_level());
+            self.draw_text_sharp(name, panel_x + padding, (name_y + 12.0).floor(), 16.0, TEXT_TITLE);
             let name_w = self.measure_text_sharp(name, 16.0).width;
-            self.draw_text_sharp(&level_text, (panel_x + padding + name_w).floor(), (name_y + 12.0).floor(), 16.0, TEXT_DIM);
+            self.draw_text_sharp(&level_text, panel_x + padding + name_w, (name_y + 12.0).floor(), 16.0, TEXT_DIM);
 
             // ===== HP BAR =====
+            let hp_bar_x = panel_x + padding - 2.0;
             let hp_bar_y = name_y + 18.0;
             let hp_ratio = player.hp as f32 / player.max_hp.max(1) as f32;
 
-            draw_rectangle(panel_x + padding, hp_bar_y, bar_width, bar_height, SLOT_INNER_SHADOW);
-            draw_rectangle(panel_x + padding + 1.0, hp_bar_y + 1.0, bar_width - 2.0, bar_height - 2.0, Color::new(0.08, 0.08, 0.10, 1.0));
+            draw_rectangle(hp_bar_x, hp_bar_y, bar_width, bar_height, SLOT_INNER_SHADOW);
+            draw_rectangle(hp_bar_x + 1.0, hp_bar_y + 1.0, bar_width - 2.0, bar_height - 2.0, Color::new(0.08, 0.08, 0.10, 1.0));
 
             let hp_fill_w = (bar_width - 4.0) * hp_ratio;
             if hp_fill_w > 0.0 {
@@ -1532,13 +1548,13 @@ impl Renderer {
                 } else {
                     Color::new(0.8, 0.2, 0.2, 1.0)
                 };
-                draw_rectangle(panel_x + padding + 2.0, hp_bar_y + 2.0, hp_fill_w, bar_height - 4.0, hp_color);
-                draw_rectangle(panel_x + padding + 2.0, hp_bar_y + 2.0, hp_fill_w, (bar_height - 4.0) / 2.0, Color::new(1.0, 1.0, 1.0, 0.25));
+                draw_rectangle(hp_bar_x + 2.0, hp_bar_y + 2.0, hp_fill_w, bar_height - 4.0, hp_color);
+                draw_rectangle(hp_bar_x + 2.0, hp_bar_y + 2.0, hp_fill_w, (bar_height - 4.0) / 2.0, Color::new(1.0, 1.0, 1.0, 0.25));
             }
 
             let hp_text = format!("{}/{}", player.hp, player.max_hp);
             let hp_text_w = self.measure_text_sharp(&hp_text, 16.0).width;
-            self.draw_text_sharp(&hp_text, (panel_x + padding + (bar_width - hp_text_w) / 2.0).floor(), (hp_bar_y + 13.0).floor(), 16.0, TEXT_NORMAL);
+            self.draw_text_sharp(&hp_text, (hp_bar_x + (bar_width - hp_text_w) / 2.0).floor(), (hp_bar_y + 13.0).floor(), 16.0, TEXT_NORMAL);
         }
 
         // Note: Interactive UI (inventory, crafting, dialogue, quick slots) is rendered

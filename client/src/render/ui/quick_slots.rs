@@ -9,36 +9,17 @@ use super::common::*;
 
 impl Renderer {
     pub(crate) fn render_quick_slots(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        // Smaller slot size for quick bar (6px less than inventory)
-        let slot_size = INV_SLOT_SIZE - 6.0;
-        let padding = SLOT_SPACING;
-        let total_width = 5.0 * (slot_size + padding) - padding;
+        // Quick slot size: 32px icon + 2px padding each side
+        let slot_size = QUICK_SLOT_SIZE;
+        let spacing = QUICK_SLOT_SPACING;
+        let total_width = 5.0 * slot_size + 4.0 * spacing;
 
-        // Add some padding for the background panel
-        let panel_padding = 5.0;
-        let panel_width = total_width + panel_padding * 2.0;
-        let panel_height = slot_size + panel_padding * 2.0;
-
-        let panel_x = (screen_width() - panel_width) / 2.0;
-        // Position above the exp bar with gap
-        let exp_bar_top = self.get_exp_bar_top();
-        let panel_y = exp_bar_top - EXP_BAR_GAP - panel_height;
-
-        // Draw semi-transparent background panel
-        let frame_outer_alpha = Color::new(FRAME_OUTER.r, FRAME_OUTER.g, FRAME_OUTER.b, 0.7);
-        let panel_bg_alpha = Color::new(PANEL_BG_MID.r, PANEL_BG_MID.g, PANEL_BG_MID.b, 0.75);
-        draw_rectangle(panel_x - 1.0, panel_y - 1.0, panel_width + 2.0, panel_height + 2.0, frame_outer_alpha);
-        draw_rectangle(panel_x, panel_y, panel_width, panel_height, panel_bg_alpha);
-
-        // Inner highlight (also semi-transparent)
-        let frame_mid_alpha = Color::new(FRAME_MID.r, FRAME_MID.g, FRAME_MID.b, 0.6);
-        draw_line(panel_x + 1.0, panel_y + 1.0, panel_x + panel_width - 1.0, panel_y + 1.0, 1.0, frame_mid_alpha);
-
-        let start_x = panel_x + panel_padding;
-        let start_y = panel_y + panel_padding;
+        let start_x = (screen_width() - total_width) / 2.0;
+        // Position at the bottom of the screen, aligned with menu buttons
+        let start_y = screen_height() - EXP_BAR_GAP - slot_size;
 
         for i in 0..5 {
-            let x = start_x + i as f32 * (slot_size + padding);
+            let x = start_x + i as f32 * (slot_size + spacing);
             let y = start_y;
 
             // Register slot bounds for hit detection

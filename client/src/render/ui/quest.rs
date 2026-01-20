@@ -164,7 +164,7 @@ impl Renderer {
         }
 
         let tracker_x = 10.0;
-        let tracker_y = if state.debug_mode { 150.0 } else { 20.0 };
+        let tracker_y = if state.debug_mode { 163.0 } else { 33.0 };
         let line_height = 18.0;
 
         let mut y = tracker_y;

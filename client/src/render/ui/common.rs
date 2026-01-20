@@ -119,8 +119,12 @@ pub const EXP_BAR_HEIGHT: f32 = 16.0;
 pub const EXP_BAR_GAP: f32 = 8.0;  // Gap between exp bar and UI elements above
 
 // Menu Button Constants
-pub const MENU_BUTTON_SIZE: f32 = 40.0;
+pub const MENU_BUTTON_SIZE: f32 = 36.0;
 pub const MENU_BUTTON_SPACING: f32 = 4.0;
+
+// Quick Slot Constants (32px icon + 2px padding each side + 1px border each side)
+pub const QUICK_SLOT_SIZE: f32 = 38.0;
+pub const QUICK_SLOT_SPACING: f32 = 4.0;
 
 // ============================================================================
 // Shared Types
