@@ -1,0 +1,59 @@
+.panel {
+  background: #2d2d44;
+  padding: 8px;
+  border-bottom: 1px solid #3d3d5c;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.layers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.layer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.layer.active {
+  background: #3d3d5c;
+}
+
+.checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.layerButton {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 2px;
+}
+
+.layerButton:hover {
+  color: #fff;
+}
+
+.layer.active .layerButton {
+  color: #fff;
+  font-weight: 500;
+}

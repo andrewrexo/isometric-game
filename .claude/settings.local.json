@@ -24,7 +24,9 @@
       "Bash(cargo install:*)",
       "Bash(RUST_LOG=warn timeout 8 ./target/release/isometric-client:*)",
       "Bash(sips:*)",
-      "Bash(identify:*)"
+      "Bash(identify:*)",
+      "Skill(superpowers:systematic-debugging)",
+      "Bash(wc:*)"
     ]
   }
 }

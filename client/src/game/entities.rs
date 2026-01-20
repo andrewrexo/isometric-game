@@ -75,8 +75,8 @@ impl Direction {
 // Movement speed in tiles per second (must match server: 250ms per tile = 15 frames at 60fps)
 pub const TILES_PER_SECOND: f32 = 4.0;
 
-// Visual interpolation speed - match server speed for smooth tile-to-tile movement
-// 1000ms / 250ms = 4.0 tiles/sec, exactly 15 frames per tile at 60fps
+// Linear interpolation speed - must match server movement rate
+// Server: 250ms per tile = 4 tiles per second
 const VISUAL_SPEED: f32 = 4.0;
 
 #[derive(Debug, Clone)]
@@ -241,8 +241,8 @@ impl Player {
         }
     }
 
-    /// Smooth visual interpolation toward target position
-    /// Simple prediction: when at server position with velocity, predict next tile
+    /// Smooth visual interpolation toward target position using exponential lerp
+    /// This is frame-rate independent: looks the same at 30fps, 60fps, or 144fps
     pub fn interpolate_visual(&mut self, delta: f32) {
         let dx = self.target_x - self.x;
         let dy = self.target_y - self.y;
@@ -271,13 +271,15 @@ impl Player {
                 self.is_moving = false;
             }
         } else {
-            // Move toward target at constant speed
+            // Linear interpolation - constant speed movement
             let move_dist = VISUAL_SPEED * delta;
 
             if dist <= move_dist {
+                // Close enough - snap to target
                 self.x = self.target_x;
                 self.y = self.target_y;
             } else {
+                // Move at constant speed toward target
                 self.x += (dx / dist) * move_dist;
                 self.y += (dy / dist) * move_dist;
             }

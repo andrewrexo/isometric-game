@@ -9,6 +9,77 @@ use super::pathfinding::PathState;
 use super::shop::{ShopData, ShopSubTab};
 use crate::ui::UiElementId;
 
+/// Frame timing diagnostics for performance analysis
+#[derive(Clone)]
+pub struct FrameTimings {
+    pub network_ms: f64,
+    pub render_total_ms: f64,
+    pub render_ground_ms: f64,
+    pub render_entities_ms: f64,
+    pub render_overhead_ms: f64,
+    pub render_ui_ms: f64,
+    pub render_effects_ms: f64,
+    pub update_ms: f64,
+    pub total_ms: f64,
+    pub entity_count: usize,
+    pub chunk_count: usize,
+    pub tiles_rendered: usize,
+    // Frame delta tracking (rolling window)
+    pub delta_ms: f64,
+    pub delta_min_ms: f64,
+    pub delta_max_ms: f64,
+    delta_samples: [f64; 60],
+    delta_idx: usize,
+}
+
+impl Default for FrameTimings {
+    fn default() -> Self {
+        Self {
+            network_ms: 0.0,
+            render_total_ms: 0.0,
+            render_ground_ms: 0.0,
+            render_entities_ms: 0.0,
+            render_overhead_ms: 0.0,
+            render_ui_ms: 0.0,
+            render_effects_ms: 0.0,
+            update_ms: 0.0,
+            total_ms: 0.0,
+            entity_count: 0,
+            chunk_count: 0,
+            tiles_rendered: 0,
+            delta_ms: 0.0,
+            delta_min_ms: 0.0,
+            delta_max_ms: 0.0,
+            delta_samples: [0.0; 60],
+            delta_idx: 0,
+        }
+    }
+}
+
+impl FrameTimings {
+    pub fn record_delta(&mut self, delta_ms: f64) {
+        self.delta_ms = delta_ms;
+        self.delta_samples[self.delta_idx] = delta_ms;
+        self.delta_idx = (self.delta_idx + 1) % 60;
+
+        // Calculate min/max over the window
+        self.delta_min_ms = f64::MAX;
+        self.delta_max_ms = f64::MIN;
+        for &sample in &self.delta_samples {
+            if sample > 0.0 {
+                self.delta_min_ms = self.delta_min_ms.min(sample);
+                self.delta_max_ms = self.delta_max_ms.max(sample);
+            }
+        }
+        if self.delta_min_ms == f64::MAX {
+            self.delta_min_ms = delta_ms;
+        }
+        if self.delta_max_ms == f64::MIN {
+            self.delta_max_ms = delta_ms;
+        }
+    }
+}
+
 pub struct Camera {
     pub x: f32,
     pub y: f32,
@@ -347,6 +418,9 @@ pub struct GameState {
 
     // Automated pathfinding state
     pub auto_path: Option<PathState>,
+
+    // Performance diagnostics (visible in debug mode)
+    pub frame_timings: FrameTimings,
 }
 
 impl GameState {
@@ -381,6 +455,7 @@ impl GameState {
             hovered_tile: None,
             hovered_entity_id: None,
             auto_path: None,
+            frame_timings: FrameTimings::default(),
         }
     }
 

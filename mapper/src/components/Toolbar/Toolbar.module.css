@@ -1,0 +1,60 @@
+.toolbar {
+  background: #2d2d44;
+  padding: 8px;
+  border-bottom: 1px solid #3d3d5c;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.tools {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 10px;
+  background: #3d3d5c;
+  border: 1px solid #4d4d6c;
+  border-radius: 4px;
+  color: #ccc;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 60px;
+}
+
+.tool:hover {
+  background: #4d4d6c;
+  color: #fff;
+}
+
+.tool.active {
+  background: #5c7cfa;
+  border-color: #748ffc;
+  color: #fff;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.shortcut {
+  font-size: 9px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.tool.active .shortcut {
+  color: rgba(255, 255, 255, 0.7);
+}

@@ -1,0 +1,300 @@
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEditorStore } from '@/state/store';
+import { isometricRenderer } from '@/core/IsometricRenderer';
+import { screenToWorldTile } from '@/core/coords';
+import { Tool, Layer } from '@/types';
+import { history } from '@/core/History';
+import styles from './Canvas.module.css';
+
+export function Canvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const [isPainting, setIsPainting] = useState(false);
+  const lastMousePos = useRef({ x: 0, y: 0 });
+
+  const {
+    chunks,
+    viewport,
+    hoveredTile,
+    activeTool,
+    activeLayer,
+    selectedTileId,
+    selectedEntityId,
+    showGrid,
+    showChunkBounds,
+    showCollision,
+    showEntities,
+    visibleLayers,
+    pan,
+    zoom,
+    setHoveredTile,
+    setTile,
+    toggleCollision,
+    fillTiles,
+    addEntity,
+    setSelectedTileId,
+  } = useEditorStore();
+
+  // Setup canvas and renderer
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    isometricRenderer.attach(canvas);
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (containerRef.current) {
+        canvas.width = containerRef.current.clientWidth;
+        canvas.height = containerRef.current.clientHeight;
+      }
+    });
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+      canvas.width = containerRef.current.clientWidth;
+      canvas.height = containerRef.current.clientHeight;
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+      isometricRenderer.detach();
+    };
+  }, []);
+
+  // Update renderer options
+  useEffect(() => {
+    isometricRenderer.setOptions({
+      showGrid,
+      showChunkBounds,
+      showCollision,
+      showEntities,
+      visibleLayers,
+    });
+  }, [showGrid, showChunkBounds, showCollision, showEntities, visibleLayers]);
+
+  // Render loop
+  useEffect(() => {
+    let animationId: number;
+
+    const render = () => {
+      const allChunks = Array.from(chunks.values());
+      isometricRenderer.render(allChunks, viewport);
+
+      // Highlight hovered tile
+      if (hoveredTile) {
+        isometricRenderer.highlightTile(hoveredTile, viewport, '#ffffff');
+      }
+
+      animationId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      cancelAnimationFrame(animationId);
+    };
+  }, [chunks, viewport, hoveredTile]);
+
+  // Handle tool action at position
+  const handleToolAction = useCallback(
+    (clientX: number, clientY: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const screenX = clientX - rect.left;
+      const screenY = clientY - rect.top;
+      const worldTile = screenToWorldTile({ sx: screenX, sy: screenY }, viewport);
+
+      switch (activeTool) {
+        case Tool.Paint:
+          if (activeLayer !== Layer.Collision && activeLayer !== Layer.Entities) {
+            setTile(worldTile, activeLayer, selectedTileId);
+          }
+          break;
+        case Tool.Eraser:
+          if (activeLayer !== Layer.Collision && activeLayer !== Layer.Entities) {
+            setTile(worldTile, activeLayer, 0);
+          }
+          break;
+        case Tool.Collision:
+          toggleCollision(worldTile);
+          break;
+        case Tool.Fill:
+          if (activeLayer !== Layer.Collision && activeLayer !== Layer.Entities) {
+            fillTiles(worldTile, activeLayer, selectedTileId);
+          }
+          break;
+        case Tool.Entity:
+          if (selectedEntityId) {
+            addEntity(worldTile, selectedEntityId);
+          }
+          break;
+        case Tool.Eyedropper: {
+          // Pick tile from clicked position
+          const chunk = useEditorStore.getState().getChunk({
+            cx: Math.floor(worldTile.wx / 32),
+            cy: Math.floor(worldTile.wy / 32),
+          });
+          if (chunk) {
+            const lx = ((worldTile.wx % 32) + 32) % 32;
+            const ly = ((worldTile.wy % 32) + 32) % 32;
+            const index = ly * 32 + lx;
+            const layerKey =
+              activeLayer === Layer.Ground
+                ? 'ground'
+                : activeLayer === Layer.Objects
+                  ? 'objects'
+                  : 'overhead';
+            if (layerKey === 'ground' || layerKey === 'objects' || layerKey === 'overhead') {
+              const tileId = chunk.layers[layerKey][index];
+              if (tileId > 0) {
+                setSelectedTileId(tileId);
+              }
+            }
+          }
+          break;
+        }
+      }
+    },
+    [
+      viewport,
+      activeTool,
+      activeLayer,
+      selectedTileId,
+      selectedEntityId,
+      setTile,
+      toggleCollision,
+      fillTiles,
+      addEntity,
+      setSelectedTileId,
+    ]
+  );
+
+  // Mouse event handlers
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      lastMousePos.current = { x: e.clientX, y: e.clientY };
+
+      // Middle mouse or space+left click for panning
+      if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+        setIsPanning(true);
+        e.preventDefault();
+        return;
+      }
+
+      // Left click for tool action
+      if (e.button === 0) {
+        setIsPainting(true);
+        if (activeTool === Tool.Paint || activeTool === Tool.Eraser) {
+          history.beginGroup(`${activeTool} stroke`);
+        }
+        handleToolAction(e.clientX, e.clientY);
+      }
+    },
+    [activeTool, handleToolAction]
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const worldTile = screenToWorldTile({ sx: screenX, sy: screenY }, viewport);
+      setHoveredTile(worldTile);
+
+      if (isPanning) {
+        const dx = e.clientX - lastMousePos.current.x;
+        const dy = e.clientY - lastMousePos.current.y;
+        pan(dx, dy);
+        lastMousePos.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+
+      if (isPainting && (activeTool === Tool.Paint || activeTool === Tool.Eraser)) {
+        handleToolAction(e.clientX, e.clientY);
+      }
+    },
+    [viewport, isPanning, isPainting, activeTool, pan, setHoveredTile, handleToolAction]
+  );
+
+  const handleMouseUp = useCallback(() => {
+    if (isPainting && (activeTool === Tool.Paint || activeTool === Tool.Eraser)) {
+      history.endGroup();
+    }
+    setIsPanning(false);
+    setIsPainting(false);
+  }, [isPainting, activeTool]);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredTile(null);
+    if (isPainting && (activeTool === Tool.Paint || activeTool === Tool.Eraser)) {
+      history.endGroup();
+    }
+    setIsPanning(false);
+    setIsPainting(false);
+  }, [isPainting, activeTool, setHoveredTile]);
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        zoom(factor, e.clientX - rect.left, e.clientY - rect.top);
+      }
+    },
+    [zoom]
+  );
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            useEditorStore.getState().redo();
+          } else {
+            useEditorStore.getState().undo();
+          }
+        } else if (e.key === 'y') {
+          e.preventDefault();
+          useEditorStore.getState().redo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  return (
+    <div ref={containerRef} className={styles.container}>
+      <canvas
+        ref={canvasRef}
+        className={styles.canvas}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onWheel={handleWheel}
+        onContextMenu={(e) => e.preventDefault()}
+      />
+      {hoveredTile && (
+        <div className={styles.coords}>
+          {hoveredTile.wx}, {hoveredTile.wy}
+        </div>
+      )}
+    </div>
+  );
+}

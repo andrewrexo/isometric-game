@@ -39,6 +39,12 @@ fn window_conf() -> Conf {
         window_width: 1280,
         window_height: 720,
         fullscreen: false,
+        platform: miniquad::conf::Platform {
+            // Enable vsync for consistent frame pacing (1 = wait for v-blank)
+            // This helps prevent choppy movement from variable frame times
+            swap_interval: Some(1),
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -241,7 +247,7 @@ async fn main() {
 
             // Render and get UI layout
             clear_background(Color::from_rgba(30, 30, 40, 255));
-            let layout = renderer.render(&game_state);
+            let (layout, _render_timings) = renderer.render(&game_state);
 
             // Handle input with UI layout (local only in WASM)
             let _ = input_handler.process(&mut game_state, &layout);
@@ -272,6 +278,7 @@ fn run_game_frame(
     input_handler: &mut InputHandler,
     renderer: &Renderer,
 ) {
+    let frame_start = get_time();
     let delta = get_frame_time();
 
     // Toggle debug mode with F3
@@ -305,11 +312,13 @@ fn run_game_frame(
     }
 
     // 1. Poll network messages
+    let network_start = get_time();
     network.poll(game_state);
+    let network_ms = (get_time() - network_start) * 1000.0;
 
     // 2. Render and get UI layout for hit detection
     clear_background(Color::from_rgba(30, 30, 40, 255));
-    let layout = renderer.render(game_state);
+    let (layout, render_timings) = renderer.render(game_state);
 
     // 3. Handle input with UI layout and send commands
     let commands = input_handler.process(game_state, &layout);
@@ -372,9 +381,28 @@ fn run_game_frame(
         network.send(&msg);
     }
 
-    // 4. Update game state
+    // Record delta for diagnostics
+    game_state.frame_timings.record_delta(delta as f64 * 1000.0);
+
+    // 4. Update game state using raw delta (lerp-based interpolation handles smoothing)
+    let update_start = get_time();
     let (input_dx, input_dy) = input_handler.get_movement();
     game_state.update(delta, input_dx, input_dy);
+    let update_ms = (get_time() - update_start) * 1000.0;
+
+    // Store frame timings
+    let total_ms = (get_time() - frame_start) * 1000.0;
+    game_state.frame_timings.network_ms = network_ms;
+    game_state.frame_timings.render_total_ms = render_timings.total_ms;
+    game_state.frame_timings.render_ground_ms = render_timings.ground_ms;
+    game_state.frame_timings.render_entities_ms = render_timings.entities_ms;
+    game_state.frame_timings.render_overhead_ms = render_timings.overhead_ms;
+    game_state.frame_timings.render_effects_ms = render_timings.effects_ms;
+    game_state.frame_timings.render_ui_ms = render_timings.ui_ms;
+    game_state.frame_timings.update_ms = update_ms;
+    game_state.frame_timings.total_ms = total_ms;
+    game_state.frame_timings.entity_count = game_state.players.len() + game_state.npcs.len() + game_state.ground_items.len();
+    game_state.frame_timings.chunk_count = game_state.chunk_manager.chunks().len();
 
     // 5. Debug info (render after game state update to show current frame data)
     if game_state.debug_mode {
@@ -392,5 +420,36 @@ fn run_game_frame(
             // Appearance debug info
             renderer.draw_text_sharp(&format!("Appearance: {} {} (F5/F6 to cycle)", player.gender, player.skin), 10.0, 140.0, 16.0, Color::from_rgba(150, 200, 255, 255));
         }
+
+        // Frame timing breakdown
+        let t = &game_state.frame_timings;
+        let timing_color = Color::from_rgba(100, 255, 150, 255);
+        let spike_color = Color::from_rgba(255, 100, 100, 255);
+        renderer.draw_text_sharp("--- Frame Timing (ms) ---", 10.0, 170.0, 16.0, timing_color);
+        renderer.draw_text_sharp(&format!("Network:  {:.2}", t.network_ms), 10.0, 190.0, 16.0, timing_color);
+
+        // Render breakdown with spike highlighting (>0.5ms highlighted)
+        let ground_color = if t.render_ground_ms > 0.5 { spike_color } else { timing_color };
+        let entities_color = if t.render_entities_ms > 0.5 { spike_color } else { timing_color };
+        let overhead_color = if t.render_overhead_ms > 0.5 { spike_color } else { timing_color };
+        let effects_color = if t.render_effects_ms > 0.5 { spike_color } else { timing_color };
+        let ui_color = if t.render_ui_ms > 0.5 { spike_color } else { timing_color };
+
+        renderer.draw_text_sharp(&format!("Render:   {:.2} (total)", t.render_total_ms), 10.0, 210.0, 16.0, timing_color);
+        renderer.draw_text_sharp(&format!("  Ground:   {:.2}", t.render_ground_ms), 10.0, 230.0, 16.0, ground_color);
+        renderer.draw_text_sharp(&format!("  Entities: {:.2}", t.render_entities_ms), 10.0, 250.0, 16.0, entities_color);
+        renderer.draw_text_sharp(&format!("  Overhead: {:.2}", t.render_overhead_ms), 10.0, 270.0, 16.0, overhead_color);
+        renderer.draw_text_sharp(&format!("  Effects:  {:.2}", t.render_effects_ms), 10.0, 290.0, 16.0, effects_color);
+        renderer.draw_text_sharp(&format!("  UI:       {:.2}", t.render_ui_ms), 10.0, 310.0, 16.0, ui_color);
+
+        renderer.draw_text_sharp(&format!("Update:   {:.2}", t.update_ms), 10.0, 330.0, 16.0, timing_color);
+        renderer.draw_text_sharp(&format!("Total:    {:.2}", t.total_ms), 10.0, 350.0, 16.0, timing_color);
+        renderer.draw_text_sharp(&format!("Entities: {} | Chunks: {}", t.entity_count, t.chunk_count), 10.0, 370.0, 16.0, timing_color);
+
+        // Delta variance (key indicator of frame pacing issues)
+        let delta_variance = t.delta_max_ms - t.delta_min_ms;
+        let variance_color = if delta_variance > 5.0 { spike_color } else { timing_color };
+        renderer.draw_text_sharp(&format!("Delta: {:.1}ms (range: {:.1}-{:.1}, var: {:.1})",
+            t.delta_ms, t.delta_min_ms, t.delta_max_ms, delta_variance), 10.0, 390.0, 16.0, variance_color);
     }
 }

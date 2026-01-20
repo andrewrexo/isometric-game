@@ -55,7 +55,7 @@ impl World {
         None
     }
 
-    /// Load chunk from Tiled JSON file
+    /// Load chunk from JSON file (supports both Tiled and simplified formats)
     async fn load_chunk_from_file(&self, coord: ChunkCoord) -> Option<Chunk> {
         let filename = format!("chunk_{}_{}.json", coord.x, coord.y);
         let path = Path::new(&self.chunk_dir).join(&filename);
@@ -65,14 +65,33 @@ impl World {
         }
 
         match tokio::fs::read_to_string(&path).await {
-            Ok(json) => match self.parse_tiled_json(coord, &json) {
-                Ok(chunk) => {
-                    info!("Loaded chunk from {:?}", path);
-                    Some(chunk)
-                }
-                Err(e) => {
-                    warn!("Failed to parse chunk {:?}: {}", path, e);
-                    None
+            Ok(json) => {
+                // Detect format by checking for version field
+                let value: serde_json::Value = match serde_json::from_str(&json) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("Failed to parse JSON {:?}: {}", path, e);
+                        return None;
+                    }
+                };
+
+                let result = if value.get("version").is_some() {
+                    // New simplified format (has version field)
+                    self.parse_simplified_json(coord, &value)
+                } else {
+                    // Legacy Tiled format
+                    self.parse_tiled_json(coord, &json)
+                };
+
+                match result {
+                    Ok(chunk) => {
+                        info!("Loaded chunk from {:?}", path);
+                        Some(chunk)
+                    }
+                    Err(e) => {
+                        warn!("Failed to parse chunk {:?}: {}", path, e);
+                        None
+                    }
                 }
             },
             Err(e) => {
@@ -80,6 +99,122 @@ impl World {
                 None
             }
         }
+    }
+
+    /// Parse new simplified JSON format (version 2+)
+    fn parse_simplified_json(&self, coord: ChunkCoord, value: &serde_json::Value) -> Result<Chunk, String> {
+        use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
+        let size = value["size"].as_u64().unwrap_or(CHUNK_SIZE as u64) as u32;
+        if size != CHUNK_SIZE {
+            return Err(format!(
+                "Chunk size mismatch: expected {}, got {}",
+                CHUNK_SIZE, size
+            ));
+        }
+
+        let mut chunk = Chunk::new(coord);
+
+        // Parse layers
+        if let Some(layers) = value.get("layers") {
+            // Ground layer
+            if let Some(ground) = layers["ground"].as_array() {
+                let tiles: Vec<u32> = ground
+                    .iter()
+                    .map(|v| v.as_u64().unwrap_or(0) as u32)
+                    .collect();
+                if tiles.len() == (CHUNK_SIZE * CHUNK_SIZE) as usize {
+                    chunk.layers[0].tiles = tiles;
+                }
+            }
+
+            // Objects layer
+            if let Some(objects) = layers["objects"].as_array() {
+                let tiles: Vec<u32> = objects
+                    .iter()
+                    .map(|v| v.as_u64().unwrap_or(0) as u32)
+                    .collect();
+                if tiles.len() == (CHUNK_SIZE * CHUNK_SIZE) as usize {
+                    chunk.layers[1].tiles = tiles;
+                }
+            }
+
+            // Overhead layer
+            if let Some(overhead) = layers["overhead"].as_array() {
+                let tiles: Vec<u32> = overhead
+                    .iter()
+                    .map(|v| v.as_u64().unwrap_or(0) as u32)
+                    .collect();
+                if tiles.len() == (CHUNK_SIZE * CHUNK_SIZE) as usize {
+                    chunk.layers[2].tiles = tiles;
+                }
+            }
+        }
+
+        // Parse collision from base64
+        if let Some(collision_b64) = value["collision"].as_str() {
+            if let Ok(collision_bytes) = BASE64.decode(collision_b64) {
+                chunk.collision = Chunk::unpack_collision(&collision_bytes);
+            }
+        }
+
+        // Parse entities
+        if let Some(entities) = value["entities"].as_array() {
+            for entity in entities {
+                let entity_id = entity["entityId"].as_str().unwrap_or("").to_string();
+                if entity_id.is_empty() {
+                    continue;
+                }
+
+                let local_x = entity["x"].as_u64().unwrap_or(0) as u32;
+                let local_y = entity["y"].as_u64().unwrap_or(0) as u32;
+                let world_x = coord.x * CHUNK_SIZE as i32 + local_x as i32;
+                let world_y = coord.y * CHUNK_SIZE as i32 + local_y as i32;
+
+                let level = entity["level"].as_i64().unwrap_or(1) as i32;
+                let respawn = entity["respawn"].as_bool().unwrap_or(true);
+                let facing = entity["facing"].as_str().map(|s| s.to_string());
+                let unique_id = entity["uniqueId"].as_str().map(|s| s.to_string());
+
+                chunk.entity_spawns.push(EntitySpawn {
+                    entity_id,
+                    world_x,
+                    world_y,
+                    level,
+                    respawn,
+                    respawn_time_override: None,
+                    facing,
+                    unique_id,
+                });
+            }
+        }
+
+        // Parse map objects (new cartesian format)
+        if let Some(map_objects) = value["mapObjects"].as_array() {
+            for obj in map_objects {
+                let gid = obj["gid"].as_u64().unwrap_or(0) as u32;
+                if gid == 0 {
+                    continue;
+                }
+
+                let local_x = obj["x"].as_i64().unwrap_or(0) as i32;
+                let local_y = obj["y"].as_i64().unwrap_or(0) as i32;
+                let world_x = coord.x * CHUNK_SIZE as i32 + local_x;
+                let world_y = coord.y * CHUNK_SIZE as i32 + local_y;
+                let width = obj["width"].as_u64().unwrap_or(64) as u32;
+                let height = obj["height"].as_u64().unwrap_or(64) as u32;
+
+                chunk.objects.push(MapObject {
+                    gid,
+                    tile_x: world_x,
+                    tile_y: world_y,
+                    width,
+                    height,
+                });
+            }
+        }
+
+        Ok(chunk)
     }
 
     /// Parse Tiled JSON format into a Chunk

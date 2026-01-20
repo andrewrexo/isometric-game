@@ -9,6 +9,17 @@ use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth
 use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, NpcAnimation};
 use super::font::BitmapFont;
 
+/// Timing data from a render pass
+#[derive(Default, Clone)]
+pub struct RenderTimings {
+    pub ground_ms: f64,
+    pub entities_ms: f64,
+    pub overhead_ms: f64,
+    pub effects_ms: f64,
+    pub ui_ms: f64,
+    pub total_ms: f64,
+}
+
 /// Tileset configuration
 const TILESET_TILE_WIDTH: f32 = 64.0;
 const TILESET_TILE_HEIGHT: f32 = 32.0;
@@ -471,16 +482,22 @@ impl Renderer {
         }
     }
 
-    pub fn render(&self, state: &GameState) -> UiLayout {
+    pub fn render(&self, state: &GameState) -> (UiLayout, RenderTimings) {
+        let render_start = get_time();
+        let mut timings = RenderTimings::default();
+
         // 1. Render ground layer tiles
+        let t0 = get_time();
         self.render_tilemap_layer(state, LayerType::Ground);
 
         // 1.5. Render hovered tile border if hovering over a tile
         if let Some((tile_x, tile_y)) = state.hovered_tile {
             self.render_tile_hover(tile_x, tile_y, &state.camera);
         }
+        timings.ground_ms = (get_time() - t0) * 1000.0;
 
         // 2. Collect renderable items (players + NPCs + items + object tiles + map objects) for depth sorting
+        let t1 = get_time();
         #[derive(Clone)]
         enum Renderable<'a> {
             Player(&'a Player, bool),
@@ -490,7 +507,9 @@ impl Renderer {
             ChunkObject(&'a MapObject),
         }
 
-        let mut renderables: Vec<(f32, Renderable)> = Vec::new();
+        // Pre-allocate with estimated capacity to reduce allocations
+        let estimated_capacity = state.players.len() + state.npcs.len() + state.ground_items.len() + 100;
+        let mut renderables: Vec<(f32, Renderable)> = Vec::with_capacity(estimated_capacity);
 
         // Add ground items (render below entities)
         for item in state.ground_items.values() {
@@ -564,11 +583,15 @@ impl Renderer {
                 }
             }
         }
+        timings.entities_ms = (get_time() - t1) * 1000.0;
 
         // 4. Render overhead layer (always on top)
+        let t2 = get_time();
         self.render_tilemap_layer(state, LayerType::Overhead);
+        timings.overhead_ms = (get_time() - t2) * 1000.0;
 
         // 5. Render floating damage numbers
+        let t3 = get_time();
         self.render_damage_numbers(state);
 
         // 6. Render floating level up text
@@ -576,12 +599,18 @@ impl Renderer {
 
         // 7. Render chat bubbles above players
         self.render_chat_bubbles(state);
+        timings.effects_ms = (get_time() - t3) * 1000.0;
 
         // 8. Render UI (non-interactive elements)
+        let t4 = get_time();
         self.render_ui(state);
 
         // 9. Render interactive UI elements and return layout for hit detection
-        self.render_interactive_ui(state)
+        let layout = self.render_interactive_ui(state);
+        timings.ui_ms = (get_time() - t4) * 1000.0;
+
+        timings.total_ms = (get_time() - render_start) * 1000.0;
+        (layout, timings)
     }
 
     fn render_level_up_events(&self, state: &GameState) {
@@ -832,10 +861,44 @@ impl Renderer {
         // Try to render from chunks if any are loaded
         let chunks = state.chunk_manager.chunks();
         if !chunks.is_empty() {
+            // Screen bounds for culling
+            let screen_w = screen_width();
+            let screen_h = screen_height();
+            let margin = TILE_WIDTH * 4.0; // Extra margin for chunk edges
+
             // Render from chunk manager
             for (coord, chunk) in chunks.iter() {
                 let chunk_offset_x = coord.x * CHUNK_SIZE as i32;
                 let chunk_offset_y = coord.y * CHUNK_SIZE as i32;
+
+                // CHUNK-LEVEL CULLING: Check if chunk is visible before iterating tiles
+                // In isometric projection, a chunk forms a diamond. Check all 4 corners.
+                let corners = [
+                    (chunk_offset_x as f32, chunk_offset_y as f32),                           // top
+                    (chunk_offset_x as f32 + CHUNK_SIZE as f32, chunk_offset_y as f32),       // right
+                    (chunk_offset_x as f32, chunk_offset_y as f32 + CHUNK_SIZE as f32),       // left
+                    (chunk_offset_x as f32 + CHUNK_SIZE as f32, chunk_offset_y as f32 + CHUNK_SIZE as f32), // bottom
+                ];
+
+                // Get screen bounds of the chunk
+                let mut min_sx = f32::MAX;
+                let mut max_sx = f32::MIN;
+                let mut min_sy = f32::MAX;
+                let mut max_sy = f32::MIN;
+
+                for (wx, wy) in corners {
+                    let (sx, sy) = world_to_screen(wx, wy, &state.camera);
+                    min_sx = min_sx.min(sx);
+                    max_sx = max_sx.max(sx);
+                    min_sy = min_sy.min(sy);
+                    max_sy = max_sy.max(sy);
+                }
+
+                // Skip entire chunk if completely off-screen
+                if max_sx < -margin || min_sx > screen_w + margin ||
+                   max_sy < -margin || min_sy > screen_h + margin {
+                    continue;
+                }
 
                 // Find the layer
                 for layer in &chunk.layers {
@@ -858,12 +921,12 @@ impl Renderer {
 
                             let (screen_x, screen_y) = world_to_screen(world_x as f32, world_y as f32, &state.camera);
 
-                            // Culling: skip tiles outside viewport
-                            let margin = TILE_WIDTH * 2.0;
-                            if screen_x < -margin || screen_x > screen_width() + margin {
+                            // Tile-level culling (still needed for partially visible chunks)
+                            let tile_margin = TILE_WIDTH * 2.0;
+                            if screen_x < -tile_margin || screen_x > screen_w + tile_margin {
                                 continue;
                             }
-                            if screen_y < -margin || screen_y > screen_height() + margin {
+                            if screen_y < -tile_margin || screen_y > screen_h + tile_margin {
                                 continue;
                             }
 

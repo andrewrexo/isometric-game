@@ -135,8 +135,8 @@ impl Npc {
         }
     }
 
-    /// Smooth visual interpolation - matches player logic exactly
-    /// Uses direction for prediction when NPC is moving
+    /// Smooth visual interpolation - constant speed linear movement
+    /// Speed is based on NPC's move_speed to match server timing
     pub fn update(&mut self, delta: f32) {
         if self.state == NpcState::Dead {
             return;
@@ -154,15 +154,17 @@ impl Npc {
             self.y = self.target_y;
             actually_moving = false;
         } else {
-            // Move toward target faster than server speed to always catch up
-            // 1.25x ensures we arrive before next server update even with network jitter
+            // Linear interpolation - constant speed movement
+            // Move slightly faster than server speed to ensure we arrive before next update
             let speed = (self.move_speed * 1.25).max(2.0);
             let move_dist = speed * delta;
 
             if dist <= move_dist {
+                // Close enough - snap to target
                 self.x = self.target_x;
                 self.y = self.target_y;
             } else {
+                // Move at constant speed toward target
                 self.x += (dx / dist) * move_dist;
                 self.y += (dy / dist) * move_dist;
             }
