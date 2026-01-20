@@ -4,8 +4,9 @@ import styles from './LayerPanel.module.css';
 
 const layers: { id: Layer; label: string }[] = [
   { id: Layer.Ground, label: 'Ground' },
-  { id: Layer.Objects, label: 'Objects' },
+  { id: Layer.Objects, label: 'Objects (Tiles)' },
   { id: Layer.Overhead, label: 'Overhead' },
+  { id: Layer.MapObjects, label: 'Map Objects' },
   { id: Layer.Collision, label: 'Collision' },
   { id: Layer.Entities, label: 'Entities' },
 ];
@@ -18,8 +19,10 @@ export function LayerPanel() {
     setLayerVisibility,
     showCollision,
     showEntities,
+    showMapObjects,
     toggleCollisionOverlay,
     toggleEntitiesOverlay,
+    toggleMapObjectsOverlay,
   } = useEditorStore();
 
   const isLayerVisible = (layer: Layer): boolean => {
@@ -34,6 +37,8 @@ export function LayerPanel() {
         return showCollision;
       case Layer.Entities:
         return showEntities;
+      case Layer.MapObjects:
+        return showMapObjects;
       default:
         return true;
     }
@@ -55,6 +60,9 @@ export function LayerPanel() {
         break;
       case Layer.Entities:
         toggleEntitiesOverlay();
+        break;
+      case Layer.MapObjects:
+        toggleMapObjectsOverlay();
         break;
     }
   };

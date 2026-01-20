@@ -334,7 +334,11 @@ export class ChunkManager {
   exportChunk(coord: ChunkCoord): SimplifiedChunk | null {
     const chunk = this.getChunk(coord);
     if (!chunk) return null;
+    return this.exportChunkData(chunk);
+  }
 
+  // Export a chunk object directly (for exporting from store)
+  exportChunkData(chunk: Chunk): SimplifiedChunk {
     const collisionBitset = new BitSet(chunk.width * chunk.height);
     collisionBitset.setRaw(chunk.collision);
 
@@ -375,6 +379,12 @@ export class ChunkManager {
   exportChunkToJSON(coord: ChunkCoord, pretty: boolean = true): string | null {
     const data = this.exportChunk(coord);
     if (!data) return null;
+    return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
+  }
+
+  // Export a chunk object directly to JSON string
+  exportChunkDataToJSON(chunk: Chunk, pretty: boolean = true): string {
+    const data = this.exportChunkData(chunk);
     return pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
   }
 

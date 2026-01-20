@@ -1,0 +1,43 @@
+{
+  "tilesets": [
+    {
+      "name": "tiles",
+      "image": "/assets/sprites/tiles.png",
+      "tileWidth": 64,
+      "tileHeight": 32,
+      "columns": 32,
+      "firstGid": 1
+    }
+  ],
+  "objects": {
+    "basePath": "/assets/sprites/objects",
+    "firstGid": 1162,
+    "items": [
+      { "id": 101, "name": "Tree 1", "width": 108, "height": 161 },
+      { "id": 102, "name": "Tree 2", "width": 195, "height": 255 },
+      { "id": 103, "name": "Tree 3", "width": 72, "height": 116 },
+      { "id": 104, "name": "Rock 1", "width": 37, "height": 32 },
+      { "id": 105, "name": "Rock 2", "width": 34, "height": 32 },
+      { "id": 106, "name": "Pole 1", "width": 30, "height": 140 },
+      { "id": 107, "name": "Pole 2", "width": 17, "height": 119 },
+      { "id": 108, "name": "Bush 1", "width": 42, "height": 88 },
+      { "id": 109, "name": "Bush 2", "width": 63, "height": 100 },
+      { "id": 110, "name": "Bush 3", "width": 63, "height": 100 },
+      { "id": 111, "name": "Bush 4", "width": 63, "height": 100 },
+      { "id": 112, "name": "Well", "width": 121, "height": 121 },
+      { "id": 113, "name": "Sign 1", "width": 31, "height": 64 },
+      { "id": 114, "name": "Sign 2", "width": 31, "height": 64 },
+      { "id": 115, "name": "Barrel", "width": 31, "height": 28 },
+      { "id": 128, "name": "Chest 1", "width": 64, "height": 70 },
+      { "id": 129, "name": "Chest 2", "width": 64, "height": 40 },
+      { "id": 130, "name": "Crate 1", "width": 62, "height": 50 },
+      { "id": 131, "name": "Crate 2", "width": 64, "height": 62 },
+      { "id": 1000, "name": "House 1", "width": 341, "height": 417 },
+      { "id": 1001, "name": "House 2", "width": 181, "height": 196 },
+      { "id": 1002, "name": "House 3", "width": 245, "height": 269 }
+    ]
+  },
+  "chunkSize": 32,
+  "mapsPath": "../rust-server/maps/world_0",
+  "entitiesPath": "../rust-server/data/entities/npcs"
+}

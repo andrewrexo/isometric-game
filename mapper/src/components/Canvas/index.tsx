@@ -4,6 +4,7 @@ import { isometricRenderer } from '@/core/IsometricRenderer';
 import { screenToWorldTile } from '@/core/coords';
 import { Tool, Layer } from '@/types';
 import { history } from '@/core/History';
+import { objectLoader } from '@/core/ObjectLoader';
 import styles from './Canvas.module.css';
 
 export function Canvas() {
@@ -21,10 +22,12 @@ export function Canvas() {
     activeLayer,
     selectedTileId,
     selectedEntityId,
+    selectedObjectId,
     showGrid,
     showChunkBounds,
     showCollision,
     showEntities,
+    showMapObjects,
     visibleLayers,
     pan,
     zoom,
@@ -33,7 +36,14 @@ export function Canvas() {
     toggleCollision,
     fillTiles,
     addEntity,
+    removeEntity,
+    addMapObject,
+    removeMapObject,
     setSelectedTileId,
+    findEntityAtWorld,
+    setSelectedEntitySpawn,
+    findMapObjectAtWorld,
+    setSelectedMapObject,
   } = useEditorStore();
 
   // Setup canvas and renderer
@@ -69,9 +79,10 @@ export function Canvas() {
       showChunkBounds,
       showCollision,
       showEntities,
+      showMapObjects,
       visibleLayers,
     });
-  }, [showGrid, showChunkBounds, showCollision, showEntities, visibleLayers]);
+  }, [showGrid, showChunkBounds, showCollision, showEntities, showMapObjects, visibleLayers]);
 
   // Render loop
   useEffect(() => {
@@ -113,11 +124,25 @@ export function Canvas() {
             setTile(worldTile, activeLayer, selectedTileId);
           }
           break;
-        case Tool.Eraser:
-          if (activeLayer !== Layer.Collision && activeLayer !== Layer.Entities) {
+        case Tool.Eraser: {
+          if (activeLayer === Layer.Entities) {
+            // Erase entity at position
+            const entityAtPos = findEntityAtWorld(worldTile);
+            if (entityAtPos) {
+              removeEntity(entityAtPos.chunkCoord, entityAtPos.entity.id);
+            }
+          } else if (activeLayer === Layer.MapObjects) {
+            // Erase map object at position
+            const objectAtPos = findMapObjectAtWorld(worldTile);
+            if (objectAtPos) {
+              removeMapObject(objectAtPos.chunkCoord, objectAtPos.object.id);
+            }
+          } else if (activeLayer !== Layer.Collision) {
+            // Erase tile
             setTile(worldTile, activeLayer, 0);
           }
           break;
+        }
         case Tool.Collision:
           toggleCollision(worldTile);
           break;
@@ -126,11 +151,62 @@ export function Canvas() {
             fillTiles(worldTile, activeLayer, selectedTileId);
           }
           break;
-        case Tool.Entity:
-          if (selectedEntityId) {
+        case Tool.Entity: {
+          // First check if there's an existing entity to select
+          const existingEntity = findEntityAtWorld(worldTile);
+          if (existingEntity) {
+            setSelectedEntitySpawn({
+              chunkCoord: existingEntity.chunkCoord,
+              spawnId: existingEntity.entity.id,
+            });
+          } else if (selectedEntityId) {
+            // No existing entity, place a new one
             addEntity(worldTile, selectedEntityId);
           }
           break;
+        }
+        case Tool.Object: {
+          // First check if there's an existing object to select
+          const existingObject = findMapObjectAtWorld(worldTile);
+          if (existingObject) {
+            setSelectedMapObject({
+              chunkCoord: existingObject.chunkCoord,
+              objectId: existingObject.object.id,
+            });
+          } else if (selectedObjectId) {
+            // No existing object, place a new one
+            const objDef = objectLoader.getObject(selectedObjectId);
+            if (objDef) {
+              addMapObject(worldTile, selectedObjectId, objDef.width, objDef.height);
+            }
+          }
+          break;
+        }
+        case Tool.Select: {
+          // Select tool can select entities or objects
+          const entityAtPos = findEntityAtWorld(worldTile);
+          if (entityAtPos) {
+            setSelectedEntitySpawn({
+              chunkCoord: entityAtPos.chunkCoord,
+              spawnId: entityAtPos.entity.id,
+            });
+            setSelectedMapObject(null);
+          } else {
+            const objectAtPos = findMapObjectAtWorld(worldTile);
+            if (objectAtPos) {
+              setSelectedMapObject({
+                chunkCoord: objectAtPos.chunkCoord,
+                objectId: objectAtPos.object.id,
+              });
+              setSelectedEntitySpawn(null);
+            } else {
+              // Nothing at position, clear selection
+              setSelectedEntitySpawn(null);
+              setSelectedMapObject(null);
+            }
+          }
+          break;
+        }
         case Tool.Eyedropper: {
           // Pick tile from clicked position
           const chunk = useEditorStore.getState().getChunk({
@@ -164,11 +240,19 @@ export function Canvas() {
       activeLayer,
       selectedTileId,
       selectedEntityId,
+      selectedObjectId,
       setTile,
       toggleCollision,
       fillTiles,
       addEntity,
+      removeEntity,
+      addMapObject,
+      removeMapObject,
       setSelectedTileId,
+      findEntityAtWorld,
+      setSelectedEntitySpawn,
+      findMapObjectAtWorld,
+      setSelectedMapObject,
     ]
   );
 

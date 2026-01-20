@@ -87,3 +87,18 @@
 .deleteButton:hover {
   background: #c82333;
 }
+
+.value {
+  font-size: 12px;
+  color: #ccc;
+  padding: 6px 8px;
+  background: #3d3d5c;
+  border-radius: 4px;
+}
+
+.hint {
+  font-size: 10px;
+  color: #666;
+  text-align: center;
+  margin-top: 4px;
+}

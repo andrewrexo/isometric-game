@@ -9,6 +9,7 @@ import {
 } from './coords';
 import { BitSet } from './BitSet';
 import { tilesetLoader } from './TilesetLoader';
+import { objectLoader } from './ObjectLoader';
 
 export interface RenderOptions {
   showGrid: boolean;
@@ -235,11 +236,10 @@ export class IsometricRenderer {
       const worldCoord = chunkLocalToWorld(chunk.coord, { lx: obj.x, ly: obj.y });
       const screen = worldToScreen(worldCoord, viewport);
 
-      // Get the tile rect for this object's gid
-      const tileRect = tilesetLoader.getTileRect(obj.gid);
-      const tileset = tilesetLoader.getTilesetForGid(obj.gid);
+      // Get the object definition from objectLoader using the gid
+      const objDef = objectLoader.getObjectByGid(obj.gid);
 
-      if (tileRect && tileset?.imageElement) {
+      if (objDef?.image) {
         // Calculate draw position - objects are anchored at their base tile
         // The sprite extends upward from the base position
         const scaledWidth = obj.width * viewport.zoom;
@@ -250,11 +250,11 @@ export class IsometricRenderer {
         const drawY = screen.sy + TILE_HEIGHT * viewport.zoom - scaledHeight;
 
         this.ctx.drawImage(
-          tileset.imageElement,
-          tileRect.x,
-          tileRect.y,
-          obj.width,
-          obj.height,
+          objDef.image,
+          0,
+          0,
+          objDef.image.width,
+          objDef.image.height,
           drawX,
           drawY,
           scaledWidth,

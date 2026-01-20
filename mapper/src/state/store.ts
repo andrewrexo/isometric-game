@@ -8,12 +8,14 @@ import type {
   EntityRegistry,
   Tileset,
   Selection,
+  MapObject,
 } from '@/types';
 import { Tool, Layer } from '@/types';
 import { chunkKey, worldToChunk, worldToLocal, localToIndex } from '@/core/coords';
 import { BitSet } from '@/core/BitSet';
 import { history } from '@/core/History';
 import { chunkManager } from '@/core/ChunkManager';
+import { objectLoader } from '@/core/ObjectLoader';
 
 interface EditorState {
   // World state
@@ -34,7 +36,12 @@ interface EditorState {
   activeTool: Tool;
   activeLayer: Layer;
   selectedTileId: number;
-  selectedEntityId: string | null;
+  selectedEntityId: string | null; // Entity type ID from palette (for placing new entities)
+  selectedObjectId: number | null; // File ID of selected object for placement
+
+  // Selection state (for placed items on map)
+  selectedEntitySpawn: { chunkCoord: ChunkCoord; spawnId: string } | null;
+  selectedMapObject: { chunkCoord: ChunkCoord; objectId: string } | null;
 
   // Asset state
   tilesets: Tileset[];
@@ -45,6 +52,7 @@ interface EditorState {
   showChunkBounds: boolean;
   showCollision: boolean;
   showEntities: boolean;
+  showMapObjects: boolean;
   visibleLayers: {
     ground: boolean;
     objects: boolean;
@@ -74,6 +82,13 @@ interface EditorActions {
   setActiveLayer: (layer: Layer) => void;
   setSelectedTileId: (id: number) => void;
   setSelectedEntityId: (id: string | null) => void;
+  setSelectedObjectId: (id: number | null) => void;
+
+  // Selection actions (for placed items)
+  setSelectedEntitySpawn: (selection: { chunkCoord: ChunkCoord; spawnId: string } | null) => void;
+  setSelectedMapObject: (selection: { chunkCoord: ChunkCoord; objectId: string } | null) => void;
+  findEntityAtWorld: (world: WorldCoord) => { chunkCoord: ChunkCoord; entity: EntitySpawn } | null;
+  findMapObjectAtWorld: (world: WorldCoord) => { chunkCoord: ChunkCoord; object: MapObject } | null;
 
   // Tile editing actions
   setTile: (world: WorldCoord, layer: Layer, tileId: number) => void;
@@ -85,6 +100,11 @@ interface EditorActions {
   removeEntity: (chunkCoord: ChunkCoord, entitySpawnId: string) => void;
   updateEntity: (chunkCoord: ChunkCoord, entitySpawnId: string, updates: Partial<EntitySpawn>) => void;
 
+  // Map object actions
+  addMapObject: (world: WorldCoord, objectId: number, width: number, height: number) => MapObject;
+  removeMapObject: (chunkCoord: ChunkCoord, objectSpawnId: string) => void;
+  updateMapObject: (chunkCoord: ChunkCoord, objectSpawnId: string, updates: Partial<MapObject>) => void;
+
   // Asset actions
   setTilesets: (tilesets: Tileset[]) => void;
   setEntityRegistry: (registry: EntityRegistry) => void;
@@ -94,6 +114,7 @@ interface EditorActions {
   toggleChunkBounds: () => void;
   toggleCollisionOverlay: () => void;
   toggleEntitiesOverlay: () => void;
+  toggleMapObjectsOverlay: () => void;
   setLayerVisibility: (layer: keyof EditorState['visibleLayers'], visible: boolean) => void;
 
   // History actions
@@ -127,6 +148,10 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   activeLayer: Layer.Ground,
   selectedTileId: 1,
   selectedEntityId: null,
+  selectedObjectId: null,
+
+  selectedEntitySpawn: null,
+  selectedMapObject: null,
 
   tilesets: [],
   entityRegistry: null,
@@ -135,6 +160,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   showChunkBounds: true,
   showCollision: false,
   showEntities: true,
+  showMapObjects: true,
   visibleLayers: {
     ground: true,
     objects: true,
@@ -205,6 +231,39 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   setActiveLayer: (layer) => set({ activeLayer: layer }),
   setSelectedTileId: (id) => set({ selectedTileId: id }),
   setSelectedEntityId: (id) => set({ selectedEntityId: id }),
+  setSelectedObjectId: (id) => set({ selectedObjectId: id }),
+
+  // Selection actions (for placed items)
+  setSelectedEntitySpawn: (selection) => set({ selectedEntitySpawn: selection }),
+  setSelectedMapObject: (selection) => set({ selectedMapObject: selection }),
+
+  findEntityAtWorld: (world) => {
+    const chunkCoord = worldToChunk(world);
+    const chunk = get().getChunk(chunkCoord);
+    if (!chunk) return null;
+
+    const local = worldToLocal(world);
+    // Find entity at this position
+    const entity = chunk.entities.find((e) => e.x === local.lx && e.y === local.ly);
+    if (entity) {
+      return { chunkCoord, entity };
+    }
+    return null;
+  },
+
+  findMapObjectAtWorld: (world) => {
+    const chunkCoord = worldToChunk(world);
+    const chunk = get().getChunk(chunkCoord);
+    if (!chunk) return null;
+
+    const local = worldToLocal(world);
+    // Find object at this position
+    const object = chunk.mapObjects.find((o) => o.x === local.lx && o.y === local.ly);
+    if (object) {
+      return { chunkCoord, object };
+    }
+    return null;
+  },
 
   // Tile editing actions
   setTile: (world, layer, tileId) => {
@@ -463,6 +522,95 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
     }));
   },
 
+  // Map object actions
+  addMapObject: (world, objectId, width, height) => {
+    const chunkCoord = worldToChunk(world);
+    get().getOrCreateChunk(chunkCoord); // Ensure chunk exists
+    const local = worldToLocal(world);
+
+    const gid = objectLoader.idToGid(objectId);
+    const newObject: MapObject = {
+      id: `obj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      gid,
+      x: local.lx,
+      y: local.ly,
+      width,
+      height,
+    };
+
+    history.push({
+      type: 'addMapObject',
+      description: `Add map object ${objectId}`,
+      undo: () => get().removeMapObject(chunkCoord, newObject.id),
+      redo: () => {
+        get().updateChunk(chunkCoord, (c) => ({
+          ...c,
+          mapObjects: [...c.mapObjects, newObject],
+          dirty: true,
+        }));
+      },
+    });
+
+    get().updateChunk(chunkCoord, (c) => ({
+      ...c,
+      mapObjects: [...c.mapObjects, newObject],
+      dirty: true,
+    }));
+
+    return newObject;
+  },
+
+  removeMapObject: (chunkCoord, objectSpawnId) => {
+    const chunk = get().getChunk(chunkCoord);
+    if (!chunk) return;
+
+    const obj = chunk.mapObjects.find((o) => o.id === objectSpawnId);
+    if (!obj) return;
+
+    history.push({
+      type: 'removeMapObject',
+      description: `Remove map object`,
+      undo: () => {
+        get().updateChunk(chunkCoord, (c) => ({
+          ...c,
+          mapObjects: [...c.mapObjects, obj],
+          dirty: true,
+        }));
+      },
+      redo: () => get().removeMapObject(chunkCoord, objectSpawnId),
+    });
+
+    get().updateChunk(chunkCoord, (c) => ({
+      ...c,
+      mapObjects: c.mapObjects.filter((o) => o.id !== objectSpawnId),
+      dirty: true,
+    }));
+  },
+
+  updateMapObject: (chunkCoord, objectSpawnId, updates) => {
+    const chunk = get().getChunk(chunkCoord);
+    if (!chunk) return;
+
+    const objectIndex = chunk.mapObjects.findIndex((o) => o.id === objectSpawnId);
+    if (objectIndex === -1) return;
+
+    const oldObject = { ...chunk.mapObjects[objectIndex] };
+    const newObject = { ...oldObject, ...updates };
+
+    history.push({
+      type: 'updateMapObject',
+      description: `Update map object`,
+      undo: () => get().updateMapObject(chunkCoord, objectSpawnId, oldObject),
+      redo: () => get().updateMapObject(chunkCoord, objectSpawnId, updates),
+    });
+
+    get().updateChunk(chunkCoord, (c) => ({
+      ...c,
+      mapObjects: c.mapObjects.map((o, i) => (i === objectIndex ? newObject : o)),
+      dirty: true,
+    }));
+  },
+
   // Asset actions
   setTilesets: (tilesets) => set({ tilesets }),
   setEntityRegistry: (registry) => set({ entityRegistry: registry }),
@@ -472,6 +620,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   toggleChunkBounds: () => set((state) => ({ showChunkBounds: !state.showChunkBounds })),
   toggleCollisionOverlay: () => set((state) => ({ showCollision: !state.showCollision })),
   toggleEntitiesOverlay: () => set((state) => ({ showEntities: !state.showEntities })),
+  toggleMapObjectsOverlay: () => set((state) => ({ showMapObjects: !state.showMapObjects })),
   setLayerVisibility: (layer, visible) =>
     set((state) => ({
       visibleLayers: { ...state.visibleLayers, [layer]: visible },
