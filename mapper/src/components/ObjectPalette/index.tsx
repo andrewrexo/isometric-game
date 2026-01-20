@@ -5,7 +5,7 @@ import type { ObjectDefinition } from '@/types';
 import styles from './ObjectPalette.module.css';
 
 export function ObjectPalette() {
-  const { selectedObjectId, setSelectedObjectId } = useEditorStore();
+  const { selectedObjectId, setSelectedObjectId, setActiveTool } = useEditorStore();
   const [objects, setObjects] = useState<ObjectDefinition[]>([]);
   const [filter, setFilter] = useState('');
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -78,7 +78,10 @@ export function ObjectPalette() {
           <button
             key={obj.id}
             className={`${styles.item} ${selectedObjectId === obj.id ? styles.selected : ''}`}
-            onClick={() => setSelectedObjectId(obj.id)}
+            onClick={() => {
+              setSelectedObjectId(obj.id);
+              setActiveTool('object');
+            }}
             title={`${obj.name} (${obj.width}x${obj.height})`}
           >
             <canvas

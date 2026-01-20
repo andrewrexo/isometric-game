@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "copy-assets": "node scripts/copy-assets.js",
+    "build": "node scripts/copy-assets.js && tsc -b && vite build",
+    "build:dev": "tsc -b && vite build",
+    "build:docker": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },

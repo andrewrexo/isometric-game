@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useEditorStore } from '@/state/store';
 import { tilesetLoader } from '@/core/TilesetLoader';
 import { entityRegistryLoader } from '@/core/EntityRegistry';
 import { objectLoader } from '@/core/ObjectLoader';
 import { chunkManager } from '@/core/ChunkManager';
 import { chunkKey } from '@/core/coords';
+import { storage } from '@/core/Storage';
 import { MenuBar } from '@/components/MenuBar';
 import { Toolbar } from '@/components/Toolbar';
 import { Canvas } from '@/components/Canvas';
@@ -16,6 +17,55 @@ import { PropertiesPanel } from '@/components/PropertiesPanel';
 import './App.css';
 
 function App() {
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(250);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(250);
+  const [isResizing, setIsResizing] = useState<'left' | 'right' | null>(null);
+  const resizeStartX = useRef(0);
+  const resizeStartWidth = useRef(0);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+
+    const delta = e.clientX - resizeStartX.current;
+    const newWidth = isResizing === 'left'
+      ? resizeStartWidth.current + delta
+      : resizeStartWidth.current - delta;
+
+    const clampedWidth = Math.max(180, Math.min(500, newWidth));
+
+    if (isResizing === 'left') {
+      setLeftSidebarWidth(clampedWidth);
+    } else {
+      setRightSidebarWidth(clampedWidth);
+    }
+  }, [isResizing]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(null);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+
+  const startResize = (side: 'left' | 'right', e: React.MouseEvent) => {
+    setIsResizing(side);
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current = side === 'left' ? leftSidebarWidth : rightSidebarWidth;
+  };
+
   const {
     setTilesets,
     setEntityRegistry,
@@ -63,6 +113,40 @@ function App() {
         // Discover and load chunks
         setLoading(true, 'Loading map chunks...');
 
+        // Check if we have saved data in IndexedDB
+        const hasStoredData = await storage.hasStoredData();
+
+        if (hasStoredData) {
+          setLoading(true, 'Loading saved map data...');
+          const storedChunks = await storage.loadAllChunks();
+
+          if (storedChunks.size > 0) {
+            // Use stored data
+            setChunks(storedChunks, true); // skipAutoSave since this is loading
+
+            // Calculate bounds from stored chunks
+            let minCx = Infinity, maxCx = -Infinity;
+            let minCy = Infinity, maxCy = -Infinity;
+            for (const chunk of storedChunks.values()) {
+              minCx = Math.min(minCx, chunk.coord.cx);
+              maxCx = Math.max(maxCx, chunk.coord.cx);
+              minCy = Math.min(minCy, chunk.coord.cy);
+              maxCy = Math.max(maxCy, chunk.coord.cy);
+            }
+            setWorldBounds({
+              minCx: minCx === Infinity ? 0 : minCx,
+              maxCx: maxCx === -Infinity ? 0 : maxCx,
+              minCy: minCy === Infinity ? 0 : minCy,
+              maxCy: maxCy === -Infinity ? 0 : maxCy,
+            });
+
+            console.log(`Loaded ${storedChunks.size} chunks from local storage`);
+            setLoading(false);
+            return;
+          }
+        }
+
+        // No stored data, load from server
         // Try to load known chunks
         const knownChunks = [
           { cx: 0, cy: 0 },
@@ -165,14 +249,22 @@ function App() {
     <div className="app">
       <MenuBar />
       <div className="main">
-        <div className="sidebar left">
+        <div className="sidebar left" style={{ width: leftSidebarWidth }}>
           <Toolbar />
           <TilePalette />
           <ObjectPalette />
           <LayerPanel />
         </div>
+        <div
+          className="resize-handle"
+          onMouseDown={(e) => startResize('left', e)}
+        />
         <Canvas />
-        <div className="sidebar right">
+        <div
+          className="resize-handle"
+          onMouseDown={(e) => startResize('right', e)}
+        />
+        <div className="sidebar right" style={{ width: rightSidebarWidth }}>
           <EntityPanel />
           <PropertiesPanel />
         </div>

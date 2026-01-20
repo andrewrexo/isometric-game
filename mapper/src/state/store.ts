@@ -16,6 +16,18 @@ import { BitSet } from '@/core/BitSet';
 import { history } from '@/core/History';
 import { chunkManager } from '@/core/ChunkManager';
 import { objectLoader } from '@/core/ObjectLoader';
+import { storage } from '@/core/Storage';
+
+// Debounce helper for auto-save
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+const debouncedSave = (chunks: Map<string, Chunk>) => {
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    storage.saveAllChunks(chunks).catch((err) => {
+      console.error('Failed to auto-save chunks:', err);
+    });
+  }, 500); // Save 500ms after last change
+};
 
 interface EditorState {
   // World state
@@ -66,7 +78,7 @@ interface EditorState {
 
 interface EditorActions {
   // World actions
-  setChunks: (chunks: Map<string, Chunk>) => void;
+  setChunks: (chunks: Map<string, Chunk>, skipAutoSave?: boolean) => void;
   updateChunk: (coord: ChunkCoord, updater: (chunk: Chunk) => Chunk) => void;
   setWorldBounds: (bounds: EditorState['worldBounds']) => void;
 
@@ -171,8 +183,12 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   loadingMessage: '',
 
   // World actions
-  setChunks: (chunks) => {
-    set({ chunks: new Map(chunks) });
+  setChunks: (chunks, skipAutoSave = false) => {
+    const newChunks = new Map(chunks);
+    set({ chunks: newChunks });
+    if (!skipAutoSave) {
+      debouncedSave(newChunks);
+    }
   },
 
   updateChunk: (coord, updater) => {
@@ -182,6 +198,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
     if (chunk) {
       chunks.set(key, updater(chunk));
       set({ chunks });
+      debouncedSave(chunks);
     }
   },
 
@@ -648,6 +665,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
     const chunks = new Map(get().chunks);
     chunks.set(chunkKey(coord), newChunk);
     set({ chunks });
+    debouncedSave(chunks);
     return newChunk;
   },
 

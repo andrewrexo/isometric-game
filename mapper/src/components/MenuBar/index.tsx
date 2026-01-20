@@ -2,7 +2,9 @@ import { useRef } from 'react';
 import JSZip from 'jszip';
 import { useEditorStore } from '@/state/store';
 import { chunkManager } from '@/core/ChunkManager';
+import { chunkKey } from '@/core/coords';
 import { history } from '@/core/History';
+import { storage } from '@/core/Storage';
 import styles from './MenuBar.module.css';
 
 export function MenuBar() {
@@ -16,6 +18,8 @@ export function MenuBar() {
     setViewport,
     getDirtyChunks,
     markAllClean,
+    setChunks,
+    setWorldBounds,
   } = useEditorStore();
 
   // Store the directory handle for reuse
@@ -158,6 +162,81 @@ export function MenuBar() {
     setViewport({ offsetX: 400, offsetY: 200, zoom: 1 });
   };
 
+  const handleResetToServer = async () => {
+    const confirmed = window.confirm(
+      'This will discard all local changes and reload from the server.\n\nAre you sure?'
+    );
+    if (!confirmed) return;
+
+    try {
+      // Clear IndexedDB storage
+      await storage.clearAll();
+
+      // Clear ChunkManager cache
+      chunkManager.clear();
+
+      // Reload chunks from server
+      const knownChunks = [
+        { cx: 0, cy: 0 },
+        { cx: 0, cy: -1 },
+        { cx: 1, cy: 0 },
+        { cx: -1, cy: 0 },
+        { cx: -1, cy: -1 },
+        { cx: -2, cy: 0 },
+      ];
+
+      for (const coord of knownChunks) {
+        try {
+          const chunk = await chunkManager.loadChunk(
+            `/maps/chunk_${coord.cx}_${coord.cy}.json`,
+            coord
+          );
+          if (chunk) {
+            chunkManager.addChunk(chunk);
+          }
+        } catch {
+          // Chunk doesn't exist
+        }
+      }
+
+      // If no chunks loaded, create a default chunk
+      if (chunkManager.getAllChunks().length === 0) {
+        chunkManager.createEmptyChunk({ cx: 0, cy: 0 });
+      }
+
+      // Update store
+      const newChunks = new Map<string, ReturnType<typeof chunkManager.getChunk>>();
+      for (const chunk of chunkManager.getAllChunks()) {
+        newChunks.set(chunkKey(chunk.coord), chunk);
+      }
+      setChunks(newChunks as Map<string, NonNullable<ReturnType<typeof chunkManager.getChunk>>>, true);
+      setWorldBounds(chunkManager.getBounds());
+
+      // Clear undo history
+      history.clear();
+
+      alert('Reset complete. Loaded fresh data from server.');
+    } catch (err) {
+      console.error('Reset failed:', err);
+      alert(`Reset failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleClearLocalData = async () => {
+    const confirmed = window.confirm(
+      'This will clear all locally saved map data.\n\nYour current session will not be affected, but changes will be lost on refresh.\n\nAre you sure?'
+    );
+    if (!confirmed) return;
+
+    try {
+      await storage.clearAll();
+      alert('Local data cleared.');
+    } catch (err) {
+      console.error('Clear failed:', err);
+      alert(`Clear failed: ${(err as Error).message}`);
+    }
+  };
+
   return (
     <div className={styles.menuBar}>
       <div className={styles.menu}>
@@ -169,6 +248,13 @@ export function MenuBar() {
             </button>
             <button className={styles.dropdownItem} onClick={handleExportToServer}>
               Export All to Server...
+            </button>
+            <div className={styles.separator} />
+            <button className={styles.dropdownItem} onClick={handleResetToServer}>
+              Reset to Server Data
+            </button>
+            <button className={styles.dropdownItem} onClick={handleClearLocalData}>
+              Clear Local Storage
             </button>
           </div>
         </div>

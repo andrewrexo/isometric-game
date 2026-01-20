@@ -3,7 +3,7 @@ import { useEditorStore } from '@/state/store';
 import styles from './EntityPanel.module.css';
 
 export function EntityPanel() {
-  const { entityRegistry, selectedEntityId, setSelectedEntityId } = useEditorStore();
+  const { entityRegistry, selectedEntityId, setSelectedEntityId, setActiveTool } = useEditorStore();
   const [search, setSearch] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     new Set(['hostile', 'questGiver', 'merchant', 'other'])
@@ -73,7 +73,10 @@ export function EntityPanel() {
                   <button
                     key={entity.id}
                     className={`${styles.entity} ${selectedEntityId === entity.id ? styles.selected : ''}`}
-                    onClick={() => setSelectedEntityId(entity.id)}
+                    onClick={() => {
+                      setSelectedEntityId(entity.id);
+                      setActiveTool('entity');
+                    }}
                     title={entity.description}
                   >
                     <span className={styles.entityName}>{entity.displayName}</span>
