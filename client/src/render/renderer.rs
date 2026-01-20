@@ -1334,6 +1334,15 @@ impl Renderer {
 
             if let (Some((icon_col, icon_row)), Some(ref texture)) = (icon_coords, &self.ui_icons) {
                 let icon_size = 24.0;
+                let time = macroquad::time::get_time();
+
+                // Use NPC position as offset so icons don't animate in sync
+                let phase_offset = (npc.x + npc.y * 1.7) as f64;
+
+                // Pulsing transparency (2 second cycle, 80-100% opacity)
+                let alpha_pulse = ((time * 3.14 + phase_offset).sin() * 0.5 + 0.5) as f32; // 0.0 to 1.0
+                let alpha = (204.0 + alpha_pulse * 51.0) as u8; // 204-255 (80-100%)
+
                 // Move icon up when hovered to make room for name
                 let icon_y = if is_hovered {
                     top_y - 36.0 * zoom  // 16px higher when hovered
@@ -1353,7 +1362,7 @@ impl Renderer {
                     texture,
                     icon_x,
                     icon_y,
-                    Color::from_rgba(255, 255, 255, 204),  // 80% opacity
+                    Color::from_rgba(255, 255, 255, alpha),
                     DrawTextureParams {
                         source: Some(src_rect),
                         dest_size: Some(Vec2::new(icon_size * zoom, icon_size * zoom)),

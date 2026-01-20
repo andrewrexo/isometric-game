@@ -132,10 +132,6 @@ impl InputHandler {
             // Check players if no NPC is hovered
             if hovered_entity.is_none() {
                 for player in state.players.values() {
-                    // Skip the local player
-                    if state.local_player_id.as_ref() == Some(&player.id) {
-                        continue;
-                    }
                     if !player.is_dead {
                         let dx = world_x - player.x;
                         let dy = world_y - player.y;
