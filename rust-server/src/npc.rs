@@ -55,6 +55,8 @@ pub struct Npc {
     pub last_attack_time: u64,
     pub last_move_time: u64, // For grid movement cooldown
     pub death_time: u64, // When the NPC died (for respawn)
+    /// Set to true on the tick when this NPC attacks, for client animation sync
+    pub just_attacked: bool,
 }
 
 impl Npc {
@@ -97,6 +99,7 @@ impl Npc {
             last_attack_time: 0,
             last_move_time: 0,
             death_time: 0,
+            just_attacked: false,
             stats,
         }
     }
@@ -283,6 +286,9 @@ impl Npc {
         other_npc_positions: &[(i32, i32)],  // positions of other NPCs (excluding self)
         current_time: u64,
     ) -> Option<(String, i32)> {
+        // Reset attack flag each tick - will be set to true if we attack this tick
+        self.just_attacked = false;
+
         if self.state == NpcState::Dead {
             return None;
         }
@@ -331,18 +337,20 @@ impl Npc {
 
                 if let Some((tx, ty)) = target_pos {
                     let spawn_dist = Self::grid_distance(self.x, self.y, self.spawn_x, self.spawn_y);
+                    let movement_done = current_time - self.last_move_time >= self.get_move_cooldown_ms();
 
                     if spawn_dist > self.get_chase_range() {
                         // Too far from spawn, return home
                         self.state = NpcState::Returning;
                         self.target_id = None;
-                    } else if Self::is_in_attack_range(self.x, self.y, tx, ty, self.get_attack_range()) {
-                        // In attack range (cardinal direction only)
+                    } else if Self::is_in_attack_range(self.x, self.y, tx, ty, self.get_attack_range()) && movement_done {
+                        // In attack range (cardinal direction only) and movement completed
                         self.state = NpcState::Attacking;
-                    } else {
-                        // Move toward target (one tile at a time)
+                    } else if !Self::is_in_attack_range(self.x, self.y, tx, ty, self.get_attack_range()) {
+                        // Not in range, move toward target (one tile at a time)
                         self.try_move_toward(tx, ty, current_time, other_npc_positions);
                     }
+                    // If in range but movement not done, stay in Chasing and wait
                 } else {
                     // Target lost (died or disconnected)
                     self.state = NpcState::Returning;
@@ -370,9 +378,14 @@ impl Npc {
                             self.direction = crate::game::Direction::from_velocity(dx as f32, dy as f32);
                         }
 
-                        // Attack if cooldown is ready
-                        if current_time - self.last_attack_time >= self.get_attack_cooldown_ms() {
+                        // Attack only if movement has completed (movement cooldown expired)
+                        // and attack cooldown is ready
+                        let movement_done = current_time - self.last_move_time >= self.get_move_cooldown_ms();
+                        let attack_ready = current_time - self.last_attack_time >= self.get_attack_cooldown_ms();
+
+                        if movement_done && attack_ready {
                             self.last_attack_time = current_time;
+                            self.just_attacked = true; // Signal client to play animation
                             attack_result = Some((target_id, self.get_damage()));
                         }
                     }
@@ -423,10 +436,22 @@ pub struct NpcUpdate {
     pub state: u8,
     /// Whether this NPC is hostile
     pub hostile: bool,
+    /// Movement speed in tiles per second (for client interpolation)
+    pub move_speed: f32,
+    /// True only on the tick when this NPC attacks (for animation sync)
+    pub just_attacked: bool,
 }
 
 impl From<&Npc> for NpcUpdate {
     fn from(npc: &Npc) -> Self {
+        // Convert move_cooldown_ms to tiles per second
+        // e.g., 500ms per tile = 2.0 tiles/sec, 250ms = 4.0 tiles/sec
+        let move_speed = if npc.stats.move_cooldown_ms > 0 {
+            1000.0 / npc.stats.move_cooldown_ms as f32
+        } else {
+            0.0 // Non-moving NPCs (villagers, etc.)
+        };
+
         Self {
             id: npc.id.clone(),
             entity_type: npc.stats.sprite.clone(),
@@ -439,6 +464,8 @@ impl From<&Npc> for NpcUpdate {
             level: npc.level,
             state: npc.state as u8,
             hostile: npc.is_hostile(),
+            move_speed,
+            just_attacked: npc.just_attacked,
         }
     }
 }

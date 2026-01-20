@@ -564,6 +564,7 @@ impl NetworkClient {
                             let level = extract_i32(npc_value, "level").unwrap_or(1);
                             let npc_state = extract_u8(npc_value, "state").unwrap_or(0);
                             let hostile = extract_bool(npc_value, "hostile").unwrap_or(true);
+                            let move_speed = extract_f32(npc_value, "move_speed").unwrap_or(2.0);
 
                             if let Some(npc) = state.npcs.get_mut(&id) {
                                 // Update existing NPC - interpolate toward new grid position
@@ -575,6 +576,7 @@ impl NetworkClient {
                                 // Update display name in case it changed
                                 npc.display_name = display_name;
                                 npc.hostile = hostile;
+                                npc.move_speed = move_speed;
                             } else {
                                 // New NPC - add to state
                                 let mut npc = Npc::new(id.clone(), entity_type, x, y);
@@ -585,6 +587,7 @@ impl NetworkClient {
                                 npc.level = level;
                                 npc.state = NpcState::from_u8(npc_state);
                                 npc.hostile = hostile;
+                                npc.move_speed = move_speed;
                                 state.npcs.insert(id, npc);
                             }
                         }
@@ -643,13 +646,19 @@ impl NetworkClient {
 
             "damageEvent" => {
                 if let Some(value) = data {
+                    let source_id = extract_string(value, "source_id").unwrap_or_default();
                     let target_id = extract_string(value, "target_id").unwrap_or_default();
                     let damage = extract_i32(value, "damage").unwrap_or(0);
                     let target_hp = extract_i32(value, "target_hp").unwrap_or(0);
                     let target_x = extract_f32(value, "target_x").unwrap_or(0.0);
                     let target_y = extract_f32(value, "target_y").unwrap_or(0.0);
 
-                    log::debug!("Damage event: {} took {} damage (HP: {})", target_id, damage, target_hp);
+                    log::debug!("Damage event: {} took {} damage from {} (HP: {})", target_id, damage, source_id, target_hp);
+
+                    // If source is an NPC, trigger its attack animation
+                    if let Some(npc) = state.npcs.get_mut(&source_id) {
+                        npc.trigger_attack_animation();
+                    }
 
                     // Update target's HP (could be player or NPC)
                     if let Some(player) = state.players.get_mut(&target_id) {

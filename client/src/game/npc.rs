@@ -38,8 +38,13 @@ pub struct Npc {
     pub entity_type: String,
     /// Display name from server (e.g., "Piggy Lv.1")
     pub display_name: String,
+    /// Visual position (smoothly interpolated)
     pub x: f32,
     pub y: f32,
+    /// Server-authoritative position
+    pub server_x: f32,
+    pub server_y: f32,
+    /// Target for interpolation
     pub target_x: f32,
     pub target_y: f32,
     pub direction: Direction,
@@ -50,10 +55,8 @@ pub struct Npc {
     pub animation: NpcAnimation,
     /// Whether this NPC is hostile
     pub hostile: bool,
-    /// Track if we've played the attack animation for current attack cycle
-    attack_anim_played: bool,
-    /// Timer to track when to allow the next attack animation (seconds)
-    attack_cooldown_timer: f32,
+    /// Movement speed in tiles per second (from server, for interpolation)
+    pub move_speed: f32,
 }
 
 impl Npc {
@@ -66,6 +69,8 @@ impl Npc {
             y,
             target_x: x,
             target_y: y,
+            server_x: x,
+            server_y: y,
             direction: Direction::Down,
             hp: 1,
             max_hp: 1,
@@ -73,8 +78,7 @@ impl Npc {
             state: NpcState::Idle,
             animation: NpcAnimation::default(),
             hostile: true,
-            attack_anim_played: false,
-            attack_cooldown_timer: 0.0,
+            move_speed: 2.0, // Default, will be set by server
         }
     }
 
@@ -90,19 +94,36 @@ impl Npc {
         self.state != NpcState::Dead
     }
 
-    /// Update position from server data
-    pub fn set_server_position(&mut self, new_x: f32, new_y: f32) {
-        self.target_x = new_x;
-        self.target_y = new_y;
-        // Direction is updated during interpolation, not here
-        // This prevents snappy direction changes when server sends new targets
+    /// Trigger attack animation - called when damage event is received
+    pub fn trigger_attack_animation(&mut self) {
+        self.animation.set_state(NpcAnimationState::Attacking);
     }
 
-    /// Smooth interpolation toward grid position
-    /// Server moves NPCs at 2 tiles/sec (500ms per tile)
-    pub fn update(&mut self, delta: f32) {
-        const INTERPOLATION_SPEED: f32 = 2.0; // tiles/sec - match server speed for smooth movement
+    /// Update position from server - matches player logic exactly
+    pub fn set_server_position(&mut self, new_x: f32, new_y: f32) {
+        self.server_x = new_x;
+        self.server_y = new_y;
 
+        let dx = self.x - new_x;
+        let dy = self.y - new_y;
+        let dist = (dx * dx + dy * dy).sqrt();
+
+        if dist > 2.0 {
+            // Too far - hard snap
+            self.x = new_x;
+            self.y = new_y;
+            self.target_x = new_x;
+            self.target_y = new_y;
+        } else {
+            // Update target to server position
+            self.target_x = new_x;
+            self.target_y = new_y;
+        }
+    }
+
+    /// Smooth visual interpolation - matches player logic exactly
+    /// Uses direction for prediction when NPC is moving
+    pub fn update(&mut self, delta: f32) {
         if self.state == NpcState::Dead {
             return;
         }
@@ -111,58 +132,51 @@ impl Npc {
         let dy = self.target_y - self.y;
         let dist = (dx * dx + dy * dy).sqrt();
 
-        let move_dist = INTERPOLATION_SPEED * delta;
-        let is_moving = dist > 0.01;
+        let actually_moving;
 
-        if dist <= move_dist || dist < 0.01 {
+        if dist < 0.01 {
+            // Reached target - snap exactly
             self.x = self.target_x;
             self.y = self.target_y;
+            actually_moving = false;
         } else {
-            self.x += (dx / dist) * move_dist;
-            self.y += (dy / dist) * move_dist;
+            // Move toward target faster than server speed to always catch up
+            // 1.25x ensures we arrive before next server update even with network jitter
+            let speed = (self.move_speed * 1.25).max(2.0);
+            let move_dist = speed * delta;
 
-            // Update direction from actual movement vector (anti-moonwalk)
-            self.direction = Direction::from_velocity(dx, dy);
-        }
-
-        // Update attack cooldown timer
-        if self.attack_cooldown_timer > 0.0 {
-            self.attack_cooldown_timer -= delta;
-            if self.attack_cooldown_timer <= 0.0 {
-                // Cooldown expired, ready for next attack animation
-                self.attack_anim_played = false;
-                self.attack_cooldown_timer = 0.0;
+            if dist <= move_dist {
+                self.x = self.target_x;
+                self.y = self.target_y;
+            } else {
+                self.x += (dx / dist) * move_dist;
+                self.y += (dy / dist) * move_dist;
             }
+
+            actually_moving = true;
         }
 
-        // Update animation state based on NPC state
-        // For attacking: play attack animation once, then show idle until cooldown expires
-        let anim_state = match self.state {
-            NpcState::Attacking => {
-                if self.attack_anim_played {
-                    // Already played attack animation, show idle until cooldown expires
-                    NpcAnimationState::Idle
+        // Handle animation states
+        // Attack animation is triggered by trigger_attack_animation() when damage event received
+        if self.animation.state == NpcAnimationState::Attacking {
+            // Let attack animation play through
+            if self.animation.is_finished() {
+                // Animation done, return to normal
+                if actually_moving {
+                    self.animation.set_state(NpcAnimationState::Walking);
                 } else {
-                    NpcAnimationState::Attacking
+                    self.animation.set_state(NpcAnimationState::Idle);
                 }
             }
-            NpcState::Chasing if is_moving => NpcAnimationState::Walking,
-            NpcState::Returning if is_moving => NpcAnimationState::Walking,
-            _ => NpcAnimationState::Idle,
-        };
-        self.animation.set_state(anim_state);
-        self.animation.update(delta);
+        } else {
+            // Normal movement animation (not in attack animation)
+            if actually_moving {
+                self.animation.set_state(NpcAnimationState::Walking);
+            } else {
+                self.animation.set_state(NpcAnimationState::Idle);
+            }
+        }
 
-        // Mark attack animation as played when it finishes, start cooldown timer
-        if self.state == NpcState::Attacking && self.animation.is_finished() && !self.attack_anim_played {
-            self.attack_anim_played = true;
-            // Server attack cooldown is 2 seconds, so wait ~1.5s before allowing next animation
-            self.attack_cooldown_timer = 1.5;
-        }
-        // Reset flag immediately when not attacking
-        if self.state != NpcState::Attacking {
-            self.attack_anim_played = false;
-            self.attack_cooldown_timer = 0.0;
-        }
+        self.animation.update(delta);
     }
 }
