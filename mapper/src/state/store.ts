@@ -55,6 +55,9 @@ interface EditorState {
   selectedEntitySpawn: { chunkCoord: ChunkCoord; spawnId: string } | null;
   selectedMapObject: { chunkCoord: ChunkCoord; objectId: string } | null;
 
+  // Magic wand tile selection
+  selectedTiles: Set<string>; // Set of "wx,wy" coordinate strings
+
   // Asset state
   tilesets: Tileset[];
   entityRegistry: EntityRegistry | null;
@@ -106,6 +109,11 @@ interface EditorActions {
   setTile: (world: WorldCoord, layer: Layer, tileId: number) => void;
   toggleCollision: (world: WorldCoord) => void;
   fillTiles: (start: WorldCoord, layer: Layer, tileId: number) => void;
+
+  // Magic wand selection
+  magicWandSelect: (world: WorldCoord, layer: Layer) => void;
+  clearSelectedTiles: () => void;
+  fillSelectedTiles: (layer: Layer, tileId: number) => void;
 
   // Entity actions
   addEntity: (world: WorldCoord, entityId: string) => EntitySpawn;
@@ -164,6 +172,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
 
   selectedEntitySpawn: null,
   selectedMapObject: null,
+  selectedTiles: new Set(),
 
   tilesets: [],
   entityRegistry: null,
@@ -449,6 +458,145 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
         dirty: true,
       };
     });
+  },
+
+  // Magic wand selection - select ALL tiles of the same type in the chunk
+  magicWandSelect: (start, layer) => {
+    const chunkCoord = worldToChunk(start);
+    const chunk = get().getChunk(chunkCoord);
+    if (!chunk) return;
+
+    const layerKey = layer === Layer.Ground ? 'ground' : layer === Layer.Objects ? 'objects' : 'overhead';
+    if (layerKey !== 'ground' && layerKey !== 'objects' && layerKey !== 'overhead') return;
+
+    const local = worldToLocal(start);
+    const startIndex = localToIndex(local);
+    const targetTileId = chunk.layers[layerKey][startIndex];
+
+    // Find ALL tiles with the same ID in the chunk
+    const selectedTiles = new Set<string>();
+    const baseX = chunkCoord.cx * chunk.width;
+    const baseY = chunkCoord.cy * chunk.height;
+
+    for (let index = 0; index < chunk.width * chunk.height; index++) {
+      if (chunk.layers[layerKey][index] === targetTileId) {
+        const lx = index % chunk.width;
+        const ly = Math.floor(index / chunk.width);
+        const wx = baseX + lx;
+        const wy = baseY + ly;
+        selectedTiles.add(`${wx},${wy}`);
+      }
+    }
+
+    set({ selectedTiles });
+  },
+
+  clearSelectedTiles: () => {
+    set({ selectedTiles: new Set() });
+  },
+
+  fillSelectedTiles: (layer, tileId) => {
+    const { selectedTiles } = get();
+    if (selectedTiles.size === 0) return;
+
+    const layerKey = layer === Layer.Ground ? 'ground' : layer === Layer.Objects ? 'objects' : 'overhead';
+    if (layerKey !== 'ground' && layerKey !== 'objects' && layerKey !== 'overhead') return;
+
+    // Group tiles by chunk for efficient updates
+    const tilesByChunk = new Map<string, { wx: number; wy: number }[]>();
+
+    for (const tileKey of selectedTiles) {
+      const [wxStr, wyStr] = tileKey.split(',');
+      const wx = parseInt(wxStr, 10);
+      const wy = parseInt(wyStr, 10);
+      const chunkCoord = worldToChunk({ wx, wy });
+      const key = chunkKey(chunkCoord);
+
+      if (!tilesByChunk.has(key)) {
+        tilesByChunk.set(key, []);
+      }
+      tilesByChunk.get(key)!.push({ wx, wy });
+    }
+
+    // Record changes for undo
+    const changes: { chunkCoord: ChunkCoord; index: number; oldTile: number }[] = [];
+
+    for (const [key, tiles] of tilesByChunk) {
+      const chunk = get().chunks.get(key);
+      if (!chunk) continue;
+
+      for (const { wx, wy } of tiles) {
+        const local = worldToLocal({ wx, wy });
+        const index = localToIndex(local);
+        const oldTile = chunk.layers[layerKey][index];
+        if (oldTile !== tileId) {
+          changes.push({ chunkCoord: chunk.coord, index, oldTile });
+        }
+      }
+    }
+
+    if (changes.length === 0) {
+      set({ selectedTiles: new Set() });
+      return;
+    }
+
+    // Record for undo
+    history.push({
+      type: 'fillSelectedTiles',
+      description: `Fill ${changes.length} selected tiles`,
+      undo: () => {
+        // Restore old tiles
+        const changesByChunk = new Map<string, { index: number; oldTile: number }[]>();
+        for (const change of changes) {
+          const key = chunkKey(change.chunkCoord);
+          if (!changesByChunk.has(key)) {
+            changesByChunk.set(key, []);
+          }
+          changesByChunk.get(key)!.push({ index: change.index, oldTile: change.oldTile });
+        }
+
+        for (const [cKey, chunkChanges] of changesByChunk) {
+          const coords = cKey.split(',').map(Number);
+          get().updateChunk({ cx: coords[0], cy: coords[1] }, (c) => {
+            const newLayer = [...c.layers[layerKey]];
+            for (const { index, oldTile } of chunkChanges) {
+              newLayer[index] = oldTile;
+            }
+            return {
+              ...c,
+              layers: { ...c.layers, [layerKey]: newLayer },
+              dirty: true,
+            };
+          });
+        }
+      },
+      redo: () => {
+        get().fillSelectedTiles(layer, tileId);
+      },
+    });
+
+    // Apply fill to all chunks
+    for (const [key, tiles] of tilesByChunk) {
+      const chunk = get().chunks.get(key);
+      if (!chunk) continue;
+
+      get().updateChunk(chunk.coord, (c) => {
+        const newLayer = [...c.layers[layerKey]];
+        for (const { wx, wy } of tiles) {
+          const local = worldToLocal({ wx, wy });
+          const index = localToIndex(local);
+          newLayer[index] = tileId;
+        }
+        return {
+          ...c,
+          layers: { ...c.layers, [layerKey]: newLayer },
+          dirty: true,
+        };
+      });
+    }
+
+    // Clear selection after fill
+    set({ selectedTiles: new Set() });
   },
 
   // Entity actions

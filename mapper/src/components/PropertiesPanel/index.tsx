@@ -210,11 +210,10 @@ export function PropertiesPanel() {
     );
   }
 
-  // Nothing selected
+  // Nothing selected - only show title
   return (
     <div className={styles.panel}>
       <div className={styles.title}>Properties</div>
-      <div className={styles.empty}>Select an entity or object to view properties</div>
     </div>
   );
 }

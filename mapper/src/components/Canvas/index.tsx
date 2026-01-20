@@ -23,6 +23,7 @@ export function Canvas() {
     selectedTileId,
     selectedEntityId,
     selectedObjectId,
+    selectedTiles,
     showGrid,
     showChunkBounds,
     showCollision,
@@ -35,6 +36,8 @@ export function Canvas() {
     setTile,
     toggleCollision,
     fillTiles,
+    magicWandSelect,
+    fillSelectedTiles,
     addEntity,
     removeEntity,
     addMapObject,
@@ -92,6 +95,16 @@ export function Canvas() {
       const allChunks = Array.from(chunks.values());
       isometricRenderer.render(allChunks, viewport);
 
+      // Highlight selected tiles (magic wand selection)
+      if (selectedTiles.size > 0) {
+        for (const tileKey of selectedTiles) {
+          const [wxStr, wyStr] = tileKey.split(',');
+          const wx = parseInt(wxStr, 10);
+          const wy = parseInt(wyStr, 10);
+          isometricRenderer.highlightTile({ wx, wy }, viewport, 'rgba(0, 150, 255, 0.4)', true);
+        }
+      }
+
       // Highlight hovered tile
       if (hoveredTile) {
         isometricRenderer.highlightTile(hoveredTile, viewport, '#ffffff');
@@ -105,7 +118,7 @@ export function Canvas() {
     return () => {
       cancelAnimationFrame(animationId);
     };
-  }, [chunks, viewport, hoveredTile]);
+  }, [chunks, viewport, hoveredTile, selectedTiles]);
 
   // Handle tool action at position
   const handleToolAction = useCallback(
@@ -120,8 +133,13 @@ export function Canvas() {
 
       switch (activeTool) {
         case Tool.Paint:
-          if (activeLayer !== Layer.Collision && activeLayer !== Layer.Entities) {
-            setTile(worldTile, activeLayer, selectedTileId);
+          if (activeLayer === Layer.Ground || activeLayer === Layer.Objects || activeLayer === Layer.Overhead) {
+            // If there's an active selection, fill all selected tiles
+            if (selectedTiles.size > 0) {
+              fillSelectedTiles(activeLayer, selectedTileId);
+            } else {
+              setTile(worldTile, activeLayer, selectedTileId);
+            }
           }
           break;
         case Tool.Eraser: {
@@ -137,7 +155,7 @@ export function Canvas() {
             if (objectAtPos) {
               removeMapObject(objectAtPos.chunkCoord, objectAtPos.object.id);
             }
-          } else if (activeLayer !== Layer.Collision) {
+          } else if (activeLayer === Layer.Ground || activeLayer === Layer.Objects || activeLayer === Layer.Overhead) {
             // Erase tile
             setTile(worldTile, activeLayer, 0);
           }
@@ -147,8 +165,13 @@ export function Canvas() {
           toggleCollision(worldTile);
           break;
         case Tool.Fill:
-          if (activeLayer !== Layer.Collision && activeLayer !== Layer.Entities) {
+          if (activeLayer === Layer.Ground || activeLayer === Layer.Objects || activeLayer === Layer.Overhead) {
             fillTiles(worldTile, activeLayer, selectedTileId);
+          }
+          break;
+        case Tool.MagicWand:
+          if (activeLayer !== Layer.Collision && activeLayer !== Layer.Entities && activeLayer !== Layer.MapObjects) {
+            magicWandSelect(worldTile, activeLayer);
           }
           break;
         case Tool.Entity: {
@@ -241,9 +264,11 @@ export function Canvas() {
       selectedTileId,
       selectedEntityId,
       selectedObjectId,
+      selectedTiles,
       setTile,
       toggleCollision,
       fillTiles,
+      fillSelectedTiles,
       addEntity,
       removeEntity,
       addMapObject,
@@ -335,32 +360,6 @@ export function Canvas() {
     [zoom]
   );
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === 'z') {
-          e.preventDefault();
-          if (e.shiftKey) {
-            useEditorStore.getState().redo();
-          } else {
-            useEditorStore.getState().undo();
-          }
-        } else if (e.key === 'y') {
-          e.preventDefault();
-          useEditorStore.getState().redo();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   return (
     <div ref={containerRef} className={styles.container}>

@@ -63,6 +63,7 @@ export const Tool = {
   Entity: 'entity',
   Object: 'object',
   Eyedropper: 'eyedropper',
+  MagicWand: 'magicWand',
 } as const;
 export type Tool = typeof Tool[keyof typeof Tool];
 

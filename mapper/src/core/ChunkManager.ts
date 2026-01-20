@@ -397,7 +397,7 @@ export class ChunkManager {
       width: CHUNK_SIZE,
       height: CHUNK_SIZE,
       layers: {
-        ground: new Array(tileSize).fill(1), // Default to tile 1 (grass)
+        ground: new Array(tileSize).fill(0),
         objects: new Array(tileSize).fill(0),
         overhead: new Array(tileSize).fill(0),
       },

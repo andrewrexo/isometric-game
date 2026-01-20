@@ -6,6 +6,7 @@ const tools: { id: Tool; label: string; shortcut: string }[] = [
   { id: Tool.Select, label: 'Select', shortcut: 'V' },
   { id: Tool.Paint, label: 'Paint', shortcut: 'B' },
   { id: Tool.Fill, label: 'Fill', shortcut: 'G' },
+  { id: Tool.MagicWand, label: 'Magic Wand', shortcut: 'W' },
   { id: Tool.Eraser, label: 'Eraser', shortcut: 'E' },
   { id: Tool.Collision, label: 'Collision', shortcut: 'C' },
   { id: Tool.Entity, label: 'Entity', shortcut: 'N' },

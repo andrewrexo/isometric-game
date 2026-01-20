@@ -99,7 +99,7 @@ function App() {
         // Load entity registry
         setLoading(true, 'Loading entities...');
         try {
-          const registry = await entityRegistryLoader.loadFromDirectory('/entities/npcs');
+          const registry = await entityRegistryLoader.loadFromDirectory('/entities');
           setEntityRegistry(registry);
         } catch {
           // If TOML files can't be loaded, create empty registry
@@ -198,12 +198,37 @@ function App() {
   // Keyboard shortcuts for tools
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
 
       const store = useEditorStore.getState();
 
+      // Handle Escape - clear selection
+      if (e.key === 'Escape') {
+        store.clearSelectedTiles();
+        return;
+      }
+
+      // Handle Ctrl/Cmd shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            store.redo();
+          } else {
+            store.undo();
+          }
+          return;
+        } else if (e.key === 'y') {
+          e.preventDefault();
+          store.redo();
+          return;
+        }
+      }
+
+      // Tool shortcuts
       switch (e.key.toLowerCase()) {
         case 'v':
           store.setActiveTool('select');
@@ -213,6 +238,9 @@ function App() {
           break;
         case 'g':
           store.setActiveTool('fill');
+          break;
+        case 'w':
+          store.setActiveTool('magicWand');
           break;
         case 'e':
           store.setActiveTool('eraser');

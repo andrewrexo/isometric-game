@@ -6,7 +6,7 @@ import styles from './TilePalette.module.css';
 export function TilePalette() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { tilesets, selectedTileId, setSelectedTileId, setActiveTool, setActiveLayer } = useEditorStore();
+  const { tilesets, selectedTileId, selectedTiles, setSelectedTileId, setActiveTool, setActiveLayer, fillSelectedTiles } = useEditorStore();
   const [activeTileset, setActiveTileset] = useState<Tileset | null>(null);
   const [hoveredTile, setHoveredTile] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -139,9 +139,15 @@ export function TilePalette() {
   const handleCanvasClick = (e: React.MouseEvent) => {
     const localId = getTileFromEvent(e);
     if (localId !== null && activeTileset) {
-      setSelectedTileId(activeTileset.firstGid + localId);
+      const newTileId = activeTileset.firstGid + localId;
+      setSelectedTileId(newTileId);
       setActiveTool('paint');
       setActiveLayer('ground');
+
+      // If there's an active selection, fill it immediately
+      if (selectedTiles.size > 0) {
+        fillSelectedTiles('ground', newTileId);
+      }
     }
   };
 

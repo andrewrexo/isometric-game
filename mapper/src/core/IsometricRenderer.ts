@@ -324,22 +324,28 @@ export class IsometricRenderer {
   }
 
   // Highlight a specific tile (for hover/selection)
-  highlightTile(worldCoord: WorldCoord, viewport: Viewport, color: string = '#ffffff'): void {
+  highlightTile(worldCoord: WorldCoord, viewport: Viewport, color: string = '#ffffff', fill: boolean = false): void {
     if (!this.ctx) return;
 
     const screen = worldToScreen(worldCoord, viewport);
     const hw = (TILE_WIDTH / 2) * viewport.zoom;
     const hh = (TILE_HEIGHT / 2) * viewport.zoom;
 
-    this.ctx.strokeStyle = color;
-    this.ctx.lineWidth = 2;
     this.ctx.beginPath();
     this.ctx.moveTo(screen.sx, screen.sy);
     this.ctx.lineTo(screen.sx + hw, screen.sy + hh);
     this.ctx.lineTo(screen.sx, screen.sy + TILE_HEIGHT * viewport.zoom);
     this.ctx.lineTo(screen.sx - hw, screen.sy + hh);
     this.ctx.closePath();
-    this.ctx.stroke();
+
+    if (fill) {
+      this.ctx.fillStyle = color;
+      this.ctx.fill();
+    } else {
+      this.ctx.strokeStyle = color;
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+    }
   }
 
   // Draw selection rectangle

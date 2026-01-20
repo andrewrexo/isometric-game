@@ -53,12 +53,23 @@ export class EntityRegistryLoader {
 
   async loadFromDirectory(basePath: string): Promise<EntityRegistry> {
     // In a browser environment, we need to know the files ahead of time
-    // For now, we'll try common entity files
-    const commonFiles = ['villagers.toml', 'enemies.toml', 'merchants.toml', 'creatures.toml'];
+    // Load from both npcs and monsters directories
+    const entityFiles = [
+      // NPCs
+      `${basePath}/npcs/villagers.toml`,
+      `${basePath}/npcs/merchants.toml`,
+      `${basePath}/npcs/quest_givers.toml`,
+      // Monsters
+      `${basePath}/monsters/pig.toml`,
+      `${basePath}/monsters/forest_creatures.toml`,
+      `${basePath}/monsters/dangerous_creatures.toml`,
+      `${basePath}/monsters/creatures.toml`,
+      `${basePath}/monsters/enemies.toml`,
+    ];
 
-    for (const file of commonFiles) {
+    for (const file of entityFiles) {
       try {
-        await this.loadFile(`${basePath}/${file}`);
+        await this.loadFile(file);
       } catch {
         // File doesn't exist, skip
       }
