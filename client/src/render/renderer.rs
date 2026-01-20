@@ -1164,11 +1164,11 @@ impl Renderer {
             );
         }
 
-        // Player name (positioned just above head) - only show when hovered, selected, or is local player
+        // Player name (positioned just above head) - only show when hovered or selected
         let has_sprite = self.get_player_sprite(&player.gender, &player.skin).is_some();
         let name_y_offset = if has_sprite { scaled_sprite_height - 8.0 * zoom } else { 24.0 * zoom };
 
-        let show_name = is_local || is_selected || is_hovered;
+        let show_name = is_selected || is_hovered;
         if show_name {
             // Build display name with optional (GM) suffix
             let name_width = self.measure_text_sharp(&player.name, 16.0).width;
@@ -1255,10 +1255,11 @@ impl Renderer {
             let flip_x = NpcAnimation::should_flip(npc.direction);
 
             // Position sprite centered horizontally, feet at world position
-            let scaled_width = frame_width * zoom;
-            let scaled_height = frame_height * zoom;
-            let draw_x = screen_x - scaled_width / 2.0;
-            let draw_y = screen_y - scaled_height + 4.0 * zoom;
+            // Round to whole pixels to avoid blurry rendering from subpixel positioning
+            let scaled_width = (frame_width * zoom).round();
+            let scaled_height = (frame_height * zoom).round();
+            let draw_x = (screen_x - scaled_width / 2.0).round();
+            let draw_y = (screen_y - scaled_height + 4.0 * zoom).round();
 
             // Draw shadow
             let shadow_scale = (frame_width / 50.0).clamp(0.5, 2.0);

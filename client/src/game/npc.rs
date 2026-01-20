@@ -92,7 +92,12 @@ impl Npc {
     }
 
     pub fn name(&self) -> String {
-        format!("{} Lv.{}", self.display_name, self.level)
+        // Don't show level for friendly NPCs (quest givers and merchants)
+        if self.is_quest_giver || self.is_merchant {
+            self.display_name.clone()
+        } else {
+            format!("{} Lv.{}", self.display_name, self.level)
+        }
     }
 
     pub fn is_hostile(&self) -> bool {
