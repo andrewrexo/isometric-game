@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use std::collections::HashMap;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
@@ -1496,12 +1496,17 @@ impl Renderer {
 
         let mut current_y = chat_y;
         for msg in state.ui_state.chat_messages.iter().rev().take(5) {
-            let text = format!("{}: {}", msg.sender_name, msg.text);
+            // Channel-specific formatting and colors
+            let (color, text) = match msg.channel {
+                ChatChannel::Local => (WHITE, format!("{}: {}", msg.sender_name, msg.text)),
+                ChatChannel::Global => (SKYBLUE, format!("[G] {}: {}", msg.sender_name, msg.text)),
+                ChatChannel::System => (YELLOW, format!("{} {}", msg.sender_name, msg.text)),
+            };
             let wrapped_lines = self.wrap_text(&text, max_chat_width, font_size);
 
             // Draw lines from bottom to top (reversed)
             for line in wrapped_lines.iter().rev() {
-                self.draw_text_sharp(line, chat_x, current_y, font_size, WHITE);
+                self.draw_text_sharp(line, chat_x, current_y, font_size, color);
                 current_y -= line_height;
             }
         }

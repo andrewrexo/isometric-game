@@ -9,7 +9,7 @@ pub mod pathfinding;
 pub mod shop;
 pub mod skills;
 
-pub use state::{GameState, Camera, ConnectionStatus, ChatMessage, ChatBubble, UiState, DamageEvent, LevelUpEvent, SkillXpEvent, DialogueChoice, ActiveDialogue, QuestObjective, ActiveQuest, QuestCompletedEvent, ContextMenu, DragState, DragSource, DoubleClickState, Announcement};
+pub use state::{GameState, Camera, ConnectionStatus, ChatChannel, ChatMessage, ChatBubble, UiState, DamageEvent, LevelUpEvent, SkillXpEvent, DialogueChoice, ActiveDialogue, QuestObjective, ActiveQuest, QuestCompletedEvent, ContextMenu, DragState, DragSource, DoubleClickState, Announcement};
 pub use entities::{Player, Direction};
 pub use tilemap::{Tilemap, TilemapLayer, LayerType};
 pub use npc::{Npc, NpcType, NpcState};

@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType};
 use crate::game::npc::{Npc, NpcType, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -604,6 +604,7 @@ impl NetworkClient {
                         sender_name: sender_name.clone(),
                         text: text.clone(),
                         timestamp,
+                        channel: ChatChannel::Local,
                     });
 
                     if state.ui_state.chat_messages.len() > 100 {
@@ -786,8 +787,13 @@ impl NetworkClient {
                             }
                         }
 
-                        // Create floating XP event for local player
+                        // Create floating XP event and system message for local player
                         if state.local_player_id.as_ref() == Some(&player_id) {
+                            // Add system chat message
+                            state.ui_state.chat_messages.push(ChatMessage::system(
+                                format!("+{} {} XP", xp_gained, skill_name)
+                            ));
+
                             state.skill_xp_events.push(SkillXpEvent {
                                 x: player.x,
                                 y: player.y,
@@ -824,7 +830,13 @@ impl NetworkClient {
                             }
                         }
 
-                        // Create floating level up event
+                        // Create floating level up event and system message for local player
+                        if state.local_player_id.as_ref() == Some(&player_id) {
+                            state.ui_state.chat_messages.push(ChatMessage::system(
+                                format!("{} leveled up to {}!", skill_name, new_level)
+                            ));
+                        }
+
                         state.level_up_events.push(LevelUpEvent {
                             x: player.x,
                             y: player.y,
@@ -1099,6 +1111,11 @@ impl NetworkClient {
 
                     log::info!("Quest completed: {} - {} (EXP: {}, Gold: {})", quest_id, quest_name, exp_reward, gold_reward);
 
+                    // Add system chat message
+                    state.ui_state.chat_messages.push(ChatMessage::system(
+                        format!("Quest '{}' complete!", quest_name)
+                    ));
+
                     // Remove from active quests
                     state.ui_state.active_quests.retain(|q| q.id != quest_id);
 
@@ -1370,14 +1387,33 @@ impl NetworkClient {
                         .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("success")))
                         .and_then(|(_, v)| v.as_bool())
                         .unwrap_or(false);
+                    let action = extract_string(value, "action").unwrap_or_default();
+                    let item_id = extract_string(value, "itemId").unwrap_or_default();
+                    let quantity = extract_i32(value, "quantity").unwrap_or(0);
+                    let gold_change = extract_i32(value, "goldChange").unwrap_or(0);
                     let error = extract_string(value, "error");
 
                     if success {
                         log::info!("Shop transaction successful");
-                        // Inventory update will come separately
+
+                        // Get item display name from registry
+                        let item_name = state.item_registry.get(&item_id)
+                            .map(|def| def.display_name.clone())
+                            .unwrap_or_else(|| item_id.clone());
+
+                        // Add system chat message
+                        let message = if action == "buy" {
+                            format!("Bought {}x {} for {}g", quantity, item_name, gold_change.abs())
+                        } else {
+                            format!("Sold {}x {} for {}g", quantity, item_name, gold_change.abs())
+                        };
+                        state.ui_state.chat_messages.push(ChatMessage::system(message));
                     } else if let Some(err) = error {
                         log::warn!("Shop transaction failed: {}", err);
-                        // TODO: Show error notification in UI
+                        // Show error in system chat
+                        state.ui_state.chat_messages.push(ChatMessage::system(
+                            format!("Transaction failed: {}", err)
+                        ));
                     }
                 }
             }

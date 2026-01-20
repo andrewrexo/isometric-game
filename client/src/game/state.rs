@@ -27,10 +27,44 @@ impl Default for Camera {
     }
 }
 
+/// Chat channel types for different message sources
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChatChannel {
+    Local,      // Nearby players only (current default)
+    Global,     // Server-wide player chat
+    System,     // XP gains, quest completions, shop transactions
+    // Future:
+    // Party,
+    // Guild,
+}
+
 pub struct ChatMessage {
     pub sender_name: String,
     pub text: String,
     pub timestamp: f64,
+    pub channel: ChatChannel,
+}
+
+impl ChatMessage {
+    /// Create a player chat message (defaults to Local channel)
+    pub fn player(sender_name: String, text: String) -> Self {
+        ChatMessage {
+            sender_name,
+            text,
+            timestamp: macroquad::time::get_time(),
+            channel: ChatChannel::Local,
+        }
+    }
+
+    /// Create a system message
+    pub fn system(text: String) -> Self {
+        ChatMessage {
+            sender_name: "[System]".to_string(),
+            text,
+            timestamp: macroquad::time::get_time(),
+            channel: ChatChannel::System,
+        }
+    }
 }
 
 /// Floating damage/healing number for combat feedback
