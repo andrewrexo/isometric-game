@@ -553,7 +553,7 @@ impl NetworkClient {
                         for npc_value in npcs {
                             let id = extract_string(npc_value, "id").unwrap_or_default();
                             let npc_type = extract_u8(npc_value, "npc_type").unwrap_or(0);
-                            let entity_type = extract_string(npc_value, "entity_type").unwrap_or_else(|| "slime".to_string());
+                            let entity_type = extract_string(npc_value, "entity_type").unwrap_or_else(|| "pig".to_string());
                             let display_name = extract_string(npc_value, "display_name").unwrap_or_else(|| "???".to_string());
                             // Server sends i32 grid positions
                             let x = extract_i32(npc_value, "x").unwrap_or(0) as f32;
@@ -659,12 +659,13 @@ impl NetworkClient {
                         npc.hp = target_hp;
                     }
 
-                    // Create floating damage number
+                    // Create floating damage number with target_id for height lookup at render time
                     state.damage_events.push(DamageEvent {
                         x: target_x,
                         y: target_y,
                         damage,
                         time: macroquad::time::get_time(),
+                        target_id,
                     });
                 }
             }

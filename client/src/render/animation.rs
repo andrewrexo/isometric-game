@@ -211,3 +211,121 @@ impl SpriteCoords {
         (x, y, SPRITE_WIDTH, SPRITE_HEIGHT)
     }
 }
+
+// ============================================================================
+// NPC Animation System
+// ============================================================================
+
+/// Animation states for NPCs (simpler than players)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NpcAnimationState {
+    #[default]
+    Idle,
+    Walking,
+    Attacking,
+}
+
+/// NPC animation controller
+///
+/// NPC sprites use a single-row 16-frame layout:
+/// - Frames 0-1: Idle (Down/Right)
+/// - Frames 2-3: Idle (Up/Left)
+/// - Frames 4-7: Walk (Down/Right)
+/// - Frames 8-11: Walk (Up/Left)
+/// - Frames 12-13: Attack (Down/Right)
+/// - Frames 14-15: Attack (Up/Left)
+#[derive(Debug, Clone)]
+pub struct NpcAnimation {
+    pub state: NpcAnimationState,
+    pub frame: f32,
+    finished: bool,
+}
+
+impl Default for NpcAnimation {
+    fn default() -> Self {
+        Self {
+            state: NpcAnimationState::Idle,
+            frame: 0.0,
+            finished: false,
+        }
+    }
+}
+
+impl NpcAnimation {
+    /// Animation speeds for each state
+    const IDLE_FPS: f32 = 3.0;
+    const WALK_FPS: f32 = 10.0;
+    const ATTACK_FPS: f32 = 8.0;
+
+    /// Frame counts for each state
+    const IDLE_FRAMES: u32 = 2;
+    const WALK_FRAMES: u32 = 4;
+    const ATTACK_FRAMES: u32 = 2;
+
+    /// Update the animation frame based on delta time
+    pub fn update(&mut self, delta: f32) {
+        let (frame_count, fps, looping) = match self.state {
+            NpcAnimationState::Idle => (Self::IDLE_FRAMES, Self::IDLE_FPS, true),
+            NpcAnimationState::Walking => (Self::WALK_FRAMES, Self::WALK_FPS, true),
+            NpcAnimationState::Attacking => (Self::ATTACK_FRAMES, Self::ATTACK_FPS, false),
+        };
+
+        self.frame += delta * fps;
+
+        if self.frame >= frame_count as f32 {
+            if looping {
+                self.frame = self.frame % frame_count as f32;
+            } else {
+                self.frame = (frame_count - 1) as f32;
+                self.finished = true;
+            }
+        }
+    }
+
+    /// Set a new animation state, resetting the frame if changed
+    pub fn set_state(&mut self, new_state: NpcAnimationState) {
+        if self.state != new_state {
+            self.state = new_state;
+            self.frame = 0.0;
+            self.finished = false;
+        }
+    }
+
+    /// Check if a non-looping animation has finished
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    /// Restart the current animation from the beginning
+    pub fn restart(&mut self) {
+        self.frame = 0.0;
+        self.finished = false;
+    }
+
+    /// Get the sprite frame index (0-15) based on state and direction
+    pub fn get_frame_index(&self, direction: Direction) -> u32 {
+        let use_up_left = is_up_or_left_direction(direction);
+        let frame_in_anim = self.frame as u32;
+
+        match self.state {
+            NpcAnimationState::Idle => {
+                // Use only first idle frame (not all enemies have 2 idle frames)
+                if use_up_left { 2 } else { 0 }
+            }
+            NpcAnimationState::Walking => {
+                let base = if use_up_left { 8 } else { 4 };
+                base + (frame_in_anim % Self::WALK_FRAMES)
+            }
+            NpcAnimationState::Attacking => {
+                let base = if use_up_left { 14 } else { 12 };
+                base + (frame_in_anim % Self::ATTACK_FRAMES)
+            }
+        }
+    }
+
+    /// Whether to flip the sprite horizontally for this direction
+    /// Matches player flip logic: flip for Up, UpRight, Right, UpLeft
+    pub fn should_flip(direction: Direction) -> bool {
+        should_flip_horizontal(direction)
+    }
+}

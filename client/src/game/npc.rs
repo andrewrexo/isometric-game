@@ -1,4 +1,5 @@
 use super::entities::Direction;
+use crate::render::animation::{NpcAnimation, NpcAnimationState};
 
 // ============================================================================
 // NPC Types
@@ -58,7 +59,7 @@ impl NpcState {
 pub struct Npc {
     pub id: String,
     pub npc_type: NpcType,
-    /// Entity prototype ID (e.g., "slime", "elder_villager")
+    /// Entity prototype ID (e.g., "pig", "elder_villager")
     pub entity_type: String,
     /// Display name from server
     pub display_name: String,
@@ -71,9 +72,11 @@ pub struct Npc {
     pub max_hp: i32,
     pub level: i32,
     pub state: NpcState,
-    pub animation_frame: f32,
+    pub animation: NpcAnimation,
     /// Whether this NPC is hostile
     pub hostile: bool,
+    /// Track if we've played the attack animation for current attack cycle
+    attack_anim_played: bool,
 }
 
 impl Npc {
@@ -81,7 +84,7 @@ impl Npc {
         Self {
             id,
             npc_type,
-            entity_type: "slime".to_string(),
+            entity_type: "pig".to_string(),
             display_name: npc_type.name().to_string(),
             x,
             y,
@@ -92,8 +95,9 @@ impl Npc {
             max_hp: 50,
             level: 1,
             state: NpcState::Idle,
-            animation_frame: 0.0,
+            animation: NpcAnimation::default(),
             hostile: true,
+            attack_anim_played: false,
         }
     }
 
@@ -136,6 +140,7 @@ impl Npc {
         let dist = (dx * dx + dy * dy).sqrt();
 
         let move_dist = INTERPOLATION_SPEED * delta;
+        let is_moving = dist > 0.01;
 
         if dist <= move_dist || dist < 0.01 {
             self.x = self.target_x;
@@ -143,12 +148,33 @@ impl Npc {
         } else {
             self.x += (dx / dist) * move_dist;
             self.y += (dy / dist) * move_dist;
+        }
 
-            // Animation while moving
-            self.animation_frame += delta * 6.0;
-            if self.animation_frame >= 4.0 {
-                self.animation_frame = 0.0;
+        // Update animation state based on NPC state
+        // For attacking: play attack animation once, then show idle until state changes
+        let anim_state = match self.state {
+            NpcState::Attacking => {
+                if self.attack_anim_played {
+                    // Already played attack animation, show idle until next attack cycle
+                    NpcAnimationState::Idle
+                } else {
+                    NpcAnimationState::Attacking
+                }
             }
+            NpcState::Chasing if is_moving => NpcAnimationState::Walking,
+            NpcState::Returning if is_moving => NpcAnimationState::Walking,
+            _ => NpcAnimationState::Idle,
+        };
+        self.animation.set_state(anim_state);
+        self.animation.update(delta);
+
+        // Mark attack animation as played when it finishes
+        if self.state == NpcState::Attacking && self.animation.is_finished() {
+            self.attack_anim_played = true;
+        }
+        // Reset flag when not attacking (ready for next attack cycle)
+        if self.state != NpcState::Attacking {
+            self.attack_anim_played = false;
         }
     }
 }

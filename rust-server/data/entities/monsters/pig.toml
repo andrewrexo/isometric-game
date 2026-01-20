@@ -1,0 +1,84 @@
+# Pig monster - the classic starting enemy
+
+[pig]
+display_name = "Piggy"
+sprite = "pig"
+animation_type = "standard"
+description = "A wild piggy that roams the forest."
+
+[pig.stats]
+level = 1
+max_hp = 15
+damage = 2
+attack_range = 1
+aggro_range = 5
+chase_range = 8
+move_cooldown_ms = 500
+attack_cooldown_ms = 2000
+respawn_time_ms = 10000
+
+[pig.rewards]
+exp_base = 25
+gold_min = 5
+gold_max = 15
+
+[[pig.loot]]
+item_id = "piglet"
+drop_chance = 0.20
+quantity_min = 1
+quantity_max = 1
+
+[[pig.loot]]
+item_id = "health_potion"
+drop_chance = 0.20
+quantity_min = 1
+quantity_max = 1
+
+[pig.behaviors]
+hostile = true
+
+# =============================================================================
+# Pig Variants
+# =============================================================================
+
+[pig_king]
+extends = "pig"
+display_name = "Pig King"
+sprite = "pig_king"
+description = "A massive pig that rules its brethren."
+
+[pig_king.stats]
+max_hp = 500
+damage = 25
+attack_range = 2
+aggro_range = 8
+move_cooldown_ms = 400
+respawn_time_ms = 300000  # 5 minutes
+
+[pig_king.rewards]
+exp_base = 200
+gold_min = 50
+gold_max = 150
+
+[[pig_king.loot]]
+item_id = "piglet"
+drop_chance = 1.0
+quantity_min = 3
+quantity_max = 5
+
+[wild_boar]
+extends = "pig"
+display_name = "Wild Boar"
+sprite = "pig"
+description = "A fierce boar with sharp tusks."
+
+[wild_boar.stats]
+max_hp = 40
+damage = 3
+
+[wild_boar.rewards]
+exp_base = 30
+
+[[wild_boar.loot]]
+item_id = "piglet"
+drop_chance = 0.40

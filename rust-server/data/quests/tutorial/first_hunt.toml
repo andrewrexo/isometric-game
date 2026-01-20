@@ -4,7 +4,7 @@
 [quest]
 id = "first_hunt"
 name = "First Hunt"
-description = "The forest slimes have become aggressive. Help thin their numbers!"
+description = "The wild piggies have become aggressive. Help thin their numbers!"
 giver_npc = "elder_villager"
 level_required = 1
 lua_script = "tutorial/first_hunt.lua"
@@ -16,18 +16,18 @@ repeatable = true
 next = "forest_dangers"
 
 [[quest.objectives]]
-id = "kill_slimes"
+id = "kill_piggies"
 type = "kill_monster"
-target = "slime"
+target = "pig"
 count = 5
-description = "Slay 5 slimes"
+description = "Slay 5 piggies"
 
 [[quest.objectives]]
-id = "collect_cores"
+id = "collect_piglets"
 type = "collect_item"
-target = "slime_core"
+target = "piglet"
 count = 3
-description = "Collect 3 slime cores"
+description = "Collect 3 piglets"
 
 [[quest.objectives]]
 id = "return_to_elder"
@@ -44,7 +44,7 @@ items = [
 ]
 
 [quest.dialogue]
-offer = "The forest slimes have become aggressive lately. Can you help thin their numbers? I'll reward you handsomely."
-accept = "Thank you, brave adventurer! Slay 5 slimes and bring me 3 of their cores as proof. Return when you've dealt with them."
-progress = "How goes the hunt? The village still trembles at the slime threat."
+offer = "The wild piggies have become aggressive lately. Can you help thin their numbers? I'll reward you handsomely."
+accept = "Thank you, brave adventurer! Slay 5 piggies and bring me 3 piglets as proof. Return when you've dealt with them."
+progress = "How goes the hunt? The village still trembles at the piggy threat."
 complete = "Wonderful work! The village is safer thanks to you. Take this reward - you've earned it."

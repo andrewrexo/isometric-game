@@ -1,9 +1,9 @@
 # Material items - crafting ingredients, monster drops
 
-[slime_core]
-display_name = "Slime Core"
-sprite = "item_slime_core"
-description = "A gelatinous core harvested from slimes. Used in alchemy."
+[piglet]
+display_name = "Piglet"
+sprite = "piglet"
+description = "A tiny piglet dropped by wild piggies. Quite adorable."
 category = "material"
 max_stack = 99
 base_price = 5

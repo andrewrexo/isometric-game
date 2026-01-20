@@ -20,7 +20,7 @@ end
 function show_offer_dialogue(ctx)
     local choice = ctx:show_dialogue({
         speaker = "Village Elder",
-        text = "The slimes grow bolder each day, threatening our village. Will you help us?",
+        text = "The piggies grow bolder each day, threatening our village. Will you help us?",
         choices = {
             { id = "accept", text = "I'll handle it." },
             { id = "decline", text = "Not right now." },
@@ -32,7 +32,7 @@ function show_offer_dialogue(ctx)
         ctx:accept_quest()
         ctx:show_dialogue({
             speaker = "Village Elder",
-            text = "Bless you! Slay 5 slimes and bring me 3 of their cores. Be careful out there."
+            text = "Bless you! Slay 5 piggies and bring me 3 piglets. Be careful out there."
         })
     elseif choice == "ask_reward" then
         ctx:show_dialogue({
@@ -50,12 +50,12 @@ end
 
 -- Show progress dialogue
 function show_progress_dialogue(ctx)
-    local slimes = ctx:get_objective_progress("kill_slimes")
-    local cores = ctx:get_objective_progress("collect_cores")
+    local piggies = ctx:get_objective_progress("kill_piggies")
+    local piglets = ctx:get_objective_progress("collect_piglets")
 
     local text = string.format(
-        "How goes the hunt? You've slain %d of 5 slimes and collected %d of 3 cores.",
-        slimes.current, cores.current
+        "How goes the hunt? You've slain %d of 5 piggies and collected %d of 3 piglets.",
+        piggies.current, piglets.current
     )
 
     ctx:show_dialogue({
@@ -66,10 +66,10 @@ end
 
 -- Called when an objective is updated
 function on_objective_progress(ctx, objective_id, new_count)
-    if objective_id == "kill_slimes" and new_count == 5 then
-        ctx:show_notification("All slimes defeated! Collect their cores.")
-    elseif objective_id == "collect_cores" and new_count == 3 then
-        ctx:show_notification("Cores collected! Return to the Village Elder.")
+    if objective_id == "kill_piggies" and new_count == 5 then
+        ctx:show_notification("All piggies defeated! Collect their piglets.")
+    elseif objective_id == "collect_piglets" and new_count == 3 then
+        ctx:show_notification("Piglets collected! Return to the Village Elder.")
     end
 end
 
@@ -82,7 +82,7 @@ function complete_quest(ctx)
     if duration < 300 then  -- Under 5 minutes
         ctx:show_dialogue({
             speaker = "Village Elder",
-            text = "Incredible speed! The slimes didn't stand a chance. Take this extra reward!"
+            text = "Incredible speed! The piggies didn't stand a chance. Take this extra reward!"
         })
         ctx:grant_bonus_reward({ gold = 25 })
     else
@@ -103,6 +103,6 @@ end
 function show_completed_dialogue(ctx)
     ctx:show_dialogue({
         speaker = "Village Elder",
-        text = "Thank you again for your help with the slimes. Speak with me when you're ready for more work."
+        text = "Thank you again for your help with the piggies. Speak with me when you're ready for more work."
     })
 end

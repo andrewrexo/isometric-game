@@ -6,7 +6,7 @@ use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
 use super::ui::common::{SlotState, CORNER_ACCENT_SIZE};
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
-use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT};
+use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, NpcAnimation};
 use super::font::BitmapFont;
 
 /// Tileset configuration
@@ -98,6 +98,8 @@ pub struct Renderer {
     pub(crate) item_sprites: HashMap<String, Texture2D>,
     /// Map object sprites by filename number (e.g., "101" -> Texture2D)
     object_sprites: HashMap<String, Texture2D>,
+    /// NPC sprites by entity type (e.g., "pig" -> Texture2D)
+    npc_sprites: HashMap<String, Texture2D>,
     /// Multi-size pixel font for sharp text rendering at various sizes
     font: BitmapFont,
     /// Quest complete banner texture
@@ -222,6 +224,33 @@ impl Renderer {
         }
         log::info!("Loaded {} object sprite variants", object_sprites.len());
 
+        // Load NPC sprites from assets/sprites/enemies/ (scan directory)
+        let mut npc_sprites = HashMap::new();
+        if let Ok(entries) = std::fs::read_dir("assets/sprites/enemies") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "png") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        let entity_type = stem.to_string();
+                        let path_str = path.to_string_lossy().to_string();
+                        match load_texture(&path_str).await {
+                            Ok(tex) => {
+                                tex.set_filter(FilterMode::Nearest);
+                                log::info!("Loaded NPC sprite: {} ({}x{}, frame: {}x{})",
+                                    entity_type, tex.width(), tex.height(),
+                                    tex.width() / 16.0, tex.height());
+                                npc_sprites.insert(entity_type, tex);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load NPC sprite {}: {}", path_str, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        log::info!("Loaded {} NPC sprite variants", npc_sprites.len());
+
         // Load monogram pixel font at multiple sizes for crisp rendering
         let font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
         if font.is_loaded() {
@@ -303,6 +332,7 @@ impl Renderer {
             equipment_sprites,
             item_sprites,
             object_sprites,
+            npc_sprites,
             font,
             quest_complete_texture,
             gold_nugget_texture,
@@ -728,6 +758,7 @@ impl Renderer {
     fn render_damage_numbers(&self, state: &GameState) {
         let current_time = macroquad::time::get_time();
         const DURATION: f32 = 1.2;
+        const FONT_SIZE: f32 = 16.0;
 
         for event in &state.damage_events {
             let age = (current_time - event.time) as f32;
@@ -737,14 +768,26 @@ impl Renderer {
 
             let t = age / DURATION;
 
-            // Subtle scale: 1.2x -> 1.0x ease-out
-            let scale = 1.0 + 0.2 * (1.0 - t).powi(2);
+            // Steady float upward - round to whole pixels for crisp movement
+            let float_offset = (age * 40.0).round();
 
-            // Steady float upward
-            let float_offset = age * 40.0;
+            // Compute height offset based on entity type and actual sprite size
+            let height_offset = if state.players.contains_key(&event.target_id) {
+                (SPRITE_HEIGHT - 8.0) / 2.0 // Center of player sprite
+            } else if let Some(npc) = state.npcs.get(&event.target_id) {
+                // Use actual sprite height if available, otherwise fallback to ellipse size
+                if let Some(sprite) = self.npc_sprites.get(&npc.entity_type) {
+                    sprite.height() / 2.0 // Center of NPC sprite
+                } else {
+                    12.0 // Center of fallback ellipse
+                }
+            } else {
+                25.0 // Fallback for unknown entities
+            };
 
             let (screen_x, screen_y) = world_to_screen(event.x, event.y, &state.camera);
-            let final_y = screen_y - 25.0 - float_offset;
+            // Round all positions to whole pixels
+            let final_y = (screen_y - height_offset - float_offset).round();
 
             // Fade: visible for first half, then fade out
             let alpha = if t < 0.5 {
@@ -762,22 +805,17 @@ impl Renderer {
                 ("MISS".to_string(), Color::new(0.6, 0.6, 0.6, alpha))
             };
 
-            let base_font_size = 18.0;
-            let scaled_font_size = base_font_size * scale;
-
-            let text_dims = self.measure_text_sharp(&text, base_font_size);
-            let scaled_width = text_dims.width * scale;
-
-            let draw_x = screen_x - scaled_width / 2.0;
-            let draw_y = final_y;
+            let text_dims = self.measure_text_sharp(&text, FONT_SIZE);
+            // Round center position to whole pixels
+            let draw_x = (screen_x - text_dims.width / 2.0).round();
 
             // Simple outline
             let outline_color = Color::new(0.0, 0.0, 0.0, alpha * 0.9);
             for &(ox, oy) in &[(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
-                self.draw_text_sharp(&text, draw_x + ox, draw_y + oy, scaled_font_size, outline_color);
+                self.draw_text_sharp(&text, draw_x + ox, final_y + oy, FONT_SIZE, outline_color);
             }
 
-            self.draw_text_sharp(&text, draw_x, draw_y, scaled_font_size, base_color);
+            self.draw_text_sharp(&text, draw_x, final_y, FONT_SIZE, base_color);
         }
     }
 
@@ -1182,41 +1220,94 @@ impl Renderer {
             self.render_tile_selection(npc.x, npc.y, camera);
         }
 
-        // NPC body color based on hostility
-        let (base_color, highlight_color, name_color) = if npc.is_hostile() {
-            // Hostile = green slime blob, red name
-            (
-                Color::from_rgba(80, 180, 80, 255),
-                Color::from_rgba(120, 220, 120, 255),
-                Color::from_rgba(255, 150, 150, 255),
-            )
+        // Name color based on hostility
+        let name_color = if npc.is_hostile() {
+            Color::from_rgba(255, 150, 150, 255) // Red for hostile
         } else {
-            // Friendly = blue/purple humanoid indicator, cyan name
-            (
-                Color::from_rgba(100, 120, 200, 255),
-                Color::from_rgba(140, 160, 240, 255),
-                Color::from_rgba(150, 220, 255, 255),
-            )
+            Color::from_rgba(150, 220, 255, 255) // Cyan for friendly
         };
 
-        // Wobble animation based on movement
-        let wobble = (macroquad::time::get_time() * 4.0 + npc.animation_frame as f64).sin() as f32;
-        let radius = (10.0 + wobble * 1.5) * zoom;
-        let height_offset = (8.0 + wobble * 2.0) * zoom;
+        // Try to render with sprite, fall back to ellipse
+        let sprite_height = if let Some(sprite) = self.npc_sprites.get(&npc.entity_type) {
+            // Auto-detect frame size from texture (16 frames per sheet)
+            let frame_width = sprite.width() / 16.0;
+            let frame_height = sprite.height();
 
-        // Draw shadow
-        draw_ellipse(screen_x, screen_y, 16.0 * zoom, 6.0 * zoom, 0.0, Color::from_rgba(0, 0, 0, 60));
+            // Get current frame based on animation state and direction
+            let frame_index = npc.animation.get_frame_index(npc.direction);
+            let src_x = frame_index as f32 * frame_width;
 
-        // Draw NPC body (oval blob) - TODO: use sprites based on entity_type
-        draw_ellipse(screen_x, screen_y - height_offset, radius, radius * 0.7, 0.0, base_color);
+            // Flip horizontally for Right/Left directions
+            let flip_x = NpcAnimation::should_flip(npc.direction);
 
-        // Highlight
-        draw_ellipse(screen_x - 3.0 * zoom, screen_y - height_offset - 2.0 * zoom, radius * 0.3, radius * 0.2, 0.0, highlight_color);
+            // Position sprite centered horizontally, feet at world position
+            let scaled_width = frame_width * zoom;
+            let scaled_height = frame_height * zoom;
+            let draw_x = screen_x - scaled_width / 2.0;
+            let draw_y = screen_y - scaled_height + 4.0 * zoom;
+
+            // Draw shadow
+            let shadow_scale = (frame_width / 50.0).clamp(0.5, 2.0);
+            draw_ellipse(
+                screen_x,
+                screen_y,
+                16.0 * shadow_scale * zoom,
+                6.0 * shadow_scale * zoom,
+                0.0,
+                Color::from_rgba(0, 0, 0, 60),
+            );
+
+            draw_texture_ex(
+                sprite,
+                draw_x,
+                draw_y,
+                WHITE,
+                DrawTextureParams {
+                    source: Some(Rect::new(src_x, 0.0, frame_width, frame_height)),
+                    dest_size: Some(Vec2::new(scaled_width, scaled_height)),
+                    flip_x,
+                    ..Default::default()
+                },
+            );
+
+            scaled_height
+        } else {
+            // Fallback: colored ellipse rendering
+            let (base_color, highlight_color) = if npc.is_hostile() {
+                (
+                    Color::from_rgba(80, 180, 80, 255),
+                    Color::from_rgba(120, 220, 120, 255),
+                )
+            } else {
+                (
+                    Color::from_rgba(100, 120, 200, 255),
+                    Color::from_rgba(140, 160, 240, 255),
+                )
+            };
+
+            let wobble = (macroquad::time::get_time() * 4.0 + npc.animation.frame as f64).sin() as f32;
+            let radius = (10.0 + wobble * 1.5) * zoom;
+            let height_offset = (8.0 + wobble * 2.0) * zoom;
+
+            // Draw shadow
+            draw_ellipse(screen_x, screen_y, 16.0 * zoom, 6.0 * zoom, 0.0, Color::from_rgba(0, 0, 0, 60));
+
+            // Draw NPC body (oval blob)
+            draw_ellipse(screen_x, screen_y - height_offset, radius, radius * 0.7, 0.0, base_color);
+
+            // Highlight
+            draw_ellipse(screen_x - 3.0 * zoom, screen_y - height_offset - 2.0 * zoom, radius * 0.3, radius * 0.2, 0.0, highlight_color);
+
+            (height_offset + radius) * 2.0
+        };
+
+        // Top of NPC for UI elements
+        let top_y = screen_y - sprite_height + 4.0 * zoom;
 
         // Interaction indicator for friendly NPCs (yellow exclamation mark above head)
         if !npc.is_hostile() {
             let pulse = (macroquad::time::get_time() * 2.0).sin() as f32 * 0.2 + 0.8;
-            let indicator_y = screen_y - height_offset - radius - 25.0 * zoom;
+            let indicator_y = top_y - 20.0 * zoom;
             self.draw_text_sharp("!", screen_x - 3.0 * zoom, indicator_y, 16.0, Color::from_rgba(255, 220, 50, (pulse * 255.0) as u8));
         }
 
@@ -1226,7 +1317,7 @@ impl Renderer {
         self.draw_text_sharp(
             &name,
             screen_x - name_width / 2.0,
-            screen_y - height_offset - radius - 5.0 * zoom,
+            top_y - 5.0 * zoom,
             16.0,
             name_color,
         );
@@ -1236,7 +1327,7 @@ impl Renderer {
             let bar_width = 30.0 * zoom;
             let bar_height = 5.0 * zoom;
             let bar_x = screen_x - bar_width / 2.0;
-            let bar_y = screen_y - height_offset - radius - 20.0 * zoom;
+            let bar_y = top_y - 20.0 * zoom;
             let hp_ratio = npc.hp as f32 / npc.max_hp.max(1) as f32;
 
             self.draw_entity_health_bar(bar_x, bar_y, bar_width, bar_height, hp_ratio, zoom);
