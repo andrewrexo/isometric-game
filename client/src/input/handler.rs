@@ -1,8 +1,33 @@
 use macroquad::prelude::*;
+use std::collections::HashSet;
 use crate::game::{GameState, ContextMenu, DragState, DragSource, PathState, pathfinding};
 use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
 use crate::network::messages::ClientMessage;
+
+/// Build set of tiles occupied by entities (other players + NPCs) for pathfinding
+fn build_occupied_set(state: &GameState) -> HashSet<(i32, i32)> {
+    let mut occupied = HashSet::new();
+
+    // Add other players (not local player)
+    for (id, player) in &state.players {
+        if state.local_player_id.as_ref() == Some(id) {
+            continue;
+        }
+        if !player.is_dead {
+            occupied.insert((player.x.round() as i32, player.y.round() as i32));
+        }
+    }
+
+    // Add all alive NPCs
+    for npc in state.npcs.values() {
+        if npc.is_alive() {
+            occupied.insert((npc.x.round() as i32, npc.y.round() as i32));
+        }
+    }
+
+    occupied
+}
 
 /// Input commands that can be sent to the server
 #[derive(Debug, Clone)]
@@ -1195,19 +1220,46 @@ impl InputHandler {
         if new_dir != CardinalDir::None && !is_attacking {
             let hold_duration = current_time - self.dir_press_time;
             if hold_duration >= FACE_THRESHOLD {
-                // Past threshold - send movement commands
-                let direction_changed = (dx - self.last_dx).abs() > 0.01 || (dy - self.last_dy).abs() > 0.01;
-                let time_elapsed = current_time - self.last_send_time >= self.send_interval;
+                // Past threshold - check if target tile is walkable before sending movement
+                let can_move = if let Some(player) = state.get_local_player() {
+                    let player_x = player.x.round() as i32;
+                    let player_y = player.y.round() as i32;
+                    let target_x = player_x + dx as i32;
+                    let target_y = player_y + dy as i32;
 
-                // Send command if: direction changed OR enough time passed (heartbeat)
-                let should_send = direction_changed || time_elapsed;
+                    // Check static tile collision
+                    let tile_walkable = state.chunk_manager.is_walkable(target_x as f32, target_y as f32);
 
-                if should_send {
-                    commands.push(InputCommand::Move { dx, dy });
-                    self.last_dx = dx;
-                    self.last_dy = dy;
+                    // Check entity collision
+                    let occupied = build_occupied_set(state);
+                    let not_occupied = !occupied.contains(&(target_x, target_y));
+
+                    tile_walkable && not_occupied
+                } else {
+                    false
+                };
+
+                if can_move {
+                    let direction_changed = (dx - self.last_dx).abs() > 0.01 || (dy - self.last_dy).abs() > 0.01;
+                    let time_elapsed = current_time - self.last_send_time >= self.send_interval;
+
+                    // Send command if: direction changed OR enough time passed (heartbeat)
+                    let should_send = direction_changed || time_elapsed;
+
+                    if should_send {
+                        commands.push(InputCommand::Move { dx, dy });
+                        self.last_dx = dx;
+                        self.last_dy = dy;
+                        self.last_send_time = current_time;
+                        self.move_sent = true;
+                    }
+                } else if self.move_sent {
+                    // Was moving but now blocked - send stop command to server
+                    commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
+                    self.last_dx = 0.0;
+                    self.last_dy = 0.0;
                     self.last_send_time = current_time;
-                    self.move_sent = true;
+                    self.move_sent = false;
                 }
             }
         }
@@ -1217,6 +1269,29 @@ impl InputHandler {
         if dx == 0.0 && dy == 0.0 && !is_attacking {
             // Get player position first to avoid borrow conflicts
             let player_pos = state.get_local_player().map(|p| (p.x.round() as i32, p.y.round() as i32));
+
+            // Check if next waypoint is blocked by an entity - if so, cancel path
+            let mut path_blocked = false;
+            if let (Some((player_x, player_y)), Some(ref path_state)) = (player_pos, &state.auto_path) {
+                if path_state.current_index < path_state.path.len() {
+                    let (next_x, next_y) = path_state.path[path_state.current_index];
+
+                    // Check if we need to move to reach the waypoint
+                    if player_x != next_x || player_y != next_y {
+                        let occupied = build_occupied_set(state);
+                        if occupied.contains(&(next_x, next_y)) {
+                            path_blocked = true;
+                        }
+                    }
+                }
+            }
+
+            // If path is blocked by entity, cancel it and stop
+            if path_blocked {
+                state.auto_path = None;
+                commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
+                return commands;
+            }
 
             if let (Some((player_x, player_y)), Some(ref mut path_state)) = (player_pos, &mut state.auto_path) {
                 // Check if we've reached the current waypoint
@@ -1367,11 +1442,15 @@ impl InputHandler {
                                         let item_x = ground_item.x.round() as i32;
                                         let item_y = ground_item.y.round() as i32;
 
+                                        // Build occupied set (other players + NPCs)
+                                        let occupied = build_occupied_set(state);
+
                                         const MAX_PATH_DISTANCE: i32 = 32;
                                         if let Some((dest, path)) = pathfinding::find_path_to_adjacent(
                                             (player_x, player_y),
                                             (item_x, item_y),
                                             &state.chunk_manager,
+                                            &occupied,
                                             MAX_PATH_DISTANCE,
                                         ) {
                                             state.auto_path = Some(PathState {
@@ -1466,11 +1545,15 @@ impl InputHandler {
                                     let npc_x = npc.x.round() as i32;
                                     let npc_y = npc.y.round() as i32;
 
+                                    // Build occupied set (other players + NPCs)
+                                    let occupied = build_occupied_set(state);
+
                                     const MAX_PATH_DISTANCE: i32 = 32;
                                     if let Some((dest, path)) = pathfinding::find_path_to_adjacent(
                                         (player_x, player_y),
                                         (npc_x, npc_y),
                                         &state.chunk_manager,
+                                        &occupied,
                                         MAX_PATH_DISTANCE,
                                     ) {
                                         state.auto_path = Some(PathState {
@@ -1503,11 +1586,15 @@ impl InputHandler {
                     let dist = (tile_x - player_x).abs().max((tile_y - player_y).abs());
 
                     if dist <= MAX_PATH_DISTANCE && state.chunk_manager.is_walkable(tile_x as f32, tile_y as f32) {
+                        // Build occupied set (other players + NPCs)
+                        let occupied = build_occupied_set(state);
+
                         // Calculate path using A*
                         if let Some(path) = pathfinding::find_path(
                             (player_x, player_y),
                             (tile_x, tile_y),
                             &state.chunk_manager,
+                            &occupied,
                             MAX_PATH_DISTANCE,
                         ) {
                             state.auto_path = Some(PathState {

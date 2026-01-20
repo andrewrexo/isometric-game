@@ -32,7 +32,7 @@ const STARTING_HP: i32 = 100;
 const ATTACK_RANGE: i32 = 1; // Maximum distance to attack (in tiles)
 const ATTACK_COOLDOWN_MS: u64 = 700; // Slightly shorter than client (800ms) to account for network latency
 const PLAYER_HP_REGEN_PERCENT: f32 = 2.0;
-const REGEN_INTERVAL_MS: u64 = 15000;
+const REGEN_INTERVAL_MS: u64 = 30000;
 
 // ============================================================================
 // Player Save Data (for database persistence)
@@ -338,11 +338,16 @@ impl Player {
         if self.is_dead {
             return;
         }
+        // First tick after spawn/respawn - just initialize timer, don't regen yet
+        if self.last_regen_time == 0 {
+            self.last_regen_time = current_time;
+            return;
+        }
         if current_time - self.last_regen_time >= REGEN_INTERVAL_MS {
             self.last_regen_time = current_time;
             let max_hp = self.max_hp();
             if self.hp < max_hp && self.hp > 0 {
-                let regen = ((max_hp as f32 * PLAYER_HP_REGEN_PERCENT) / 100.0).ceil() as i32;
+                let regen = ((max_hp as f32 * PLAYER_HP_REGEN_PERCENT) / 100.0).ceil().max(1.0) as i32;
                 self.hp = (self.hp + regen).min(max_hp);
             }
         }
@@ -3161,12 +3166,38 @@ impl GameRoom {
                 .collect()
         };
 
-        // Check walkability for each pending move (async world check)
+        // Collect current entity positions for collision checking
+        let player_positions: std::collections::HashSet<(i32, i32)> = {
+            let players = self.players.read().await;
+            players.values()
+                .filter(|p| p.active && !p.is_dead)
+                .map(|p| (p.x, p.y))
+                .collect()
+        };
+        let npc_positions: std::collections::HashSet<(i32, i32)> = {
+            let npcs = self.npcs.read().await;
+            npcs.values()
+                .filter(|n| n.is_alive())
+                .map(|n| (n.x, n.y))
+                .collect()
+        };
+
+        // Check walkability and entity collision for each pending move
         let mut valid_moves: Vec<(String, i32, i32)> = Vec::new();
         for (id, target_x, target_y) in pending_moves {
-            if self.world.is_tile_walkable(target_x, target_y).await {
-                valid_moves.push((id, target_x, target_y));
+            // Check static tile collision
+            if !self.world.is_tile_walkable(target_x, target_y).await {
+                continue;
             }
+            // Check if another player is on the target tile
+            if player_positions.contains(&(target_x, target_y)) {
+                continue;
+            }
+            // Check if an NPC is on the target tile
+            if npc_positions.contains(&(target_x, target_y)) {
+                continue;
+            }
+            valid_moves.push((id, target_x, target_y));
         }
 
         // Apply valid moves and collect player updates
@@ -3256,14 +3287,19 @@ impl GameRoom {
                 }
 
                 // Get positions of other NPCs (excluding self) for collision detection
-                let other_npc_positions: Vec<(i32, i32)> = npc_positions
+                let mut occupied_tiles: Vec<(i32, i32)> = npc_positions
                     .iter()
                     .filter(|(id, _)| *id != &npc.id)
                     .map(|(_, pos)| *pos)
                     .collect();
 
+                // Add player positions to occupied tiles so NPCs avoid walking into players
+                for (_, px, py, _) in &player_positions {
+                    occupied_tiles.push((*px, *py));
+                }
+
                 // Run NPC AI update
-                if let Some((target_id, max_hit)) = npc.update(delta_time, &player_positions, &other_npc_positions, current_time) {
+                if let Some((target_id, max_hit)) = npc.update(delta_time, &player_positions, &occupied_tiles, current_time) {
                     // Store NPC level and max hit for hit/miss calculation during attack processing
                     npc_attacks.push((npc.id.clone(), target_id, npc.level, max_hit));
                 }

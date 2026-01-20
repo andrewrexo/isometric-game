@@ -226,14 +226,19 @@ impl Npc {
 
     /// Apply passive HP regeneration based on prototype stats
     pub fn apply_regen(&mut self, current_time: u64) {
-        const REGEN_INTERVAL_MS: u64 = 15000;
+        const REGEN_INTERVAL_MS: u64 = 30000;
         if self.state == NpcState::Dead {
+            return;
+        }
+        // First tick after spawn/respawn - just initialize timer, don't regen yet
+        if self.last_regen_time == 0 {
+            self.last_regen_time = current_time;
             return;
         }
         if current_time - self.last_regen_time >= REGEN_INTERVAL_MS {
             self.last_regen_time = current_time;
             if self.hp < self.max_hp && self.hp > 0 {
-                let regen = ((self.max_hp as f32 * self.stats.hp_regen_percent_per_sec) / 100.0).ceil() as i32;
+                let regen = ((self.max_hp as f32 * self.stats.hp_regen_percent_per_sec) / 100.0).ceil().max(1.0) as i32;
                 self.hp = (self.hp + regen).min(self.max_hp);
             }
         }

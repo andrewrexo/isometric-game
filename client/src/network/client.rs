@@ -457,6 +457,7 @@ impl NetworkClient {
                     }
 
                     // Update players (grid positions from server)
+                    let mut player_regen_events: Vec<(String, f32, f32, i32)> = Vec::new();
                     if let Some(players) = extract_array(value, "players") {
                         for player_value in players {
                             let id = extract_string(player_value, "id").unwrap_or_default();
@@ -516,6 +517,10 @@ impl NetworkClient {
                                     // Update last_damage_time if HP decreased (ensures HP bar shows)
                                     if hp < player.hp {
                                         player.last_damage_time = macroquad::time::get_time();
+                                    } else if hp > player.hp && player.hp > 0 {
+                                        // HP increased (regen) - record for floating text
+                                        let heal_amount = hp - player.hp;
+                                        player_regen_events.push((id.clone(), player.x, player.y, heal_amount));
                                     }
                                     player.hp = hp;
                                 }
@@ -552,7 +557,20 @@ impl NetworkClient {
                         }
                     }
 
+                    // Push player regen events as healing numbers (negative damage = green +X)
+                    let current_time = macroquad::time::get_time();
+                    for (target_id, x, y, heal_amount) in player_regen_events {
+                        state.damage_events.push(DamageEvent {
+                            x,
+                            y,
+                            damage: -heal_amount, // Negative = healing
+                            time: current_time,
+                            target_id,
+                        });
+                    }
+
                     // Update NPCs (grid positions from server, converted to f32 for interpolation)
+                    let mut npc_regen_events: Vec<(String, f32, f32, i32)> = Vec::new();
                     if let Some(npcs) = extract_array(value, "npcs") {
                         for npc_value in npcs {
                             let id = extract_string(npc_value, "id").unwrap_or_default();
@@ -579,6 +597,10 @@ impl NetworkClient {
                                 // Update last_damage_time if HP decreased (ensures HP bar shows)
                                 if hp < npc.hp {
                                     npc.last_damage_time = macroquad::time::get_time();
+                                } else if hp > npc.hp && npc.hp > 0 {
+                                    // HP increased (regen) - record for floating text
+                                    let heal_amount = hp - npc.hp;
+                                    npc_regen_events.push((id.clone(), npc.x, npc.y, heal_amount));
                                 }
                                 npc.hp = hp;
                                 npc.max_hp = max_hp;
@@ -605,6 +627,17 @@ impl NetworkClient {
                                 state.npcs.insert(id, npc);
                             }
                         }
+                    }
+
+                    // Push NPC regen events as healing numbers (negative damage = green +X)
+                    for (target_id, x, y, heal_amount) in npc_regen_events {
+                        state.damage_events.push(DamageEvent {
+                            x,
+                            y,
+                            damage: -heal_amount, // Negative = healing
+                            time: current_time,
+                            target_id,
+                        });
                     }
                 }
             }

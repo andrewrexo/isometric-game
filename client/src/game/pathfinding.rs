@@ -1,4 +1,4 @@
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
 use super::chunk::ChunkManager;
 
@@ -46,11 +46,13 @@ fn heuristic(a: (i32, i32), b: (i32, i32)) -> i32 {
 /// * `start` - Starting grid position
 /// * `goal` - Target grid position
 /// * `chunk_manager` - For walkability checks
+/// * `occupied` - Set of tiles occupied by entities (players/NPCs)
 /// * `max_distance` - Maximum allowed distance (Chebyshev)
 pub fn find_path(
     start: (i32, i32),
     goal: (i32, i32),
     chunk_manager: &ChunkManager,
+    occupied: &HashSet<(i32, i32)>,
     max_distance: i32,
 ) -> Option<Vec<(i32, i32)>> {
     // Early exit: already at goal
@@ -123,6 +125,11 @@ pub fn find_path(
                 continue;
             }
 
+            // Check if tile is occupied by an entity (allow goal tile for path completion)
+            if neighbor != goal && occupied.contains(&neighbor) {
+                continue;
+            }
+
             let tentative_g = current_g + 1;
 
             if tentative_g < *g_score.get(&neighbor).unwrap_or(&i32::MAX) {
@@ -149,6 +156,7 @@ pub fn find_path_to_adjacent(
     start: (i32, i32),
     target: (i32, i32),
     chunk_manager: &ChunkManager,
+    occupied: &HashSet<(i32, i32)>,
     max_distance: i32,
 ) -> Option<((i32, i32), Vec<(i32, i32)>)> {
     // Check all 4 cardinal directions
@@ -168,8 +176,13 @@ pub fn find_path_to_adjacent(
             continue;
         }
 
+        // Skip if occupied by another entity
+        if occupied.contains(&adj) {
+            continue;
+        }
+
         // Try to find a path to this adjacent tile
-        if let Some(path) = find_path(start, adj, chunk_manager, max_distance) {
+        if let Some(path) = find_path(start, adj, chunk_manager, occupied, max_distance) {
             let path_len = path.len() as i32;
             if path_len < best_length {
                 best_length = path_len;
