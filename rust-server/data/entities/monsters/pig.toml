@@ -36,6 +36,10 @@ quantity_max = 1
 
 [pig.behaviors]
 hostile = true
+wander_enabled = true
+wander_radius = 4
+wander_pause_min_ms = 2000
+wander_pause_max_ms = 5000
 
 # =============================================================================
 # Pig Variants

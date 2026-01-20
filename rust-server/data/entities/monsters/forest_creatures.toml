@@ -34,6 +34,10 @@ quantity_max = 1
 
 [slime.behaviors]
 hostile = true
+wander_enabled = true
+wander_radius = 3
+wander_pause_min_ms = 3000
+wander_pause_max_ms = 6000
 
 # =============================================================================
 # Snail
@@ -69,6 +73,10 @@ quantity_max = 1
 
 [snail.behaviors]
 hostile = true
+wander_enabled = true
+wander_radius = 2
+wander_pause_min_ms = 4000
+wander_pause_max_ms = 8000
 
 # =============================================================================
 # Shell Snail (variant)
@@ -104,6 +112,10 @@ quantity_max = 2
 
 [shell_snail.behaviors]
 hostile = true
+wander_enabled = true
+wander_radius = 2
+wander_pause_min_ms = 4000
+wander_pause_max_ms = 8000
 
 # =============================================================================
 # Hedgehog
@@ -139,6 +151,10 @@ quantity_max = 3
 
 [hedgehog.behaviors]
 hostile = true
+wander_enabled = true
+wander_radius = 3
+wander_pause_min_ms = 2000
+wander_pause_max_ms = 5000
 
 # =============================================================================
 # Worm
@@ -174,41 +190,10 @@ quantity_max = 2
 
 [worm.behaviors]
 hostile = true
-
-# =============================================================================
-# Piglet (baby pig)
-# =============================================================================
-
-[piglet_mob]
-display_name = "Piglet"
-sprite = "piglet"
-animation_type = "standard"
-description = "An adorable baby pig. Still quite feisty!"
-
-[piglet_mob.stats]
-level = 1
-max_hp = 8
-damage = 1
-attack_range = 1
-aggro_range = 3
-chase_range = 5
-move_cooldown_ms = 400
-attack_cooldown_ms = 1500
-respawn_time_ms = 8000
-
-[piglet_mob.rewards]
-exp_base = 10
-gold_min = 1
-gold_max = 5
-
-[[piglet_mob.loot]]
-item_id = "piglet"
-drop_chance = 0.15
-quantity_min = 1
-quantity_max = 1
-
-[piglet_mob.behaviors]
-hostile = true
+wander_enabled = true
+wander_radius = 2
+wander_pause_min_ms = 3000
+wander_pause_max_ms = 6000
 
 # =============================================================================
 # Spring Creature
@@ -244,3 +229,7 @@ quantity_max = 1
 
 [springs.behaviors]
 hostile = true
+wander_enabled = true
+wander_radius = 4
+wander_pause_min_ms = 1500
+wander_pause_max_ms = 4000

@@ -40,6 +40,10 @@ quantity_max = 1
 
 [spider.behaviors]
 hostile = true
+wander_enabled = true
+wander_radius = 3
+wander_pause_min_ms = 2000
+wander_pause_max_ms = 5000
 
 # =============================================================================
 # Crow
@@ -75,6 +79,10 @@ quantity_max = 3
 
 [crow.behaviors]
 hostile = true
+wander_enabled = true
+wander_radius = 5
+wander_pause_min_ms = 1500
+wander_pause_max_ms = 4000
 
 # =============================================================================
 # Reaper (Mini-boss)

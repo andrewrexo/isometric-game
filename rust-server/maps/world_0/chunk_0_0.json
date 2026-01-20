@@ -1104,12 +1104,12 @@
                             {
                                    "height": 32,
                                    "id": 15,
-                                   "name": "Piglet",
+                                   "name": "Piggy",
                                    "properties": [
                                           {
                                                  "name": "entity_id",
                                                  "type": "string",
-                                                 "value": "piglet_mob"
+                                                 "value": "pig"
                                           },
                                           {
                                                  "name": "level",

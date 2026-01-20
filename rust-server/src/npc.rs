@@ -1,4 +1,5 @@
 use serde::Serialize;
+use rand::Rng;
 use crate::game::Direction;
 
 // ============================================================================
@@ -7,11 +8,12 @@ use crate::game::Direction;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NpcState {
-    Idle,
-    Chasing,
-    Attacking,
-    Returning,
-    Dead,
+    Idle,       // 0
+    Chasing,    // 1
+    Attacking,  // 2
+    Returning,  // 3
+    Dead,       // 4
+    Wandering,  // 5 - added at end to preserve existing state values
 }
 
 // ============================================================================
@@ -34,6 +36,10 @@ pub struct PrototypeStats {
     pub hostile: bool,
     pub is_quest_giver: bool,
     pub is_merchant: bool,
+    pub wander_enabled: bool,
+    pub wander_radius: i32,
+    pub wander_pause_min_ms: u64,
+    pub wander_pause_max_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +65,10 @@ pub struct Npc {
     pub death_time: u64, // When the NPC died (for respawn)
     /// Set to true on the tick when this NPC attacks, for client animation sync
     pub just_attacked: bool,
+    /// Target position for wandering
+    pub wander_target: Option<(i32, i32)>,
+    /// Timestamp until which the NPC should remain idle before wandering
+    pub idle_until: u64,
 }
 
 impl Npc {
@@ -85,6 +95,10 @@ impl Npc {
             hostile: prototype.behaviors.hostile,
             is_quest_giver: prototype.behaviors.quest_giver,
             is_merchant: prototype.behaviors.merchant,
+            wander_enabled: prototype.behaviors.wander_enabled,
+            wander_radius: prototype.behaviors.wander_radius,
+            wander_pause_min_ms: prototype.behaviors.wander_pause_min_ms,
+            wander_pause_max_ms: prototype.behaviors.wander_pause_max_ms,
         };
 
         Self {
@@ -104,6 +118,8 @@ impl Npc {
             last_move_time: 0,
             death_time: 0,
             just_attacked: false,
+            wander_target: None,
+            idle_until: 0,
             stats,
         }
     }
@@ -192,6 +208,24 @@ impl Npc {
         self.target_id = None;
         self.last_attack_time = 0;
         self.last_move_time = 0;
+        self.wander_target = None;
+        self.idle_until = 0;
+    }
+
+    /// Pick a random wander target within radius of spawn point
+    fn pick_wander_target(&self) -> (i32, i32) {
+        let mut rng = rand::thread_rng();
+        let radius = self.stats.wander_radius;
+        let dx = rng.gen_range(-radius..=radius);
+        let dy = rng.gen_range(-radius..=radius);
+        (self.spawn_x + dx, self.spawn_y + dy)
+    }
+
+    /// Set a random idle pause duration
+    fn set_random_idle_pause(&mut self, current_time: u64) {
+        let mut rng = rand::thread_rng();
+        let pause = rng.gen_range(self.stats.wander_pause_min_ms..=self.stats.wander_pause_max_ms);
+        self.idle_until = current_time + pause;
     }
 
     /// Calculate grid distance (Chebyshev - allows diagonal)
@@ -305,37 +339,83 @@ impl Npc {
             return None;
         }
 
-        // Non-hostile NPCs never attack or aggro
-        if !self.is_hostile() {
-            return None;
-        }
-
         let mut attack_result = None;
 
         match self.state {
             NpcState::Idle => {
-                // Look for players in aggro range
-                let aggro_range = self.get_aggro_range();
-                if aggro_range <= 0 {
-                    return None; // No aggro range = peaceful NPC
-                }
+                // Hostile NPCs look for players in aggro range
+                if self.is_hostile() {
+                    let aggro_range = self.get_aggro_range();
+                    if aggro_range > 0 {
+                        let mut nearest: Option<(String, i32)> = None;
+                        for (player_id, px, py, hp) in players {
+                            if *hp <= 0 {
+                                continue; // Skip dead players
+                            }
+                            let dist = Self::grid_distance(self.x, self.y, *px, *py);
+                            if dist <= aggro_range {
+                                if nearest.is_none() || dist < nearest.as_ref().unwrap().1 {
+                                    nearest = Some((player_id.clone(), dist));
+                                }
+                            }
+                        }
 
-                let mut nearest: Option<(String, i32)> = None;
-                for (player_id, px, py, hp) in players {
-                    if *hp <= 0 {
-                        continue; // Skip dead players
-                    }
-                    let dist = Self::grid_distance(self.x, self.y, *px, *py);
-                    if dist <= aggro_range {
-                        if nearest.is_none() || dist < nearest.as_ref().unwrap().1 {
-                            nearest = Some((player_id.clone(), dist));
+                        if let Some((target_id, _)) = nearest {
+                            self.target_id = Some(target_id);
+                            self.state = NpcState::Chasing;
+                            return None; // State changed, skip wandering check
                         }
                     }
                 }
 
-                if let Some((target_id, _)) = nearest {
-                    self.target_id = Some(target_id);
-                    self.state = NpcState::Chasing;
+                // Check if wandering is enabled and idle pause has elapsed
+                if self.stats.wander_enabled && current_time >= self.idle_until {
+                    let target = self.pick_wander_target();
+                    // Only wander if target is different from current position
+                    if target.0 != self.x || target.1 != self.y {
+                        self.wander_target = Some(target);
+                        self.state = NpcState::Wandering;
+                    } else {
+                        // Pick another pause if we'd wander to same spot
+                        self.set_random_idle_pause(current_time);
+                    }
+                }
+            }
+
+            NpcState::Wandering => {
+                // Hostile NPCs interrupt wandering immediately if player in aggro range
+                if self.is_hostile() {
+                    let aggro_range = self.get_aggro_range();
+                    if aggro_range > 0 {
+                        for (player_id, px, py, hp) in players {
+                            if *hp <= 0 {
+                                continue;
+                            }
+                            let dist = Self::grid_distance(self.x, self.y, *px, *py);
+                            if dist <= aggro_range {
+                                self.target_id = Some(player_id.clone());
+                                self.state = NpcState::Chasing;
+                                self.wander_target = None;
+                                return None;
+                            }
+                        }
+                    }
+                }
+
+                // Move toward wander target
+                if let Some((tx, ty)) = self.wander_target {
+                    if self.x == tx && self.y == ty {
+                        // Reached target, go idle with random pause
+                        self.state = NpcState::Idle;
+                        self.wander_target = None;
+                        self.set_random_idle_pause(current_time);
+                    } else {
+                        self.try_move_toward(tx, ty, current_time, other_npc_positions);
+                    }
+                } else {
+                    // No target, go idle
+                    self.state = NpcState::Idle;
+                    self.set_random_idle_pause(current_time);
                 }
             }
 
@@ -349,10 +429,11 @@ impl Npc {
 
                 if let Some((tx, ty)) = target_pos {
                     let spawn_dist = Self::grid_distance(self.x, self.y, self.spawn_x, self.spawn_y);
+                    let target_dist = Self::grid_distance(self.x, self.y, tx, ty);
                     let movement_done = current_time - self.last_move_time >= self.get_move_cooldown_ms();
 
-                    if spawn_dist > self.get_chase_range() {
-                        // Too far from spawn, return home
+                    if spawn_dist > self.get_chase_range() || target_dist > self.get_chase_range() {
+                        // Too far from spawn OR target got too far away, return home
                         self.state = NpcState::Returning;
                         self.target_id = None;
                     } else if Self::is_in_attack_range(self.x, self.y, tx, ty, self.get_attack_range()) && movement_done {
@@ -415,6 +496,11 @@ impl Npc {
                     // Reached spawn, go idle and heal
                     self.hp = self.max_hp;
                     self.state = NpcState::Idle;
+                    self.wander_target = None;
+                    // Set idle pause before wandering again
+                    if self.stats.wander_enabled {
+                        self.set_random_idle_pause(current_time);
+                    }
                 } else {
                     // Move toward spawn (one tile at a time)
                     self.try_move_toward(self.spawn_x, self.spawn_y, current_time, other_npc_positions);
