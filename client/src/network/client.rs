@@ -513,6 +513,10 @@ impl NetworkClient {
                                     }
                                 }
                                 if let Some(hp) = hp {
+                                    // Update last_damage_time if HP decreased (ensures HP bar shows)
+                                    if hp < player.hp {
+                                        player.last_damage_time = macroquad::time::get_time();
+                                    }
                                     player.hp = hp;
                                 }
                                 if let Some(max_hp) = max_hp {
@@ -572,6 +576,10 @@ impl NetworkClient {
                                 // Update existing NPC - interpolate toward new grid position
                                 npc.set_server_position(x, y);
                                 npc.direction = Direction::from_u8(direction);
+                                // Update last_damage_time if HP decreased (ensures HP bar shows)
+                                if hp < npc.hp {
+                                    npc.last_damage_time = macroquad::time::get_time();
+                                }
                                 npc.hp = hp;
                                 npc.max_hp = max_hp;
                                 npc.state = NpcState::from_u8(npc_state);

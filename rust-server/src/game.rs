@@ -1202,11 +1202,11 @@ impl GameRoom {
         let mut target_id: Option<String> = None;
         let mut is_npc = false;
 
-        // Check NPCs
+        // Check NPCs (only attackable ones - not quest givers or merchants)
         {
             let npcs = self.npcs.read().await;
             for (npc_id, npc) in npcs.iter() {
-                if npc.is_alive() && npc.x == front_x && npc.y == front_y {
+                if npc.is_alive() && npc.is_attackable() && npc.x == front_x && npc.y == front_y {
                     target_id = Some(npc_id.clone());
                     is_npc = true;
                     tracing::info!("{} found NPC target: {} at ({}, {})", attacker_name, npc.name(), npc.x, npc.y);

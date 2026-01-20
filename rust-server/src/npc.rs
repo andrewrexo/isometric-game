@@ -170,6 +170,12 @@ impl Npc {
         self.stats.is_merchant
     }
 
+    /// Returns true if this NPC can be attacked by players.
+    /// Quest givers and merchants cannot be attacked.
+    pub fn is_attackable(&self) -> bool {
+        !self.stats.is_quest_giver && !self.stats.is_merchant
+    }
+
     pub fn name(&self) -> String {
         format!("{} Lv.{}", self.stats.display_name, self.level)
     }
