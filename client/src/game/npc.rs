@@ -55,6 +55,10 @@ pub struct Npc {
     pub animation: NpcAnimation,
     /// Whether this NPC is hostile
     pub hostile: bool,
+    /// Whether this NPC offers quests
+    pub is_quest_giver: bool,
+    /// Whether this NPC is a merchant
+    pub is_merchant: bool,
     /// Movement speed in tiles per second (from server, for interpolation)
     pub move_speed: f32,
     /// Last time this NPC took damage (for health bar visibility)
@@ -80,6 +84,8 @@ impl Npc {
             state: NpcState::Idle,
             animation: NpcAnimation::default(),
             hostile: true,
+            is_quest_giver: false,
+            is_merchant: false,
             move_speed: 2.0, // Default, will be set by server
             last_damage_time: 0.0,
         }

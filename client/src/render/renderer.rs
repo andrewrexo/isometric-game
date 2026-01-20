@@ -1318,11 +1318,48 @@ impl Renderer {
         // Top of NPC for UI elements
         let top_y = screen_y - sprite_height + 4.0 * zoom;
 
-        // Interaction indicator for friendly NPCs (yellow exclamation mark above head)
+        // Interaction indicator for friendly NPCs (icon from ui_icons sprite sheet)
+        // Icon is positioned close to sprite, moves up on hover to make room for name
         if !npc.is_hostile() {
-            let pulse = (macroquad::time::get_time() * 2.0).sin() as f32 * 0.2 + 0.8;
-            let indicator_y = top_y - 20.0 * zoom;
-            self.draw_text_sharp("!", screen_x - 3.0 * zoom, indicator_y, 16.0, Color::from_rgba(255, 220, 50, (pulse * 255.0) as u8));
+            // Determine icon based on NPC role flags (from TOML behaviors)
+            // Quest giver: col 8, row 3 | Merchant: col 8, row 4 (0-indexed)
+            let icon_coords: Option<(u32, u32)> = if npc.is_quest_giver {
+                Some((8, 3))  // Quest giver icon
+            } else if npc.is_merchant {
+                Some((8, 4))  // Merchant icon
+            } else {
+                None
+            };
+
+            if let (Some((icon_col, icon_row)), Some(ref texture)) = (icon_coords, &self.ui_icons) {
+                let icon_size = 24.0;
+                // Move icon up when hovered to make room for name
+                let icon_y = if is_hovered {
+                    top_y - 36.0 * zoom  // 16px higher when hovered
+                } else {
+                    top_y - 20.0 * zoom
+                };
+                let icon_x = screen_x - (icon_size * zoom) / 2.0;
+
+                let src_rect = Rect::new(
+                    icon_col as f32 * icon_size,
+                    icon_row as f32 * icon_size,
+                    icon_size,
+                    icon_size,
+                );
+
+                draw_texture_ex(
+                    texture,
+                    icon_x,
+                    icon_y,
+                    Color::from_rgba(255, 255, 255, 204),  // 80% opacity
+                    DrawTextureParams {
+                        source: Some(src_rect),
+                        dest_size: Some(Vec2::new(icon_size * zoom, icon_size * zoom)),
+                        ..Default::default()
+                    },
+                );
+            }
         }
 
         // NPC name with level - only show when hovered or selected

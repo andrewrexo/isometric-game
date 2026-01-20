@@ -32,6 +32,8 @@ pub struct PrototypeStats {
     pub respawn_time_ms: u64,
     pub exp_base: i32,
     pub hostile: bool,
+    pub is_quest_giver: bool,
+    pub is_merchant: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +83,8 @@ impl Npc {
             respawn_time_ms: prototype.stats.respawn_time_ms,
             exp_base: prototype.rewards.exp_base,
             hostile: prototype.behaviors.hostile,
+            is_quest_giver: prototype.behaviors.quest_giver,
+            is_merchant: prototype.behaviors.merchant,
         };
 
         Self {
@@ -135,6 +139,14 @@ impl Npc {
 
     pub fn is_hostile(&self) -> bool {
         self.stats.hostile
+    }
+
+    pub fn is_quest_giver(&self) -> bool {
+        self.stats.is_quest_giver
+    }
+
+    pub fn is_merchant(&self) -> bool {
+        self.stats.is_merchant
     }
 
     pub fn name(&self) -> String {
@@ -436,6 +448,10 @@ pub struct NpcUpdate {
     pub state: u8,
     /// Whether this NPC is hostile
     pub hostile: bool,
+    /// Whether this NPC offers quests
+    pub is_quest_giver: bool,
+    /// Whether this NPC is a merchant
+    pub is_merchant: bool,
     /// Movement speed in tiles per second (for client interpolation)
     pub move_speed: f32,
     /// True only on the tick when this NPC attacks (for animation sync)
@@ -464,6 +480,8 @@ impl From<&Npc> for NpcUpdate {
             level: npc.level,
             state: npc.state as u8,
             hostile: npc.is_hostile(),
+            is_quest_giver: npc.is_quest_giver(),
+            is_merchant: npc.is_merchant(),
             move_speed,
             just_attacked: npc.just_attacked,
         }

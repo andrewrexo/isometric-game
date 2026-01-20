@@ -621,6 +621,10 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     nmap.push((Value::String("level".into()), Value::Integer((n.level as i64).into())));
                     nmap.push((Value::String("state".into()), Value::Integer((n.state as i64).into())));
                     nmap.push((Value::String("hostile".into()), Value::Boolean(n.hostile)));
+                    nmap.push((Value::String("is_quest_giver".into()), Value::Boolean(n.is_quest_giver)));
+                    nmap.push((Value::String("is_merchant".into()), Value::Boolean(n.is_merchant)));
+                    nmap.push((Value::String("move_speed".into()), Value::F32(n.move_speed)));
+                    nmap.push((Value::String("just_attacked".into()), Value::Boolean(n.just_attacked)));
                     Value::Map(nmap)
                 })
                 .collect();
