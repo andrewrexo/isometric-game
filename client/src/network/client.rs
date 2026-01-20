@@ -660,11 +660,14 @@ impl NetworkClient {
                         npc.trigger_attack_animation();
                     }
 
-                    // Update target's HP (could be player or NPC)
+                    // Update target's HP and last damage time (could be player or NPC)
+                    let current_time = macroquad::time::get_time();
                     if let Some(player) = state.players.get_mut(&target_id) {
                         player.hp = target_hp;
+                        player.last_damage_time = current_time;
                     } else if let Some(npc) = state.npcs.get_mut(&target_id) {
                         npc.hp = target_hp;
+                        npc.last_damage_time = current_time;
                     }
 
                     // Create floating damage number with target_id for height lookup at render time

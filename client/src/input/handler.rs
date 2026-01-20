@@ -112,8 +112,45 @@ impl InputHandler {
             let tile_x = world_x.round() as i32;
             let tile_y = world_y.round() as i32;
             state.hovered_tile = Some((tile_x, tile_y));
+
+            // Check for entity hover (players and NPCs within hover radius)
+            let hover_radius = 0.6; // World units - slightly larger than tile size for easier targeting
+            let mut hovered_entity: Option<String> = None;
+
+            // Check NPCs first (they're usually more important to interact with)
+            for npc in state.npcs.values() {
+                if npc.state != crate::game::npc::NpcState::Dead {
+                    let dx = world_x - npc.x;
+                    let dy = world_y - npc.y;
+                    if dx * dx + dy * dy < hover_radius * hover_radius {
+                        hovered_entity = Some(npc.id.clone());
+                        break;
+                    }
+                }
+            }
+
+            // Check players if no NPC is hovered
+            if hovered_entity.is_none() {
+                for player in state.players.values() {
+                    // Skip the local player
+                    if state.local_player_id.as_ref() == Some(&player.id) {
+                        continue;
+                    }
+                    if !player.is_dead {
+                        let dx = world_x - player.x;
+                        let dy = world_y - player.y;
+                        if dx * dx + dy * dy < hover_radius * hover_radius {
+                            hovered_entity = Some(player.id.clone());
+                            break;
+                        }
+                    }
+                }
+            }
+
+            state.hovered_entity_id = hovered_entity;
         } else {
             state.hovered_tile = None;
+            state.hovered_entity_id = None;
         }
 
         // For click detection, do a fresh hit-test at the moment of click

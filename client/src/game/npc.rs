@@ -57,6 +57,8 @@ pub struct Npc {
     pub hostile: bool,
     /// Movement speed in tiles per second (from server, for interpolation)
     pub move_speed: f32,
+    /// Last time this NPC took damage (for health bar visibility)
+    pub last_damage_time: f64,
 }
 
 impl Npc {
@@ -79,6 +81,7 @@ impl Npc {
             animation: NpcAnimation::default(),
             hostile: true,
             move_speed: 2.0, // Default, will be set by server
+            last_damage_time: 0.0,
         }
     }
 

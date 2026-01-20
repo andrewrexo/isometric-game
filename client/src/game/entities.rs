@@ -134,6 +134,9 @@ pub struct Player {
 
     // Animation
     pub animation: PlayerAnimation,
+
+    // Last time this player took damage (for health bar visibility)
+    pub last_damage_time: f64,
 }
 
 impl Player {
@@ -171,6 +174,7 @@ impl Player {
             equipped_belt: None,
             is_admin: false,
             animation: PlayerAnimation::new(),
+            last_damage_time: 0.0,
         }
     }
 

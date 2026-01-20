@@ -547,11 +547,13 @@ impl Renderer {
                 }
                 Renderable::Player(player, is_local) => {
                     let is_selected = state.selected_entity_id.as_ref() == Some(&player.id);
-                    self.render_player(player, is_local, is_selected, &state.camera);
+                    let is_hovered = state.hovered_entity_id.as_ref() == Some(&player.id);
+                    self.render_player(player, is_local, is_selected, is_hovered, &state.camera);
                 }
                 Renderable::Npc(npc) => {
                     let is_selected = state.selected_entity_id.as_ref() == Some(&npc.id);
-                    self.render_npc(npc, is_selected, &state.camera);
+                    let is_hovered = state.hovered_entity_id.as_ref() == Some(&npc.id);
+                    self.render_npc(npc, is_selected, is_hovered, &state.camera);
                 }
                 Renderable::Tile { x, y, tile_id } => {
                     let (screen_x, screen_y) = world_to_screen(x as f32, y as f32, &state.camera);
@@ -1049,7 +1051,7 @@ impl Renderer {
         draw_line(left.0, left.1, left.0 + (top.0 - left.0) * t, left.1 + (top.1 - left.1) * t, line_width, color);
     }
 
-    fn render_player(&self, player: &Player, is_local: bool, is_selected: bool, camera: &Camera) {
+    fn render_player(&self, player: &Player, is_local: bool, is_selected: bool, is_hovered: bool, camera: &Camera) {
         let (screen_x, screen_y) = world_to_screen(player.x, player.y, camera);
         let zoom = camera.zoom;
 
@@ -1162,51 +1164,63 @@ impl Renderer {
             );
         }
 
-        // Player name (positioned just above head)
+        // Player name (positioned just above head) - only show when hovered, selected, or is local player
         let has_sprite = self.get_player_sprite(&player.gender, &player.skin).is_some();
         let name_y_offset = if has_sprite { scaled_sprite_height - 8.0 * zoom } else { 24.0 * zoom };
 
-        // Build display name with optional (GM) suffix
-        let name_width = self.measure_text_sharp(&player.name, 16.0).width;
-        let gm_width = if player.is_admin { self.measure_text_sharp(" (GM)", 16.0).width } else { 0.0 };
-        let total_width = name_width + gm_width;
-        let name_x = screen_x - total_width / 2.0;
-        let name_y = screen_y - name_y_offset + 2.0;
+        let show_name = is_local || is_selected || is_hovered;
+        if show_name {
+            // Build display name with optional (GM) suffix
+            let name_width = self.measure_text_sharp(&player.name, 16.0).width;
+            let gm_width = if player.is_admin { self.measure_text_sharp(" (GM)", 16.0).width } else { 0.0 };
+            let total_width = name_width + gm_width;
+            let name_x = screen_x - total_width / 2.0;
+            let name_y = screen_y - name_y_offset + 2.0;
 
-        // Draw player name in white
-        self.draw_text_sharp(
-            &player.name,
-            name_x,
-            name_y,
-            16.0,
-            WHITE,
-        );
-
-        // Draw (GM) suffix in gold if admin
-        if player.is_admin {
-            let gold_color = Color::from_rgba(255, 215, 0, 255);
+            // Draw player name in white
             self.draw_text_sharp(
-                " (GM)",
-                name_x + name_width,
+                &player.name,
+                name_x,
                 name_y,
                 16.0,
-                gold_color,
+                WHITE,
             );
+
+            // Draw (GM) suffix in gold if admin
+            if player.is_admin {
+                let gold_color = Color::from_rgba(255, 215, 0, 255);
+                self.draw_text_sharp(
+                    " (GM)",
+                    name_x + name_width,
+                    name_y,
+                    16.0,
+                    gold_color,
+                );
+            }
         }
 
-        // Health bar (if not full HP) - ornate medieval style
-        if player.hp < player.max_hp {
+        // Health bar - only show within 3 seconds of taking damage (and when not at full HP)
+        let current_time = macroquad::time::get_time();
+        let time_since_damage = current_time - player.last_damage_time;
+        let show_health_bar = player.hp < player.max_hp && time_since_damage < 3.0;
+
+        if show_health_bar {
             let bar_width = 32.0;
             let bar_height = 6.0;
             let bar_x = screen_x - bar_width / 2.0;
-            let bar_y = screen_y - name_y_offset - 16.0;
+            // Position health bar where name would be if name isn't showing, otherwise above the name
+            let bar_y = if show_name {
+                screen_y - name_y_offset - 16.0
+            } else {
+                screen_y - name_y_offset
+            };
             let hp_ratio = player.hp as f32 / player.max_hp.max(1) as f32;
 
             self.draw_entity_health_bar(bar_x, bar_y, bar_width, bar_height, hp_ratio, 1.0);
         }
     }
 
-    fn render_npc(&self, npc: &Npc, is_selected: bool, camera: &Camera) {
+    fn render_npc(&self, npc: &Npc, is_selected: bool, is_hovered: bool, camera: &Camera) {
         let (screen_x, screen_y) = world_to_screen(npc.x, npc.y, camera);
         let zoom = camera.zoom;
 
@@ -1311,23 +1325,35 @@ impl Renderer {
             self.draw_text_sharp("!", screen_x - 3.0 * zoom, indicator_y, 16.0, Color::from_rgba(255, 220, 50, (pulse * 255.0) as u8));
         }
 
-        // NPC name with level
-        let name = npc.name();
-        let name_width = self.measure_text_sharp(&name, 16.0).width;
-        self.draw_text_sharp(
-            &name,
-            screen_x - name_width / 2.0,
-            top_y - 5.0 * zoom,
-            16.0,
-            name_color,
-        );
+        // NPC name with level - only show when hovered or selected
+        let show_name = is_selected || is_hovered;
+        if show_name {
+            let name = npc.name();
+            let name_width = self.measure_text_sharp(&name, 16.0).width;
+            self.draw_text_sharp(
+                &name,
+                screen_x - name_width / 2.0,
+                top_y - 5.0 * zoom,
+                16.0,
+                name_color,
+            );
+        }
 
-        // Health bar (only show for hostile NPCs or when damaged) - ornate medieval style
-        if npc.is_hostile() || npc.hp < npc.max_hp {
+        // Health bar - only show within 3 seconds of taking damage (and when not at full HP)
+        let current_time = macroquad::time::get_time();
+        let time_since_damage = current_time - npc.last_damage_time;
+        let show_health_bar = npc.hp < npc.max_hp && time_since_damage < 3.0;
+
+        if show_health_bar {
             let bar_width = 30.0 * zoom;
             let bar_height = 5.0 * zoom;
             let bar_x = screen_x - bar_width / 2.0;
-            let bar_y = top_y - 20.0 * zoom;
+            // Position health bar where name would be if name isn't showing, otherwise above the name
+            let bar_y = if show_name {
+                top_y - 20.0 * zoom
+            } else {
+                top_y - 5.0 * zoom
+            };
             let hp_ratio = npc.hp as f32 / npc.max_hp.max(1) as f32;
 
             self.draw_entity_health_bar(bar_x, bar_y, bar_width, bar_height, hp_ratio, zoom);
