@@ -208,6 +208,111 @@ attack_bonus = 5
 strength_bonus = 8
 defence_bonus = 0
 
+[goblin_axe]
+display_name = "Goblin Axe"
+sprite = "goblin_axe"
+description = "A crude axe favored by goblins."
+category = "equipment"
+max_stack = 1
+base_price = 45
+sellable = true
+[goblin_axe.equipment]
+slot_type = "weapon"
+attack_level_required = 1
+attack_bonus = 4
+strength_bonus = 10
+defence_bonus = 0
+
+[hatchet]
+display_name = "Hatchet"
+sprite = "hatchet"
+description = "A small but sharp hand axe."
+category = "equipment"
+max_stack = 1
+base_price = 60
+sellable = true
+[hatchet.equipment]
+slot_type = "weapon"
+attack_level_required = 5
+attack_bonus = 6
+strength_bonus = 9
+defence_bonus = 0
+
+[machete]
+display_name = "Machete"
+sprite = "machete"
+description = "A long blade useful for cutting through brush and enemies alike."
+category = "equipment"
+max_stack = 1
+base_price = 120
+sellable = true
+[machete.equipment]
+slot_type = "weapon"
+attack_level_required = 10
+attack_bonus = 12
+strength_bonus = 14
+defence_bonus = 0
+
+[battle_axe]
+display_name = "Battle Axe"
+sprite = "battle_axe"
+description = "A heavy two-handed axe designed for combat."
+category = "equipment"
+max_stack = 1
+base_price = 350
+sellable = true
+[battle_axe.equipment]
+slot_type = "weapon"
+attack_level_required = 25
+attack_bonus = 20
+strength_bonus = 28
+defence_bonus = 0
+
+[twin_blade]
+display_name = "Twin Blade"
+sprite = "twin_blade"
+description = "A double-bladed weapon requiring great skill to wield."
+category = "equipment"
+max_stack = 1
+base_price = 500
+sellable = true
+[twin_blade.equipment]
+slot_type = "weapon"
+attack_level_required = 35
+attack_bonus = 35
+strength_bonus = 32
+defence_bonus = 0
+
+[great_axe]
+display_name = "Great Axe"
+sprite = "great_axe"
+description = "A massive axe capable of cleaving through armor."
+category = "equipment"
+max_stack = 1
+base_price = 800
+sellable = true
+[great_axe.equipment]
+slot_type = "weapon"
+attack_level_required = 45
+attack_bonus = 40
+strength_bonus = 50
+defence_bonus = 0
+
+[death_blade]
+display_name = "Death Blade"
+sprite = "death_blade"
+description = "A cursed blade that thirsts for souls."
+category = "equipment"
+max_stack = 1
+base_price = 2000
+sellable = true
+[death_blade.equipment]
+slot_type = "weapon"
+attack_level_required = 55
+attack_bonus = 55
+strength_bonus = 62
+defence_bonus = 0
+
 [bronze_sword]
 display_name = "Bronze Sword"
 sprite = "bronze_sword"
