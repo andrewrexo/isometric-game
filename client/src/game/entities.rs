@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::render::animation::{PlayerAnimation, AnimationState};
 use super::skills::Skills;
+use super::item_registry::ItemRegistry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
@@ -8,10 +9,6 @@ pub enum Direction {
     Left = 1,
     Up = 2,
     Right = 3,
-    DownLeft = 4,
-    DownRight = 5,
-    UpLeft = 6,
-    UpRight = 7,
 }
 
 impl Default for Direction {
@@ -27,10 +24,6 @@ impl Direction {
             1 => Direction::Left,
             2 => Direction::Up,
             3 => Direction::Right,
-            4 => Direction::DownLeft,
-            5 => Direction::DownRight,
-            6 => Direction::UpLeft,
-            7 => Direction::UpRight,
             _ => Direction::Down,
         }
     }
@@ -42,19 +35,11 @@ impl Direction {
             return Direction::Down;
         }
 
-        let angle = dy.atan2(dx);
-        let octant = ((angle + std::f32::consts::PI) / (std::f32::consts::PI / 4.0)) as i32 % 8;
-
-        match octant {
-            0 => Direction::Left,
-            1 => Direction::UpLeft,
-            2 => Direction::Up,
-            3 => Direction::UpRight,
-            4 => Direction::Right,
-            5 => Direction::DownRight,
-            6 => Direction::Down,
-            7 => Direction::DownLeft,
-            _ => Direction::Down,
+        // Use 4 quadrants: vertical axis takes priority when |dy| > |dx|
+        if dy.abs() > dx.abs() {
+            if dy < 0.0 { Direction::Up } else { Direction::Down }
+        } else {
+            if dx < 0.0 { Direction::Left } else { Direction::Right }
         }
     }
 
@@ -64,10 +49,6 @@ impl Direction {
             Direction::Up => (0.0, -1.0),
             Direction::Left => (-1.0, 0.0),
             Direction::Right => (1.0, 0.0),
-            Direction::DownLeft => (-0.707, 0.707),
-            Direction::DownRight => (0.707, 0.707),
-            Direction::UpLeft => (-0.707, -0.707),
-            Direction::UpRight => (0.707, -0.707),
         }
     }
 }
@@ -189,6 +170,63 @@ impl Player {
         self.skills.combat_level()
     }
 
+    /// Get all equipped item IDs as an array for iteration
+    fn all_equipped(&self) -> [&Option<String>; 9] {
+        [
+            &self.equipped_head,
+            &self.equipped_body,
+            &self.equipped_weapon,
+            &self.equipped_back,
+            &self.equipped_feet,
+            &self.equipped_ring,
+            &self.equipped_gloves,
+            &self.equipped_necklace,
+            &self.equipped_belt,
+        ]
+    }
+
+    /// Calculate total attack bonus from all equipped items
+    pub fn attack_bonus(&self, item_registry: &ItemRegistry) -> i32 {
+        let mut bonus = 0;
+        for equipped in self.all_equipped() {
+            if let Some(item_id) = equipped {
+                let def = item_registry.get_or_placeholder(item_id);
+                if let Some(equip) = &def.equipment {
+                    bonus += equip.attack_bonus;
+                }
+            }
+        }
+        bonus
+    }
+
+    /// Calculate total strength bonus from all equipped items
+    pub fn strength_bonus(&self, item_registry: &ItemRegistry) -> i32 {
+        let mut bonus = 0;
+        for equipped in self.all_equipped() {
+            if let Some(item_id) = equipped {
+                let def = item_registry.get_or_placeholder(item_id);
+                if let Some(equip) = &def.equipment {
+                    bonus += equip.strength_bonus;
+                }
+            }
+        }
+        bonus
+    }
+
+    /// Calculate total defence bonus from all equipped items
+    pub fn defence_bonus(&self, item_registry: &ItemRegistry) -> i32 {
+        let mut bonus = 0;
+        for equipped in self.all_equipped() {
+            if let Some(item_id) = equipped {
+                let def = item_registry.get_or_placeholder(item_id);
+                if let Some(equip) = &def.equipment {
+                    bonus += equip.defence_bonus;
+                }
+            }
+        }
+        bonus
+    }
+
     pub fn respawn(&mut self, x: f32, y: f32, hp: i32) {
         self.is_dead = false;
         self.death_time = 0.0;
@@ -286,9 +324,6 @@ impl Player {
 
             self.is_moving = true;
             actually_moving = true;
-
-            // Update direction from actual movement vector, not stored velocity
-            self.direction = Direction::from_velocity(dx, dy);
         }
 
         // Update animation state based on movement and actions

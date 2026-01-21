@@ -117,8 +117,8 @@ impl Renderer {
         let screen_w = screen_width();
         let screen_h = screen_height();
 
-        // Position panel on right side, above the menu buttons (like gear panel)
-        let inv_x = screen_w - INV_WIDTH - 16.0;
+        // Position panel on right side, above the menu buttons (align with button right edge)
+        let inv_x = screen_w - INV_WIDTH - 8.0;
         let button_area_height = MENU_BUTTON_SIZE + EXP_BAR_GAP;
         let inv_y = screen_h - button_area_height - INV_HEIGHT - 8.0;
 

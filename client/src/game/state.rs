@@ -524,11 +524,17 @@ impl GameState {
         // Update local player - smoothly interpolate visual toward server grid position
         if let Some(local_id) = &self.local_player_id {
             if let Some(player) = self.players.get_mut(local_id) {
-                // Update facing direction based on input
+                // Update facing direction based on input, but only when at a tile boundary
+                // (don't allow direction changes mid-movement)
                 if input_dx != 0.0 || input_dy != 0.0 {
-                    let new_dir = super::entities::Direction::from_velocity(input_dx, input_dy);
-                    player.direction = new_dir;
-                    player.animation.direction = new_dir;
+                    let at_tile_boundary = (player.x - player.x.round()).abs() < 0.05
+                        && (player.y - player.y.round()).abs() < 0.05;
+
+                    if at_tile_boundary {
+                        let new_dir = super::entities::Direction::from_velocity(input_dx, input_dy);
+                        player.direction = new_dir;
+                        player.animation.direction = new_dir;
+                    }
                 }
 
                 // Smoothly interpolate visual position toward server grid position

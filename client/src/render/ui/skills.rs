@@ -41,8 +41,8 @@ impl Renderer {
         let screen_w = screen_width();
         let screen_h = screen_height();
 
-        // Position panel on right side, above the menu buttons
-        let panel_x = screen_w - SKILLS_PANEL_WIDTH - 16.0;
+        // Position panel on right side, above the menu buttons (align with button right edge)
+        let panel_x = screen_w - SKILLS_PANEL_WIDTH - 8.0;
         let button_area_height = MENU_BUTTON_SIZE + EXP_BAR_GAP;
         let panel_y = screen_h - button_area_height - SKILLS_PANEL_HEIGHT - 8.0;
 

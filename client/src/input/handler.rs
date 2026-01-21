@@ -1253,13 +1253,33 @@ impl InputHandler {
                         self.last_send_time = current_time;
                         self.move_sent = true;
                     }
-                } else if self.move_sent {
-                    // Was moving but now blocked - send stop command to server
-                    commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
-                    self.last_dx = 0.0;
-                    self.last_dy = 0.0;
-                    self.last_send_time = current_time;
-                    self.move_sent = false;
+                } else {
+                    // Movement blocked - face in the attempted direction, but only at tile boundary
+                    let at_tile_boundary = if let Some(player) = state.get_local_player() {
+                        (player.x - player.x.round()).abs() < 0.05
+                            && (player.y - player.y.round()).abs() < 0.05
+                    } else {
+                        false
+                    };
+
+                    if at_tile_boundary {
+                        let direction_changed = (dx - self.last_dx).abs() > 0.01 || (dy - self.last_dy).abs() > 0.01;
+
+                        if direction_changed || self.move_sent {
+                            // Send Face command so player turns toward the blocked direction
+                            let dir = new_dir.to_direction_u8();
+                            commands.push(InputCommand::Face { direction: dir });
+                            self.last_dx = dx;
+                            self.last_dy = dy;
+                            self.last_send_time = current_time;
+                        }
+                    }
+
+                    if self.move_sent {
+                        // Was moving but now blocked - send stop command to server
+                        commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
+                        self.move_sent = false;
+                    }
                 }
             }
         }

@@ -69,15 +69,14 @@ pub fn get_animation_config(state: AnimationState) -> AnimationConfig {
 }
 
 /// Check if direction uses up/left animations (row 1 for walking, frames 2-3 for attack)
-/// Simplified to 4 cardinal directions only
 pub fn is_up_or_left_direction(direction: Direction) -> bool {
-    matches!(direction, Direction::Up | Direction::UpLeft | Direction::Left | Direction::DownLeft)
+    matches!(direction, Direction::Up | Direction::Left)
 }
 
 /// Whether to flip the sprite horizontally for this direction
 /// Flip for Up and Right directions
 pub fn should_flip_horizontal(direction: Direction) -> bool {
-    matches!(direction, Direction::Up | Direction::UpRight | Direction::Right | Direction::UpLeft)
+    matches!(direction, Direction::Up | Direction::Right)
 }
 
 /// Player animation controller
