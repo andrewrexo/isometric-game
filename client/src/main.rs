@@ -1,4 +1,6 @@
 use macroquad::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
 
 mod game;
 mod render;
@@ -40,9 +42,9 @@ fn window_conf() -> Conf {
         window_height: 720,
         fullscreen: false,
         platform: miniquad::conf::Platform {
-            // Enable vsync for consistent frame pacing (1 = wait for v-blank)
-            // This helps prevent choppy movement from variable frame times
-            swap_interval: Some(1),
+            // Disable VSync for uncapped FPS - manual frame timing handles pacing
+            // VSync on macOS causes unreliable frame pacing (12-14ms variance)
+            swap_interval: Some(0),
             ..Default::default()
         },
         ..Default::default()
@@ -94,8 +96,16 @@ async fn main() {
         let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
         login_screen.load_font().await;
         let mut app_state = AppState::Login(login_screen);
+        let mut last_next_frame_ms: f64 = 0.0;
 
         loop {
+            let frame_start = Instant::now();
+
+            // Record last frame's next_frame() time into game state
+            if let AppState::Playing { game_state, .. } | AppState::GuestMode { game_state, .. } = &mut app_state {
+                game_state.frame_timings.record_next_frame(last_next_frame_ms);
+            }
+
             match &mut app_state {
                 AppState::Login(screen) => {
                     let result = screen.update();
@@ -200,7 +210,26 @@ async fn main() {
                 }
             }
 
+            // Apply optional FPS cap (only when in game)
+            let fps_cap = match &app_state {
+                AppState::Playing { game_state, .. } | AppState::GuestMode { game_state, .. } => {
+                    game_state.frame_timings.fps_cap
+                }
+                _ => None,
+            };
+
+            if let Some(cap) = fps_cap {
+                let target_frame_time = Duration::from_secs_f64(1.0 / cap as f64);
+                let elapsed = frame_start.elapsed();
+                if elapsed < target_frame_time {
+                    std::thread::sleep(target_frame_time - elapsed);
+                }
+            }
+
+            // Measure time spent in next_frame() to diagnose variance
+            let next_frame_start = Instant::now();
             next_frame().await;
+            last_next_frame_ms = next_frame_start.elapsed().as_secs_f64() * 1000.0;
         }
     }
 
@@ -284,6 +313,28 @@ fn run_game_frame(
     // Toggle debug mode with F3
     if is_key_pressed(KeyCode::F3) {
         game_state.debug_mode = !game_state.debug_mode;
+    }
+
+    // Cycle FPS cap with F4: Uncapped -> 60 -> 144 -> 240 -> Uncapped
+    if is_key_pressed(KeyCode::F4) {
+        game_state.frame_timings.fps_cap = match game_state.frame_timings.fps_cap {
+            None => Some(60),
+            Some(60) => Some(144),
+            Some(144) => Some(240),
+            _ => None,
+        };
+        log::info!("FPS cap: {:?}", game_state.frame_timings.fps_cap);
+    }
+
+    // Cycle delta smoothing with F7: 0 -> 0.5 -> 0.8 -> 0.9 -> 0
+    if is_key_pressed(KeyCode::F7) {
+        game_state.frame_timings.delta_smoothing = match game_state.frame_timings.delta_smoothing {
+            x if x < 0.1 => 0.5,
+            x if x < 0.6 => 0.8,
+            x if x < 0.85 => 0.9,
+            _ => 0.0,
+        };
+        log::info!("Delta smoothing: {}", game_state.frame_timings.delta_smoothing);
     }
 
     // Debug controls for appearance cycling (only in debug mode)
@@ -390,6 +441,17 @@ fn run_game_frame(
     game_state.update(delta, input_dx, input_dy);
     let update_ms = (get_time() - update_start) * 1000.0;
 
+    // 4b. Request chunks around player position
+    if let Some(player) = game_state.get_local_player() {
+        let chunks_to_request = game_state.chunk_manager.update_player_position(player.x, player.y);
+        for coord in chunks_to_request {
+            network.send(&network::messages::ClientMessage::RequestChunk {
+                chunk_x: coord.x,
+                chunk_y: coord.y,
+            });
+        }
+    }
+
     // Store frame timings
     let total_ms = (get_time() - frame_start) * 1000.0;
     game_state.frame_timings.network_ms = network_ms;
@@ -406,7 +468,11 @@ fn run_game_frame(
 
     // 5. Debug info (render after game state update to show current frame data)
     if game_state.debug_mode {
-        renderer.draw_text_sharp(&format!("FPS: {}", get_fps()), 10.0, 20.0, 16.0, WHITE);
+        let fps_cap_str = match game_state.frame_timings.fps_cap {
+            Some(cap) => format!(" (cap: {})", cap),
+            None => " (uncapped)".to_string(),
+        };
+        renderer.draw_text_sharp(&format!("FPS: {}{} [F4]", get_fps(), fps_cap_str), 10.0, 20.0, 16.0, WHITE);
         renderer.draw_text_sharp(&format!("Players: {}", game_state.players.len()), 10.0, 40.0, 16.0, WHITE);
         renderer.draw_text_sharp(&format!("Connected: {}", network.is_connected()), 10.0, 60.0, 16.0, WHITE);
 
@@ -451,5 +517,20 @@ fn run_game_frame(
         let variance_color = if delta_variance > 5.0 { spike_color } else { timing_color };
         renderer.draw_text_sharp(&format!("Delta: {:.1}ms (range: {:.1}-{:.1}, var: {:.1})",
             t.delta_ms, t.delta_min_ms, t.delta_max_ms, delta_variance), 10.0, 390.0, 16.0, variance_color);
+
+        // next_frame() timing (helps diagnose where variance comes from)
+        let nf_variance = t.next_frame_max_ms - t.next_frame_min_ms;
+        let nf_color = if nf_variance > 5.0 { spike_color } else { timing_color };
+        renderer.draw_text_sharp(&format!("next_frame(): {:.1}ms (range: {:.1}-{:.1}, var: {:.1})",
+            t.next_frame_ms, t.next_frame_min_ms, t.next_frame_max_ms, nf_variance), 10.0, 410.0, 16.0, nf_color);
+
+        // Delta smoothing setting
+        let smooth_str = if t.delta_smoothing > 0.0 {
+            format!("{:.1}", t.delta_smoothing)
+        } else {
+            "off".to_string()
+        };
+        renderer.draw_text_sharp(&format!("Smoothing: {} [F7] (smoothed: {:.1}ms)",
+            smooth_str, t.smoothed_delta * 1000.0), 10.0, 430.0, 16.0, timing_color);
     }
 }

@@ -436,34 +436,39 @@ impl GameRoom {
         // Create quest runner with the registry
         let quest_runner = Arc::new(QuestRunner::new(quest_registry.clone()));
 
-        // Load initial chunk and spawn NPCs from entity_spawns
+        // Load all chunks and spawn NPCs from entity_spawns
         let mut npcs = HashMap::new();
         let mut npc_counter = 0u32;
 
-        // Load chunk (0, 0) which contains initial spawns
-        if let Some(chunk) = world.get_or_load_chunk(crate::chunk::ChunkCoord::new(0, 0)).await {
-            for spawn in &chunk.entity_spawns {
-                let npc_id = spawn.unique_id.clone()
-                    .unwrap_or_else(|| format!("npc_{}", npc_counter));
-                npc_counter += 1;
+        // Discover all chunk files and load entities from each
+        let chunk_coords = world.discover_chunk_coords();
+        tracing::info!("Discovered {} chunk files", chunk_coords.len());
 
-                if let Some(prototype) = entity_registry.get(&spawn.entity_id) {
-                    // Spawn from prototype
-                    tracing::info!(
-                        "Spawning {} at ({}, {}) level {}",
-                        spawn.entity_id, spawn.world_x, spawn.world_y, spawn.level
-                    );
-                    let npc = Npc::from_prototype(
-                        &npc_id,
-                        &spawn.entity_id,
-                        prototype,
-                        spawn.world_x,
-                        spawn.world_y,
-                        spawn.level,
-                    );
-                    npcs.insert(npc_id, npc);
-                } else {
-                    tracing::warn!("Prototype '{}' not found, skipping spawn", spawn.entity_id);
+        for coord in chunk_coords {
+            if let Some(chunk) = world.get_or_load_chunk(coord).await {
+                for spawn in &chunk.entity_spawns {
+                    let npc_id = spawn.unique_id.clone()
+                        .unwrap_or_else(|| format!("npc_{}", npc_counter));
+                    npc_counter += 1;
+
+                    if let Some(prototype) = entity_registry.get(&spawn.entity_id) {
+                        // Spawn from prototype
+                        tracing::info!(
+                            "Spawning {} at ({}, {}) level {}",
+                            spawn.entity_id, spawn.world_x, spawn.world_y, spawn.level
+                        );
+                        let npc = Npc::from_prototype(
+                            &npc_id,
+                            &spawn.entity_id,
+                            prototype,
+                            spawn.world_x,
+                            spawn.world_y,
+                            spawn.level,
+                        );
+                        npcs.insert(npc_id, npc);
+                    } else {
+                        tracing::warn!("Prototype '{}' not found, skipping spawn", spawn.entity_id);
+                    }
                 }
             }
         }

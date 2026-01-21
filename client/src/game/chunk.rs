@@ -166,7 +166,7 @@ impl ChunkManager {
             chunks: HashMap::new(),
             pending_requests: HashMap::new(),
             current_chunk: ChunkCoord::new(0, 0),
-            view_radius: 1, // Load 3x3 chunks around player
+            view_radius: 2, // Load 5x5 chunks around player
         }
     }
 

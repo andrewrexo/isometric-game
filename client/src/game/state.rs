@@ -30,6 +30,17 @@ pub struct FrameTimings {
     pub delta_max_ms: f64,
     delta_samples: [f64; 60],
     delta_idx: usize,
+    // Optional FPS cap (None = uncapped)
+    pub fps_cap: Option<u32>,
+    // Time spent in next_frame().await (for diagnosing variance)
+    pub next_frame_ms: f64,
+    pub next_frame_min_ms: f64,
+    pub next_frame_max_ms: f64,
+    next_frame_samples: [f64; 60],
+    next_frame_idx: usize,
+    // Smoothed delta for visual interpolation (0.0 = no smoothing, 1.0 = max smoothing)
+    pub delta_smoothing: f32,
+    pub smoothed_delta: f32,
 }
 
 impl Default for FrameTimings {
@@ -52,6 +63,38 @@ impl Default for FrameTimings {
             delta_max_ms: 0.0,
             delta_samples: [0.0; 60],
             delta_idx: 0,
+            fps_cap: None, // Uncapped by default
+            next_frame_ms: 0.0,
+            next_frame_min_ms: 0.0,
+            next_frame_max_ms: 0.0,
+            next_frame_samples: [0.0; 60],
+            next_frame_idx: 0,
+            delta_smoothing: 0.0, // 0.0 = disabled, try 0.5-0.9 for smoothing
+            smoothed_delta: 0.016, // Start at ~60fps
+        }
+    }
+}
+
+impl FrameTimings {
+    pub fn record_next_frame(&mut self, ms: f64) {
+        self.next_frame_ms = ms;
+        self.next_frame_samples[self.next_frame_idx] = ms;
+        self.next_frame_idx = (self.next_frame_idx + 1) % 60;
+
+        // Calculate min/max over the window
+        self.next_frame_min_ms = f64::MAX;
+        self.next_frame_max_ms = f64::MIN;
+        for &sample in &self.next_frame_samples {
+            if sample > 0.0 {
+                self.next_frame_min_ms = self.next_frame_min_ms.min(sample);
+                self.next_frame_max_ms = self.next_frame_max_ms.max(sample);
+            }
+        }
+        if self.next_frame_min_ms == f64::MAX {
+            self.next_frame_min_ms = ms;
+        }
+        if self.next_frame_max_ms == f64::MIN {
+            self.next_frame_max_ms = ms;
         }
     }
 }
@@ -76,6 +119,15 @@ impl FrameTimings {
         }
         if self.delta_max_ms == f64::MIN {
             self.delta_max_ms = delta_ms;
+        }
+
+        // Update smoothed delta for visual interpolation
+        let delta_secs = (delta_ms / 1000.0) as f32;
+        if self.delta_smoothing > 0.0 {
+            self.smoothed_delta = self.smoothed_delta * self.delta_smoothing
+                + delta_secs * (1.0 - self.delta_smoothing);
+        } else {
+            self.smoothed_delta = delta_secs;
         }
     }
 }
@@ -466,6 +518,9 @@ impl GameState {
 
     /// Update with current input direction for smooth local movement
     pub fn update(&mut self, delta: f32, input_dx: f32, input_dy: f32) {
+        // Use smoothed delta for visual interpolation (reduces jitter from frame variance)
+        let visual_delta = self.frame_timings.smoothed_delta;
+
         // Update local player - smoothly interpolate visual toward server grid position
         if let Some(local_id) = &self.local_player_id {
             if let Some(player) = self.players.get_mut(local_id) {
@@ -477,7 +532,7 @@ impl GameState {
                 }
 
                 // Smoothly interpolate visual position toward server grid position
-                player.interpolate_visual(delta);
+                player.interpolate_visual(visual_delta);
             }
         }
 
@@ -485,13 +540,13 @@ impl GameState {
         if let Some(local_id) = &self.local_player_id {
             for (id, player) in self.players.iter_mut() {
                 if id != local_id {
-                    player.update(delta);
+                    player.update(visual_delta);
                 }
             }
         } else {
             // No local player yet - update all
             for player in self.players.values_mut() {
-                player.update(delta);
+                player.update(visual_delta);
             }
         }
 
@@ -506,7 +561,7 @@ impl GameState {
 
         // Update NPCs (interpolation toward server positions)
         for npc in self.npcs.values_mut() {
-            npc.update(delta);
+            npc.update(visual_delta);
         }
 
         // Clean up old damage events (older than 1.2 seconds)

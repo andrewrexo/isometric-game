@@ -488,6 +488,33 @@ impl World {
             })
         });
     }
+
+    /// Discover all chunk files in the chunk directory and return their coordinates
+    pub fn discover_chunk_coords(&self) -> Vec<ChunkCoord> {
+        let mut coords = Vec::new();
+        let path = Path::new(&self.chunk_dir);
+
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let filename = entry.file_name();
+                let filename_str = filename.to_string_lossy();
+
+                // Parse chunk_X_Y.json format
+                if let Some(name) = filename_str.strip_prefix("chunk_") {
+                    if let Some(name) = name.strip_suffix(".json") {
+                        let parts: Vec<&str> = name.split('_').collect();
+                        if parts.len() == 2 {
+                            if let (Ok(x), Ok(y)) = (parts[0].parse::<i32>(), parts[1].parse::<i32>()) {
+                                coords.push(ChunkCoord::new(x, y));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        coords
+    }
 }
 
 #[cfg(test)]
