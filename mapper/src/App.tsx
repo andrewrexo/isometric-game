@@ -72,6 +72,7 @@ function App() {
     setChunks,
     setWorldBounds,
     setLoading,
+    setConnected,
     isLoading,
     loadingMessage,
   } = useEditorStore();
@@ -110,80 +111,41 @@ function App() {
           });
         }
 
-        // Discover and load chunks
-        setLoading(true, 'Loading map chunks...');
+        // Load chunks from server (falls back to local IndexedDB)
+        setLoading(true, 'Loading map data...');
+        const loadedChunks = await storage.loadAllChunks();
+        setConnected(storage.isConnected);
 
-        // Check if we have saved data in IndexedDB
-        const hasStoredData = await storage.hasStoredData();
+        if (loadedChunks.size > 0) {
+          setChunks(loadedChunks, true); // skipAutoSave since this is loading
 
-        if (hasStoredData) {
-          setLoading(true, 'Loading saved map data...');
-          const storedChunks = await storage.loadAllChunks();
-
-          if (storedChunks.size > 0) {
-            // Use stored data
-            setChunks(storedChunks, true); // skipAutoSave since this is loading
-
-            // Calculate bounds from stored chunks
-            let minCx = Infinity, maxCx = -Infinity;
-            let minCy = Infinity, maxCy = -Infinity;
-            for (const chunk of storedChunks.values()) {
-              minCx = Math.min(minCx, chunk.coord.cx);
-              maxCx = Math.max(maxCx, chunk.coord.cx);
-              minCy = Math.min(minCy, chunk.coord.cy);
-              maxCy = Math.max(maxCy, chunk.coord.cy);
-            }
-            setWorldBounds({
-              minCx: minCx === Infinity ? 0 : minCx,
-              maxCx: maxCx === -Infinity ? 0 : maxCx,
-              minCy: minCy === Infinity ? 0 : minCy,
-              maxCy: maxCy === -Infinity ? 0 : maxCy,
-            });
-
-            console.log(`Loaded ${storedChunks.size} chunks from local storage`);
-            setLoading(false);
-            return;
+          // Calculate bounds from loaded chunks
+          let minCx = Infinity, maxCx = -Infinity;
+          let minCy = Infinity, maxCy = -Infinity;
+          for (const chunk of loadedChunks.values()) {
+            minCx = Math.min(minCx, chunk.coord.cx);
+            maxCx = Math.max(maxCx, chunk.coord.cx);
+            minCy = Math.min(minCy, chunk.coord.cy);
+            maxCy = Math.max(maxCy, chunk.coord.cy);
           }
-        }
+          setWorldBounds({
+            minCx: minCx === Infinity ? 0 : minCx,
+            maxCx: maxCx === -Infinity ? 0 : maxCx,
+            minCy: minCy === Infinity ? 0 : minCy,
+            maxCy: maxCy === -Infinity ? 0 : maxCy,
+          });
 
-        // No stored data, load from server
-        // Try to load known chunks
-        const knownChunks = [
-          { cx: 0, cy: 0 },
-          { cx: 0, cy: -1 },
-          { cx: 1, cy: 0 },
-          { cx: -1, cy: 0 },
-          { cx: -1, cy: -1 },
-          { cx: -2, cy: 0 },
-        ];
-
-        for (const coord of knownChunks) {
-          try {
-            // Try loading from public assets (would need chunks copied there)
-            const chunk = await chunkManager.loadChunk(
-              `/maps/chunk_${coord.cx}_${coord.cy}.json`,
-              coord
-            );
-            if (chunk) {
-              chunkManager.addChunk(chunk);
-            }
-          } catch {
-            // Chunk doesn't exist, that's fine
-          }
-        }
-
-        // If no chunks loaded, create a default chunk at origin
-        if (chunkManager.getAllChunks().length === 0) {
+          console.log(`Loaded ${loadedChunks.size} chunks (connected: ${storage.isConnected})`);
+        } else {
+          // No chunks found, create a default chunk at origin
           chunkManager.createEmptyChunk({ cx: 0, cy: 0 });
+          const newChunks = new Map<string, ReturnType<typeof chunkManager.getChunk>>();
+          for (const chunk of chunkManager.getAllChunks()) {
+            newChunks.set(chunkKey(chunk.coord), chunk);
+          }
+          setChunks(newChunks as Map<string, NonNullable<ReturnType<typeof chunkManager.getChunk>>>);
+          setWorldBounds(chunkManager.getBounds());
         }
-
-        // Update store with loaded chunks
-        const chunks = new Map<string, ReturnType<typeof chunkManager.getChunk>>();
-        for (const chunk of chunkManager.getAllChunks()) {
-          chunks.set(chunkKey(chunk.coord), chunk);
-        }
-        setChunks(chunks as Map<string, NonNullable<ReturnType<typeof chunkManager.getChunk>>>);
-        setWorldBounds(chunkManager.getBounds());
 
         setLoading(false);
       } catch (error) {
@@ -193,7 +155,24 @@ function App() {
     };
 
     init();
-  }, [setTilesets, setEntityRegistry, setChunks, setWorldBounds, setLoading]);
+
+    // Listen for connection status changes
+    const unsubscribe = storage.onConnectionChange(setConnected);
+    return () => unsubscribe();
+  }, [setTilesets, setEntityRegistry, setChunks, setWorldBounds, setLoading, setConnected]);
+
+  // Auto-save every 30 seconds
+  useEffect(() => {
+    const autoSaveInterval = setInterval(async () => {
+      const currentChunks = useEditorStore.getState().chunks;
+      if (currentChunks.size > 0) {
+        console.log('Auto-saving...');
+        await storage.saveAllChunks(currentChunks);
+      }
+    }, 30000);
+
+    return () => clearInterval(autoSaveInterval);
+  }, []);
 
   // Keyboard shortcuts for tools
   useEffect(() => {

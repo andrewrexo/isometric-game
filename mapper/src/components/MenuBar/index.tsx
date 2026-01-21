@@ -20,7 +20,10 @@ export function MenuBar() {
     markAllClean,
     setChunks,
     setWorldBounds,
+    isConnected,
   } = useEditorStore();
+
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   // Store the directory handle for reuse
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -170,7 +173,7 @@ export function MenuBar() {
 
     try {
       // Clear IndexedDB storage
-      await storage.clearAll();
+      await storage.clearLocal();
 
       // Clear ChunkManager cache
       chunkManager.clear();
@@ -229,7 +232,7 @@ export function MenuBar() {
     if (!confirmed) return;
 
     try {
-      await storage.clearAll();
+      await storage.clearLocal();
       alert('Local data cleared.');
     } catch (err) {
       console.error('Clear failed:', err);
@@ -237,17 +240,118 @@ export function MenuBar() {
     }
   };
 
+  const handleExportMap = async () => {
+    try {
+      const jsonData = await storage.exportMapData();
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `map-export-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert(`Export failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleImportMap = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const confirmed = window.confirm(
+      'This will replace all map data with the imported file.\n\nAre you sure?'
+    );
+    if (!confirmed) {
+      e.target.value = '';
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const count = await storage.importMapData(text);
+
+      // Reload chunks into editor
+      const loadedChunks = await storage.loadAllChunks();
+      setChunks(loadedChunks, true);
+
+      // Recalculate bounds
+      let minCx = Infinity, maxCx = -Infinity;
+      let minCy = Infinity, maxCy = -Infinity;
+      for (const chunk of loadedChunks.values()) {
+        minCx = Math.min(minCx, chunk.coord.cx);
+        maxCx = Math.max(maxCx, chunk.coord.cx);
+        minCy = Math.min(minCy, chunk.coord.cy);
+        maxCy = Math.max(maxCy, chunk.coord.cy);
+      }
+      setWorldBounds({
+        minCx: minCx === Infinity ? 0 : minCx,
+        maxCx: maxCx === -Infinity ? 0 : maxCx,
+        minCy: minCy === Infinity ? 0 : minCy,
+        maxCy: maxCy === -Infinity ? 0 : maxCy,
+      });
+
+      alert(`Imported ${count} chunks successfully.`);
+    } catch (err) {
+      console.error('Import failed:', err);
+      alert(`Import failed: ${(err as Error).message}`);
+    }
+
+    e.target.value = '';
+  };
+
+  const handleSyncToServer = async () => {
+    if (!isConnected) {
+      alert('Not connected to server. Changes are saved locally.');
+      return;
+    }
+
+    try {
+      const success = await storage.saveAllChunksToServer(chunks);
+      if (success) {
+        alert(`Synced ${chunks.size} chunks to server.`);
+      } else {
+        alert('Failed to sync to server.');
+      }
+    } catch (err) {
+      console.error('Sync failed:', err);
+      alert(`Sync failed: ${(err as Error).message}`);
+    }
+  };
+
   return (
     <div className={styles.menuBar}>
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".json"
+        style={{ display: 'none' }}
+        onChange={handleImportFile}
+      />
       <div className={styles.menu}>
         <div className={styles.menuItem}>
           <span className={styles.menuTitle}>File</span>
           <div className={styles.dropdown}>
+            <button className={styles.dropdownItem} onClick={handleSyncToServer}>
+              Sync to Server
+            </button>
             <button className={styles.dropdownItem} onClick={handleSaveAll}>
-              Save Modified ({getDirtyChunks().length})
+              Download Modified ({getDirtyChunks().length})
             </button>
             <button className={styles.dropdownItem} onClick={handleExportToServer}>
-              Export All to Server...
+              Export to Directory...
+            </button>
+            <div className={styles.separator} />
+            <button className={styles.dropdownItem} onClick={handleExportMap}>
+              Export Map (JSON)
+            </button>
+            <button className={styles.dropdownItem} onClick={handleImportMap}>
+              Import Map (JSON)
             </button>
             <div className={styles.separator} />
             <button className={styles.dropdownItem} onClick={handleResetToServer}>
@@ -306,6 +410,9 @@ export function MenuBar() {
         <span className={styles.statusItem}>Zoom: {Math.round(viewport.zoom * 100)}%</span>
         <span className={styles.statusItem}>
           {getDirtyChunks().length > 0 && `${getDirtyChunks().length} unsaved`}
+        </span>
+        <span className={`${styles.statusItem} ${styles.connectionStatus} ${isConnected ? styles.connected : styles.disconnected}`}>
+          {isConnected ? 'Connected' : 'Offline'}
         </span>
       </div>
     </div>

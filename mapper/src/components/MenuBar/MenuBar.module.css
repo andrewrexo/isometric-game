@@ -87,3 +87,32 @@
   font-size: 11px;
   color: #888;
 }
+
+.connectionStatus {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.connectionStatus::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.connected {
+  color: #4ecdc4;
+}
+
+.connected::before {
+  background: #4ecdc4;
+}
+
+.disconnected {
+  color: #ff6b6b;
+}
+
+.disconnected::before {
+  background: #ff6b6b;
+}

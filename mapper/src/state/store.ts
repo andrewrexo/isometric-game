@@ -77,6 +77,9 @@ interface EditorState {
   // Loading state
   isLoading: boolean;
   loadingMessage: string;
+
+  // Connection state
+  isConnected: boolean;
 }
 
 interface EditorActions {
@@ -144,6 +147,9 @@ interface EditorActions {
   // Loading actions
   setLoading: (isLoading: boolean, message?: string) => void;
 
+  // Connection actions
+  setConnected: (isConnected: boolean) => void;
+
   // Utility
   getChunk: (coord: ChunkCoord) => Chunk | undefined;
   getOrCreateChunk: (coord: ChunkCoord) => Chunk;
@@ -190,6 +196,8 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
 
   isLoading: false,
   loadingMessage: '',
+
+  isConnected: false,
 
   // World actions
   setChunks: (chunks, skipAutoSave = false) => {
@@ -801,6 +809,9 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
 
   // Loading actions
   setLoading: (isLoading, message = '') => set({ isLoading, loadingMessage: message }),
+
+  // Connection actions
+  setConnected: (isConnected) => set({ isConnected }),
 
   // Utility
   getChunk: (coord) => get().chunks.get(chunkKey(coord)),
