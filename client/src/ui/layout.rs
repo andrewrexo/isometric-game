@@ -29,6 +29,9 @@ pub enum UiElementId {
     // Escape Menu
     EscapeMenuZoom1x,
     EscapeMenuZoom2x,
+    EscapeMenuMusicSlider,
+    EscapeMenuSfxSlider,
+    EscapeMenuMuteToggle,
     EscapeMenuDisconnect,
 
     // World Items

@@ -6,11 +6,12 @@ description = "Isometric MMORPG client"
 
 [dependencies]
 # Game engine
-macroquad = "0.4"
+macroquad = { version = "0.4", features = ["audio"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.8"
 # MessagePack for Colyseus protocol
 rmp-serde = "1.3"
 rmpv = { version = "1.3", features = ["with-serde"] }
@@ -21,6 +22,7 @@ log = "0.4"
 # Native-only dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11"
+dirs = "5.0"
 # HTTP client for matchmaking
 ureq = { version = "2.10", features = ["json"] }
 # WebSocket (uses wasm-bindgen on WASM which conflicts with miniquad)
@@ -29,6 +31,7 @@ ewebsock = "0.6"
 # WASM dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
+quad-storage = "0.1"
 
 [profile.release]
 opt-level = 3

@@ -11,6 +11,9 @@ mod input;
 mod auth;
 #[cfg(not(target_arch = "wasm32"))]
 mod ui;
+mod audio;
+
+use audio::AudioManager;
 
 use game::GameState;
 #[cfg(not(target_arch = "wasm32"))]
@@ -89,6 +92,7 @@ async fn main() {
     console_error_panic_hook::set_once();
 
     let renderer = Renderer::new().await;
+    let mut audio = AudioManager::new().await;
 
     // Native build with auth flow
     #[cfg(not(target_arch = "wasm32"))]
@@ -113,15 +117,24 @@ async fn main() {
 
                     match result {
                         ScreenState::ToCharacterSelect(session) => {
+                            audio.play_sfx("login_success");
                             let mut char_screen = CharacterSelectScreen::new(session, SERVER_URL);
                             char_screen.load_font().await;
                             app_state = AppState::CharacterSelect(char_screen);
                         }
                         ScreenState::StartGuestMode => {
                             // Guest mode - connect without auth
-                            let game_state = GameState::new();
+                            let mut game_state = GameState::new();
+                            // Sync audio settings to UI state
+                            game_state.ui_state.audio_volume = audio.music_volume();
+                            game_state.ui_state.audio_sfx_volume = audio.sfx_volume();
+                            game_state.ui_state.audio_muted = audio.is_muted();
                             let network = NetworkClient::new_guest(WS_URL);
                             let input_handler = InputHandler::new();
+
+                            // Start background music
+                            audio.play_music("assets/audio/start.ogg").await;
+
                             app_state = AppState::GuestMode {
                                 game_state,
                                 network,
@@ -141,6 +154,10 @@ async fn main() {
                             // Start game with selected character
                             let mut game_state = GameState::new();
                             game_state.selected_character_name = Some(character_name);
+                            // Sync audio settings to UI state
+                            game_state.ui_state.audio_volume = audio.music_volume();
+                            game_state.ui_state.audio_sfx_volume = audio.sfx_volume();
+                            game_state.ui_state.audio_muted = audio.is_muted();
 
                             let network = NetworkClient::new_authenticated(
                                 WS_URL,
@@ -148,6 +165,9 @@ async fn main() {
                                 character_id,
                             );
                             let input_handler = InputHandler::new();
+
+                            // Start background music
+                            audio.play_music("assets/audio/start.ogg").await;
 
                             app_state = AppState::Playing {
                                 game_state,
@@ -186,11 +206,12 @@ async fn main() {
 
                 AppState::Playing { game_state, network, input_handler, .. } |
                 AppState::GuestMode { game_state, network, input_handler } => {
-                    run_game_frame(game_state, network, input_handler, &renderer);
+                    run_game_frame(game_state, network, input_handler, &renderer, &mut audio);
 
                     // Check for disconnect request
                     if game_state.disconnect_requested {
-                        // Disconnect from server and return to login
+                        // Stop music and disconnect from server
+                        audio.stop_music();
                         network.disconnect();
                         let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
                         login_screen.load_font().await;
@@ -201,6 +222,7 @@ async fn main() {
                     // Check for reconnection failure (server disconnected and retries exhausted)
                     if game_state.reconnection_failed {
                         log::info!("Reconnection failed, returning to login screen");
+                        audio.stop_music();
                         network.disconnect();
                         let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
                         login_screen.load_font().await;
@@ -279,7 +301,7 @@ async fn main() {
             let (layout, _render_timings) = renderer.render(&game_state);
 
             // Handle input with UI layout (local only in WASM)
-            let _ = input_handler.process(&mut game_state, &layout);
+            let _ = input_handler.process(&mut game_state, &layout, &mut audio);
 
             // Update game state
             let (input_dx, input_dy) = input_handler.get_movement();
@@ -306,6 +328,7 @@ fn run_game_frame(
     network: &mut NetworkClient,
     input_handler: &mut InputHandler,
     renderer: &Renderer,
+    audio: &mut AudioManager,
 ) {
     let frame_start = get_time();
     let delta = get_frame_time();
@@ -372,7 +395,7 @@ fn run_game_frame(
     let (layout, render_timings) = renderer.render(game_state);
 
     // 3. Handle input with UI layout and send commands
-    let commands = input_handler.process(game_state, &layout);
+    let commands = input_handler.process(game_state, &layout, audio);
     for cmd in &commands {
         use network::messages::ClientMessage;
         let msg = match cmd {
@@ -394,10 +417,12 @@ fn run_game_frame(
                 ClientMessage::Face { direction: *direction }
             },
             InputCommand::Attack => {
-                // Trigger attack animation on local player
+                // Trigger attack animation and sound on local player
                 if let Some(local_id) = &game_state.local_player_id {
                     if let Some(player) = game_state.players.get_mut(local_id) {
                         player.play_attack();
+                        let has_weapon = player.equipped_weapon.is_some();
+                        audio.play_attack_sound(has_weapon);
                     }
                 }
                 ClientMessage::Attack

@@ -4,6 +4,7 @@ use crate::game::{GameState, ContextMenu, DragState, DragSource, PathState, path
 use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
 use crate::network::messages::ClientMessage;
+use crate::audio::AudioManager;
 
 /// Build set of tiles occupied by entities (other players + NPCs) for pathfinding
 fn build_occupied_set(state: &GameState) -> HashSet<(i32, i32)> {
@@ -119,7 +120,7 @@ impl InputHandler {
         }
     }
 
-    pub fn process(&mut self, state: &mut GameState, layout: &UiLayout) -> Vec<InputCommand> {
+    pub fn process(&mut self, state: &mut GameState, layout: &UiLayout, audio: &mut AudioManager) -> Vec<InputCommand> {
         let mut commands = Vec::new();
         let current_time = get_time();
 
@@ -203,6 +204,7 @@ impl InputHandler {
                                     if *from_idx != *to_idx {
                                         // Optimistic update: immediately swap locally
                                         state.inventory.swap_slots(*from_idx, *to_idx);
+                                        audio.play_sfx("item_put");
 
                                         commands.push(InputCommand::SwapSlots {
                                             from_slot: *from_idx as u8,
@@ -235,6 +237,7 @@ impl InputHandler {
                                         }
                                     }
 
+                                    audio.play_sfx("item_put");
                                     commands.push(InputCommand::Unequip {
                                         slot_type: slot_type.clone(),
                                         target_slot: Some(*to_idx as u8),
@@ -280,6 +283,7 @@ impl InputHandler {
                                             }
                                         }
                                         state.inventory.clear_slot(*from_idx);
+                                        audio.play_sfx("item_put");
 
                                         commands.push(InputCommand::Equip { slot_index: *from_idx as u8 });
                                     }
@@ -347,6 +351,7 @@ impl InputHandler {
                                     item_id: slot.item_id.clone(),
                                     quantity: slot.quantity,
                                 });
+                                audio.play_sfx("item_grab");
                                 // Don't process other input while starting drag
                                 return commands;
                             }
@@ -373,6 +378,7 @@ impl InputHandler {
                                 item_id,
                                 quantity: 1, // Equipment is always quantity 1
                             });
+                            audio.play_sfx("item_grab");
                             return commands;
                         }
                     }
@@ -495,6 +501,7 @@ impl InputHandler {
             if let Some(ref element) = clicked_element {
                 match element {
                     UiElementId::MenuButtonCharacter => {
+                        audio.play_sfx("enter");
                         // Toggle character panel, close others if opening
                         if state.ui_state.character_open {
                             state.ui_state.character_open = false;
@@ -508,6 +515,7 @@ impl InputHandler {
                         return commands;
                     }
                     UiElementId::MenuButtonInventory => {
+                        audio.play_sfx("enter");
                         // Toggle inventory panel, close others if opening
                         if state.ui_state.inventory_open {
                             state.ui_state.inventory_open = false;
@@ -521,6 +529,7 @@ impl InputHandler {
                         return commands;
                     }
                     UiElementId::MenuButtonGear => {
+                        audio.play_sfx("enter");
                         // Toggle gear panel, close others if opening
                         if state.ui_state.gear_panel_open {
                             state.ui_state.gear_panel_open = false;
@@ -534,6 +543,7 @@ impl InputHandler {
                         return commands;
                     }
                     UiElementId::MenuButtonSocial => {
+                        audio.play_sfx("enter");
                         // Toggle social panel, close others if opening
                         if state.ui_state.social_open {
                             state.ui_state.social_open = false;
@@ -547,6 +557,7 @@ impl InputHandler {
                         return commands;
                     }
                     UiElementId::MenuButtonSkills => {
+                        audio.play_sfx("enter");
                         // Toggle skills panel, close others if opening
                         if state.ui_state.skills_open {
                             state.ui_state.skills_open = false;
@@ -560,6 +571,7 @@ impl InputHandler {
                         return commands;
                     }
                     UiElementId::MenuButtonSettings => {
+                        audio.play_sfx("enter");
                         // Toggle escape/settings menu
                         state.ui_state.escape_menu_open = !state.ui_state.escape_menu_open;
                         return commands;
@@ -576,16 +588,47 @@ impl InputHandler {
                 if mouse_clicked {
                     match element {
                         UiElementId::EscapeMenuZoom1x => {
+                            audio.play_sfx("enter");
                             state.camera.zoom = 1.0;
                             state.ui_state.escape_menu_open = false;
                             return commands;
                         }
                         UiElementId::EscapeMenuZoom2x => {
+                            audio.play_sfx("enter");
                             state.camera.zoom = 2.0;
                             state.ui_state.escape_menu_open = false;
                             return commands;
                         }
+                        UiElementId::EscapeMenuMusicSlider => {
+                            // Calculate volume from click position within slider
+                            if let Some(slider_elem) = layout.elements.iter().find(|e| e.id == UiElementId::EscapeMenuMusicSlider) {
+                                let (mouse_x, _) = mouse_position();
+                                let relative_x = mouse_x - slider_elem.bounds.x;
+                                let volume = (relative_x / slider_elem.bounds.w).clamp(0.0, 1.0);
+                                state.ui_state.audio_volume = volume;
+                                audio.set_music_volume(volume);
+                            }
+                            return commands;
+                        }
+                        UiElementId::EscapeMenuSfxSlider => {
+                            // Calculate SFX volume from click position within slider
+                            if let Some(slider_elem) = layout.elements.iter().find(|e| e.id == UiElementId::EscapeMenuSfxSlider) {
+                                let (mouse_x, _) = mouse_position();
+                                let relative_x = mouse_x - slider_elem.bounds.x;
+                                let volume = (relative_x / slider_elem.bounds.w).clamp(0.0, 1.0);
+                                state.ui_state.audio_sfx_volume = volume;
+                                audio.set_sfx_volume(volume);
+                            }
+                            return commands;
+                        }
+                        UiElementId::EscapeMenuMuteToggle => {
+                            audio.play_sfx("enter");
+                            state.ui_state.audio_muted = !state.ui_state.audio_muted;
+                            audio.toggle_mute();
+                            return commands;
+                        }
                         UiElementId::EscapeMenuDisconnect => {
+                            audio.play_sfx("enter");
                             state.disconnect_requested = true;
                             state.ui_state.escape_menu_open = false;
                             return commands;
@@ -750,6 +793,7 @@ impl InputHandler {
                         if let Some(ref shop_data) = state.ui_state.shop_data {
                             if let Some(ref npc_id) = state.ui_state.shop_npc_id {
                                 if let Some(stock_item) = shop_data.stock.get(state.ui_state.shop_selected_buy_index) {
+                                    audio.play_sfx("buy");
                                     commands.push(InputCommand::ShopBuy {
                                         npc_id: npc_id.clone(),
                                         item_id: stock_item.item_id.clone(),
@@ -935,6 +979,7 @@ impl InputHandler {
                             if let Some(ref shop_data) = state.ui_state.shop_data {
                                 if let Some(ref npc_id) = state.ui_state.shop_npc_id {
                                     if let Some(stock_item) = shop_data.stock.get(state.ui_state.shop_selected_buy_index) {
+                                        audio.play_sfx("buy");
                                         commands.push(InputCommand::ShopBuy {
                                             npc_id: npc_id.clone(),
                                             item_id: stock_item.item_id.clone(),
@@ -1023,6 +1068,7 @@ impl InputHandler {
             if is_key_pressed(KeyCode::Enter) {
                 let text = state.ui_state.chat_input.trim().to_string();
                 if !text.is_empty() {
+                    audio.play_sfx("send_message");
                     commands.push(InputCommand::Chat { text });
                 }
                 state.ui_state.chat_open = false;
@@ -1621,6 +1667,7 @@ impl InputHandler {
             if state.ui_state.inventory_open || state.ui_state.gear_panel_open
                 || state.ui_state.character_open || state.ui_state.social_open
                 || state.ui_state.skills_open {
+                audio.play_sfx("enter");
                 state.ui_state.inventory_open = false;
                 state.ui_state.gear_panel_open = false;
                 state.ui_state.character_open = false;
@@ -1630,12 +1677,14 @@ impl InputHandler {
                 commands.push(InputCommand::ClearTarget);
             } else {
                 // No target selected and no panels open - open escape menu
+                audio.play_sfx("enter");
                 state.ui_state.escape_menu_open = true;
             }
         }
 
         // Toggle inventory (I key) with mutual exclusivity
         if is_key_pressed(KeyCode::I) {
+            audio.play_sfx("enter");
             if state.ui_state.inventory_open {
                 state.ui_state.inventory_open = false;
             } else {
@@ -1649,6 +1698,7 @@ impl InputHandler {
 
         // Toggle gear panel (G key) with mutual exclusivity
         if is_key_pressed(KeyCode::G) {
+            audio.play_sfx("enter");
             if state.ui_state.gear_panel_open {
                 state.ui_state.gear_panel_open = false;
             } else {

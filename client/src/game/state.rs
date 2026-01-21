@@ -345,6 +345,10 @@ pub struct UiState {
     pub shop_sell_scroll: f32, // Scroll offset for sell list (pixels)
     // Escape menu state
     pub escape_menu_open: bool,
+    // Audio settings (synced with AudioManager)
+    pub audio_volume: f32,
+    pub audio_sfx_volume: f32,
+    pub audio_muted: bool,
     // Menu button panel states
     pub character_open: bool,
     pub social_open: bool,
@@ -392,6 +396,9 @@ impl Default for UiState {
             shop_buy_scroll: 0.0,
             shop_sell_scroll: 0.0,
             escape_menu_open: false,
+            audio_volume: 0.7,
+            audio_sfx_volume: 0.7,
+            audio_muted: false,
             character_open: false,
             social_open: false,
             skills_open: false,

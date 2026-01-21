@@ -13,7 +13,7 @@ impl Renderer {
         draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.5));
 
         let menu_width = 260.0;
-        let menu_height = 300.0;
+        let menu_height = 420.0;
         let menu_x = ((screen_width() - menu_width) / 2.0).floor();
         let menu_y = ((screen_height() - menu_height) / 2.0).floor();
 
@@ -44,11 +44,11 @@ impl Renderer {
         let content_x = menu_x + FRAME_THICKNESS + 12.0;
         let content_y = menu_y + FRAME_THICKNESS + header_height + 12.0;
 
-        // Camera Zoom label
-        self.draw_text_sharp("Camera Zoom", content_x.floor(), (content_y + 12.0).floor(), 16.0, TEXT_DIM);
-
         // Get current mouse position for hover detection
         let (mouse_x, mouse_y) = mouse_position();
+
+        // Camera Zoom label
+        self.draw_text_sharp("Camera Zoom", content_x.floor(), (content_y + 12.0).floor(), 16.0, TEXT_DIM);
 
         // Zoom buttons
         let button_width = 90.0;
@@ -59,7 +59,7 @@ impl Renderer {
         let buttons_start_x = menu_x + (menu_width - buttons_total_width) / 2.0;
 
         // Helper to draw themed button
-        let draw_zoom_button = |btn_x: f32, btn_y: f32, text: &str, is_selected: bool, is_hovered: bool, renderer: &Self| {
+        let draw_button = |btn_x: f32, btn_y: f32, btn_w: f32, btn_h: f32, text: &str, is_selected: bool, is_hovered: bool, renderer: &Self| {
             let (bg_color, border_color) = if is_selected {
                 (Color::new(0.180, 0.200, 0.145, 1.0), FRAME_ACCENT) // Selected: greenish tint with gold border
             } else if is_hovered {
@@ -69,19 +69,58 @@ impl Renderer {
             };
 
             // Button border and background
-            draw_rectangle(btn_x, btn_y, button_width, button_height, border_color);
-            draw_rectangle(btn_x + 1.0, btn_y + 1.0, button_width - 2.0, button_height - 2.0, bg_color);
+            draw_rectangle(btn_x, btn_y, btn_w, btn_h, border_color);
+            draw_rectangle(btn_x + 1.0, btn_y + 1.0, btn_w - 2.0, btn_h - 2.0, bg_color);
 
             // Inner highlight
             if is_selected || is_hovered {
-                draw_line(btn_x + 2.0, btn_y + 2.0, btn_x + button_width - 2.0, btn_y + 2.0, 1.0, FRAME_INNER);
+                draw_line(btn_x + 2.0, btn_y + 2.0, btn_x + btn_w - 2.0, btn_y + 2.0, 1.0, FRAME_INNER);
             }
 
             // Text centered
             let text_width = renderer.measure_text_sharp(text, 16.0).width;
             let text_color = if is_selected { TEXT_TITLE } else { TEXT_NORMAL };
-            renderer.draw_text_sharp(text, (btn_x + (button_width - text_width) / 2.0).floor(),
+            renderer.draw_text_sharp(text, (btn_x + (btn_w - text_width) / 2.0).floor(),
                                     (btn_y + 20.0).floor(), 16.0, text_color);
+        };
+
+        // Helper to draw a volume slider
+        let draw_slider = |label: &str, slider_x: f32, slider_y: f32, slider_width: f32, slider_height: f32,
+                          volume: f32, muted: bool, renderer: &Self| {
+            // Label
+            let label_width = renderer.measure_text_sharp(label, 14.0).width;
+            renderer.draw_text_sharp(label, (slider_x - label_width - 8.0).floor(), (slider_y + 14.0).floor(), 14.0, TEXT_DIM);
+
+            // Slider track
+            let is_hovered = mouse_x >= slider_x && mouse_x <= slider_x + slider_width
+                && mouse_y >= slider_y && mouse_y <= slider_y + slider_height;
+            let track_color = if is_hovered { SLOT_HOVER_BG } else { SLOT_BG_EMPTY };
+            draw_rectangle(slider_x, slider_y, slider_width, slider_height, SLOT_BORDER);
+            draw_rectangle(slider_x + 1.0, slider_y + 1.0, slider_width - 2.0, slider_height - 2.0, track_color);
+
+            // Filled portion
+            let fill_width = (slider_width - 4.0) * volume;
+            let fill_color = if muted {
+                Color::new(0.3, 0.3, 0.35, 1.0)
+            } else {
+                Color::new(0.4, 0.55, 0.3, 1.0)
+            };
+            draw_rectangle(slider_x + 2.0, slider_y + 2.0, fill_width, slider_height - 4.0, fill_color);
+
+            // Handle
+            let handle_x = slider_x + 2.0 + fill_width - 3.0;
+            let handle_color = if muted {
+                Color::new(0.5, 0.5, 0.55, 1.0)
+            } else {
+                FRAME_ACCENT
+            };
+            draw_rectangle(handle_x.max(slider_x + 2.0), slider_y + 2.0, 6.0, slider_height - 4.0, handle_color);
+
+            // Percentage text
+            let pct = (volume * 100.0).round() as i32;
+            let pct_text = format!("{}%", pct);
+            let text_color = if muted { TEXT_DIM } else { TEXT_NORMAL };
+            renderer.draw_text_sharp(&pct_text, (slider_x + slider_width + 8.0).floor(), (slider_y + 14.0).floor(), 14.0, text_color);
         };
 
         // 1x Zoom button
@@ -90,7 +129,7 @@ impl Renderer {
         let is_1x_hovered = mouse_x >= zoom_1x_bounds.x && mouse_x <= zoom_1x_bounds.x + zoom_1x_bounds.w
             && mouse_y >= zoom_1x_bounds.y && mouse_y <= zoom_1x_bounds.y + zoom_1x_bounds.h;
         let is_1x_selected = (state.camera.zoom - 1.0).abs() < 0.1;
-        draw_zoom_button(zoom_1x_bounds.x, zoom_1x_bounds.y, "1x Zoom", is_1x_selected, is_1x_hovered, self);
+        draw_button(zoom_1x_bounds.x, zoom_1x_bounds.y, button_width, button_height, "1x Zoom", is_1x_selected, is_1x_hovered, self);
 
         // 2x Zoom button
         let zoom_2x_bounds = Rect::new((buttons_start_x + button_width + button_spacing).floor(), button_y.floor(), button_width, button_height);
@@ -98,10 +137,47 @@ impl Renderer {
         let is_2x_hovered = mouse_x >= zoom_2x_bounds.x && mouse_x <= zoom_2x_bounds.x + zoom_2x_bounds.w
             && mouse_y >= zoom_2x_bounds.y && mouse_y <= zoom_2x_bounds.y + zoom_2x_bounds.h;
         let is_2x_selected = (state.camera.zoom - 2.0).abs() < 0.1;
-        draw_zoom_button(zoom_2x_bounds.x, zoom_2x_bounds.y, "2x Zoom", is_2x_selected, is_2x_hovered, self);
+        draw_button(zoom_2x_bounds.x, zoom_2x_bounds.y, button_width, button_height, "2x Zoom", is_2x_selected, is_2x_hovered, self);
+
+        // ===== AUDIO SECTION =====
+        let audio_y = button_y + button_height + 20.0;
+        self.draw_text_sharp("Audio", content_x.floor(), (audio_y + 12.0).floor(), 16.0, TEXT_DIM);
+
+        let slider_width = 120.0;
+        let slider_height = 18.0;
+        let slider_x = (menu_x + 70.0).floor();
+
+        // Music volume slider
+        let music_slider_y = (audio_y + 28.0).floor();
+        let music_slider_bounds = Rect::new(slider_x, music_slider_y, slider_width, slider_height);
+        layout.add(UiElementId::EscapeMenuMusicSlider, music_slider_bounds);
+        draw_slider("Music", slider_x, music_slider_y, slider_width, slider_height,
+                   state.ui_state.audio_volume, state.ui_state.audio_muted, self);
+
+        // SFX volume slider
+        let sfx_slider_y = (music_slider_y + slider_height + 8.0).floor();
+        let sfx_slider_bounds = Rect::new(slider_x, sfx_slider_y, slider_width, slider_height);
+        layout.add(UiElementId::EscapeMenuSfxSlider, sfx_slider_bounds);
+        draw_slider("SFX", slider_x, sfx_slider_y, slider_width, slider_height,
+                   state.ui_state.audio_sfx_volume, state.ui_state.audio_muted, self);
+
+        // Mute toggle button
+        let mute_btn_width = 100.0;
+        let mute_btn_height = 28.0;
+        let mute_btn_x = (menu_x + (menu_width - mute_btn_width) / 2.0).floor();
+        let mute_btn_y = (sfx_slider_y + slider_height + 10.0).floor();
+
+        let mute_bounds = Rect::new(mute_btn_x, mute_btn_y, mute_btn_width, mute_btn_height);
+        layout.add(UiElementId::EscapeMenuMuteToggle, mute_bounds);
+
+        let is_mute_hovered = mouse_x >= mute_bounds.x && mouse_x <= mute_bounds.x + mute_bounds.w
+            && mouse_y >= mute_bounds.y && mouse_y <= mute_bounds.y + mute_bounds.h;
+
+        let mute_text = if state.ui_state.audio_muted { "Unmute" } else { "Mute" };
+        draw_button(mute_btn_x, mute_btn_y, mute_btn_width, mute_btn_height, mute_text, state.ui_state.audio_muted, is_mute_hovered, self);
 
         // ===== CONTROLS SECTION =====
-        let controls_y = button_y + button_height + 20.0;
+        let controls_y = mute_btn_y + mute_btn_height + 16.0;
         self.draw_text_sharp("Controls", content_x.floor(), (controls_y + 12.0).floor(), 16.0, TEXT_DIM);
 
         let controls_text_y = controls_y + 28.0;
