@@ -1349,7 +1349,7 @@ impl Renderer {
         if show_name {
             // Build display name with optional (GM) suffix
             let name_width = self.measure_text_sharp(&player.name, 16.0).width;
-            let gm_width = if player.is_admin { self.measure_text_sharp(" (GM)", 16.0).width } else { 0.0 };
+            let gm_width = if player.is_admin { self.measure_text_sharp(" (GM)", 16.0).width - 2.0 } else { 0.0 };
             let total_width = name_width + gm_width;
             let name_x = screen_x - total_width / 2.0;
             let name_y = screen_y - name_y_offset + 2.0;

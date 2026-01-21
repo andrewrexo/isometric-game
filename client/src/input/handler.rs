@@ -1285,13 +1285,11 @@ impl InputHandler {
                     false
                 };
 
+                let direction_changed = (dx - self.last_dx).abs() > 0.01 || (dy - self.last_dy).abs() > 0.01;
+                let time_elapsed = current_time - self.last_send_time >= self.send_interval;
+                let should_send = direction_changed || time_elapsed;
+
                 if can_move {
-                    let direction_changed = (dx - self.last_dx).abs() > 0.01 || (dy - self.last_dy).abs() > 0.01;
-                    let time_elapsed = current_time - self.last_send_time >= self.send_interval;
-
-                    // Send command if: direction changed OR enough time passed (heartbeat)
-                    let should_send = direction_changed || time_elapsed;
-
                     if should_send {
                         commands.push(InputCommand::Move { dx, dy });
                         self.last_dx = dx;
@@ -1299,13 +1297,19 @@ impl InputHandler {
                         self.last_send_time = current_time;
                         self.move_sent = true;
                     }
-                } else if self.move_sent {
-                    // Was moving but now blocked - send stop command to server
-                    commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
-                    self.last_dx = 0.0;
-                    self.last_dy = 0.0;
-                    self.last_send_time = current_time;
-                    self.move_sent = false;
+                } else {
+                    // Can't move - face that direction instead
+                    if self.move_sent {
+                        // Was moving, send stop
+                        commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
+                        self.move_sent = false;
+                    }
+                    if should_send {
+                        commands.push(InputCommand::Face { direction: new_dir.to_direction_u8() });
+                        self.last_dx = dx;
+                        self.last_dy = dy;
+                        self.last_send_time = current_time;
+                    }
                 }
             }
         }
