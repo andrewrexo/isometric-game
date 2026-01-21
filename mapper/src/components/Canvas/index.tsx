@@ -75,6 +75,50 @@ export function Canvas() {
     };
   }, []);
 
+  // Arrow key camera movement
+  const heldKeys = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        heldKeys.current.add(e.key);
+        e.preventDefault();
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      heldKeys.current.delete(e.key);
+    };
+
+    let animationId: number;
+    const panLoop = () => {
+      const panAmount = 5;
+      let dx = 0;
+      let dy = 0;
+
+      if (heldKeys.current.has('ArrowUp')) dy += panAmount;
+      if (heldKeys.current.has('ArrowDown')) dy -= panAmount;
+      if (heldKeys.current.has('ArrowLeft')) dx += panAmount;
+      if (heldKeys.current.has('ArrowRight')) dx -= panAmount;
+
+      if (dx !== 0 || dy !== 0) {
+        pan(dx, dy);
+      }
+
+      animationId = requestAnimationFrame(panLoop);
+    };
+
+    animationId = requestAnimationFrame(panLoop);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      cancelAnimationFrame(animationId);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [pan]);
+
   // Update renderer options
   useEffect(() => {
     isometricRenderer.setOptions({
