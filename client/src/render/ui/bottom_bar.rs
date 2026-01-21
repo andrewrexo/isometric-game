@@ -76,14 +76,15 @@ impl Renderer {
         let screen_h = screen_height();
 
         // Position at bottom of screen, aligned with quick slots
-        let button_y = screen_h - EXP_BAR_GAP - MENU_BUTTON_SIZE;
+        // Floor to integer pixels for crisp pixel art
+        let button_y = (screen_h - EXP_BAR_GAP - MENU_BUTTON_SIZE).floor();
 
         // 5 buttons: Inventory, Character, Skills, Social, Settings
         let num_buttons = 5;
         let total_width = num_buttons as f32 * MENU_BUTTON_SIZE + (num_buttons - 1) as f32 * MENU_BUTTON_SPACING;
 
-        // Right-aligned with padding
-        let start_x = screen_w - total_width - 8.0;
+        // Right-aligned with padding, floor to integer pixels
+        let start_x = (screen_w - total_width - 8.0).floor();
 
         // Buttons with their icon frame indices
         let buttons = [
@@ -95,6 +96,7 @@ impl Renderer {
         ];
 
         for (i, (element_id, icon_frame, is_active)) in buttons.iter().enumerate() {
+            // All sizes are integers so x stays on pixel boundaries
             let x = start_x + i as f32 * (MENU_BUTTON_SIZE + MENU_BUTTON_SPACING);
             let y = button_y;
 
@@ -149,9 +151,9 @@ impl Renderer {
             let src_x = icon_frame as f32 * ICON_SIZE;
             let src_rect = Rect::new(src_x, 0.0, ICON_SIZE, ICON_SIZE);
 
-            // Center icon in button (32x32 icon in 40x40 button = 4px padding each side)
-            let icon_x = x + (size - ICON_SIZE) / 2.0;
-            let icon_y = y + (size - ICON_SIZE) / 2.0;
+            // Center icon in button, floor to integer pixels for crisp pixel art
+            let icon_x = (x + (size - ICON_SIZE) / 2.0).floor();
+            let icon_y = (y + (size - ICON_SIZE) / 2.0).floor();
 
             // Tint based on state
             let tint = if is_active {

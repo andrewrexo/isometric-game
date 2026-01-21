@@ -90,8 +90,8 @@ pub const EXP_BAR_FILL_LIGHT: Color = Color::new(0.90, 0.70, 0.25, 1.0);     // 
 // Layout Constants
 // ============================================================================
 
-pub const INV_WIDTH: f32 = 290.0;  // Compact: inventory grid only (was 460 with gear section)
-pub const INV_HEIGHT: f32 = 300.0; // Adjusted for 5x4 grid without gear section
+pub const INV_WIDTH: f32 = 240.0;  // Compact: inventory grid only (4 columns)
+pub const INV_HEIGHT: f32 = 352.0; // Adjusted for 4x5 grid without gear section
 pub const HEADER_HEIGHT: f32 = 40.0;
 pub const FOOTER_HEIGHT: f32 = 30.0;
 pub const GRID_PADDING: f32 = 15.0;
@@ -118,12 +118,12 @@ pub const TRANSACTION_BAR_HEIGHT: f32 = 100.0;
 pub const EXP_BAR_HEIGHT: f32 = 16.0;
 pub const EXP_BAR_GAP: f32 = 8.0;  // Gap between exp bar and UI elements above
 
-// Menu Button Constants
-pub const MENU_BUTTON_SIZE: f32 = 36.0;
+// Menu Button Constants (5 × 45 + 4 × 4 = 241px ≈ 240px for alignment)
+pub const MENU_BUTTON_SIZE: f32 = 45.0;
 pub const MENU_BUTTON_SPACING: f32 = 4.0;
 
-// Quick Slot Constants (32px icon + 2px padding each side + 1px border each side)
-pub const QUICK_SLOT_SIZE: f32 = 38.0;
+// Quick Slot Constants (5 × 45 + 4 × 4 = 241px ≈ 240px for alignment)
+pub const QUICK_SLOT_SIZE: f32 = 45.0;
 pub const QUICK_SLOT_SPACING: f32 = 4.0;
 
 // ============================================================================

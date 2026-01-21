@@ -178,7 +178,7 @@ impl Renderer {
         let content_y = inv_y + FRAME_THICKNESS + HEADER_HEIGHT + 10.0;
         let grid_x = inv_x + GRID_PADDING;
         let grid_y = content_y;
-        let slots_per_row = 5;
+        let slots_per_row = 4;
 
         for i in 0..20 {
             let row = i / slots_per_row;

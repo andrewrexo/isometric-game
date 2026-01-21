@@ -11,8 +11,9 @@ const GEAR_PANEL_PADDING: f32 = 12.0;
 const GEAR_HEADER_HEIGHT: f32 = 24.0;
 const GEAR_GRID_WIDTH: f32 = 3.0 * EQUIP_SLOT_SIZE + 2.0 * EQUIP_SLOT_SPACING; // 122
 const GEAR_GRID_HEIGHT: f32 = 5.0 * EQUIP_SLOT_SIZE + 4.0 * EQUIP_SLOT_SPACING; // 206
-const GEAR_PANEL_WIDTH: f32 = GEAR_GRID_WIDTH + GEAR_PANEL_PADDING * 2.0 + FRAME_THICKNESS * 2.0; // 154
+const GEAR_PANEL_WIDTH: f32 = 240.0; // Unified width to match inventory and other UI panels
 const GEAR_PANEL_HEIGHT: f32 = FRAME_THICKNESS * 2.0 + GEAR_HEADER_HEIGHT + GEAR_PANEL_PADDING + GEAR_GRID_HEIGHT + GEAR_PANEL_PADDING; // ~262
+const STATS_SECTION_GAP: f32 = 8.0; // Gap between equipment grid and stats
 
 impl Renderer {
     /// Render the gear panel when open
@@ -122,8 +123,51 @@ impl Renderer {
             }
         }
 
-        // Footer help text
-        let footer_y = panel_y + GEAR_PANEL_HEIGHT - FRAME_THICKNESS - 18.0;
-        self.draw_text_sharp("[G] Close", panel_x + FRAME_THICKNESS + 8.0, footer_y, 16.0, TEXT_DIM);
+        // Stats section - to the right of equipment grid
+        let stats_x = grid_x + GEAR_GRID_WIDTH + STATS_SECTION_GAP;
+        let stats_y = grid_y;
+        let stats_width = GEAR_PANEL_WIDTH - FRAME_THICKNESS * 2.0 - GEAR_PANEL_PADDING * 2.0 - GEAR_GRID_WIDTH - STATS_SECTION_GAP;
+
+        // Draw stats background
+        let stats_bg = Color::new(SLOT_BG_EMPTY.r, SLOT_BG_EMPTY.g, SLOT_BG_EMPTY.b, 0.5);
+        draw_rectangle(stats_x, stats_y, stats_width, GEAR_GRID_HEIGHT, stats_bg);
+        draw_rectangle_lines(stats_x, stats_y, stats_width, GEAR_GRID_HEIGHT, 1.0, SLOT_BORDER);
+
+        // Get player stats
+        if let Some(player) = state.get_local_player() {
+            let line_height = 24.0;
+            let text_x = stats_x + 6.0;
+            let mut text_y = stats_y + 20.0;
+
+            // HP stat
+            let hp_text = format!("HP: {}/{}", player.hp, player.max_hp);
+            self.draw_text_sharp(&hp_text, text_x, text_y, 16.0, HEALTH_GREEN_MID);
+            text_y += line_height;
+
+            // Combat level
+            let combat_text = format!("Combat: {}", player.combat_level());
+            self.draw_text_sharp(&combat_text, text_x, text_y, 16.0, TEXT_NORMAL);
+            text_y += line_height;
+
+            // Separator line
+            text_y += 4.0;
+            draw_line(stats_x + 4.0, text_y - 10.0, stats_x + stats_width - 4.0, text_y - 10.0, 1.0, SLOT_BORDER);
+
+            // Equipment bonuses
+            let atk_bonus = player.attack_bonus(&state.item_registry);
+            let str_bonus = player.strength_bonus(&state.item_registry);
+            let def_bonus = player.defence_bonus(&state.item_registry);
+
+            let atk_text = format!("ATK: +{}", atk_bonus);
+            self.draw_text_sharp(&atk_text, text_x, text_y, 16.0, CATEGORY_EQUIPMENT);
+            text_y += line_height;
+
+            let str_text = format!("STR: +{}", str_bonus);
+            self.draw_text_sharp(&str_text, text_x, text_y, 16.0, CATEGORY_CONSUMABLE);
+            text_y += line_height;
+
+            let def_text = format!("DEF: +{}", def_bonus);
+            self.draw_text_sharp(&def_text, text_x, text_y, 16.0, CATEGORY_MATERIAL);
+        }
     }
 }
