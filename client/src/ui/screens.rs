@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::auth::{AuthClient, AuthSession, CharacterInfo};
+use crate::audio::AudioManager;
 use crate::render::BitmapFont;
 
 // Sprite sheet constants for character preview
@@ -96,7 +97,7 @@ pub enum ScreenState {
 }
 
 pub trait Screen {
-    fn update(&mut self) -> ScreenState;
+    fn update(&mut self, audio: &AudioManager) -> ScreenState;
     fn render(&self);
 }
 
@@ -187,19 +188,20 @@ impl LoginScreen {
             };
             field.pop();
         }
+    }
+}
 
-        // Tab to switch fields
+impl Screen for LoginScreen {
+    fn update(&mut self, audio: &AudioManager) -> ScreenState {
+        // Tab to switch fields (check before handle_text_input consumes it)
         if is_key_pressed(KeyCode::Tab) {
+            audio.play_sfx("enter");
             self.active_field = match self.active_field {
                 LoginField::Username => LoginField::Password,
                 LoginField::Password => LoginField::Username,
             };
         }
-    }
-}
 
-impl Screen for LoginScreen {
-    fn update(&mut self) -> ScreenState {
         self.handle_text_input();
 
         // Clear error on any input
@@ -450,7 +452,7 @@ impl CharacterSelectScreen {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterSelectScreen {
-    fn update(&mut self) -> ScreenState {
+    fn update(&mut self, _audio: &AudioManager) -> ScreenState {
         let sw = screen_width();
         let sh = screen_height();
         let (mx, my) = mouse_position();
@@ -813,7 +815,7 @@ impl CharacterCreateScreen {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterCreateScreen {
-    fn update(&mut self) -> ScreenState {
+    fn update(&mut self, audio: &AudioManager) -> ScreenState {
         let sw = screen_width();
         let sh = screen_height();
         let (mx, my) = mouse_position();
@@ -910,6 +912,7 @@ impl Screen for CharacterCreateScreen {
 
         // Keyboard: Navigate between fields with Tab or Up/Down
         if is_key_pressed(KeyCode::Tab) || is_key_pressed(KeyCode::Down) {
+            audio.play_sfx("enter");
             self.active_field = match self.active_field {
                 CreateField::Name => CreateField::Gender,
                 CreateField::Gender => CreateField::Skin,
@@ -917,6 +920,7 @@ impl Screen for CharacterCreateScreen {
             };
         }
         if is_key_pressed(KeyCode::Up) {
+            audio.play_sfx("enter");
             self.active_field = match self.active_field {
                 CreateField::Name => CreateField::Skin,
                 CreateField::Gender => CreateField::Name,
@@ -963,6 +967,7 @@ impl Screen for CharacterCreateScreen {
 
         // Keyboard: Create character
         if is_key_pressed(KeyCode::Enter) {
+            audio.play_sfx("enter");
             let name = self.name.trim();
             if name.len() < 2 {
                 self.error_message = Some("Name must be at least 2 characters".to_string());

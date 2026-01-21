@@ -125,6 +125,10 @@ pub struct Renderer {
     pub(crate) menu_button_icons: Option<Texture2D>,
     /// UI icons sprite sheet (24x24 icons in 10x10 grid)
     pub(crate) ui_icons: Option<Texture2D>,
+    /// Small chat icon for quest giver name tags
+    pub(crate) chat_small_icon: Option<Texture2D>,
+    /// Small coin icon for merchant name tags
+    pub(crate) coin_small_icon: Option<Texture2D>,
 }
 
 impl Renderer {
@@ -362,6 +366,29 @@ impl Renderer {
             }
         };
 
+        // Load small icons for NPC name tags
+        let chat_small_icon = match load_texture("assets/ui/chat_small.png").await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                Some(tex)
+            }
+            Err(e) => {
+                log::warn!("Failed to load chat_small icon: {}", e);
+                None
+            }
+        };
+
+        let coin_small_icon = match load_texture("assets/ui/coin_small.png").await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                Some(tex)
+            }
+            Err(e) => {
+                log::warn!("Failed to load coin_small icon: {}", e);
+                None
+            }
+        };
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
@@ -378,6 +405,8 @@ impl Renderer {
             circular_stone_texture,
             menu_button_icons,
             ui_icons,
+            chat_small_icon,
+            coin_small_icon,
         }
     }
 
@@ -1325,6 +1354,16 @@ impl Renderer {
             let name_x = screen_x - total_width / 2.0;
             let name_y = screen_y - name_y_offset + 2.0;
 
+            // Background for readability
+            let padding = 4.0;
+            draw_rectangle(
+                name_x - padding,
+                name_y - 14.0,
+                total_width + padding * 2.0,
+                18.0,
+                Color::from_rgba(0, 0, 0, 180),
+            );
+
             // Draw player name in white
             self.draw_text_sharp(
                 &player.name,
@@ -1467,19 +1506,21 @@ impl Renderer {
         // Top of NPC for UI elements
         let top_y = screen_y - sprite_height + 4.0 * zoom;
 
-        // Interaction indicator for friendly NPCs (icon from ui_icons sprite sheet)
-        // Icon is positioned close to sprite, moves up on hover to make room for name
-        if !npc.is_hostile() {
-            // Determine icon based on NPC role flags (from TOML behaviors)
-            // Quest giver: col 8, row 3 | Merchant: col 8, row 4 (0-indexed)
-            let icon_coords: Option<(u32, u32)> = if npc.is_quest_giver {
+        // Determine icon coords for friendly NPCs (quest givers, merchants)
+        let icon_coords: Option<(u32, u32)> = if !npc.is_hostile() {
+            if npc.is_quest_giver {
                 Some((8, 3))  // Quest giver icon
             } else if npc.is_merchant {
                 Some((8, 4))  // Merchant icon
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
+        // Floating icon indicator - only when NOT hovered (when hovered, icon is in name bar)
+        if !is_hovered && !is_selected {
             if let (Some((icon_col, icon_row)), Some(ref texture)) = (icon_coords, &self.ui_icons) {
                 let icon_size = 24.0;
                 let time = macroquad::time::get_time();
@@ -1488,16 +1529,11 @@ impl Renderer {
                 let phase_offset = (npc.x + npc.y * 1.7) as f64;
 
                 // Pulsing transparency (2 second cycle, 80-100% opacity)
-                let alpha_pulse = ((time * 3.14 + phase_offset).sin() * 0.5 + 0.5) as f32; // 0.0 to 1.0
+                let alpha_pulse = ((time * 3.14 + phase_offset).sin() * 0.5 + 0.5) as f32;
                 let alpha = (204.0 + alpha_pulse * 51.0) as u8; // 204-255 (80-100%)
 
-                // Move icon up when hovered to make room for name
-                let icon_y = if is_hovered {
-                    top_y - 36.0 * zoom  // 16px higher when hovered
-                } else {
-                    top_y - 20.0 * zoom
-                };
                 let icon_x = screen_x - (icon_size * zoom) / 2.0;
+                let icon_y = top_y - 20.0 * zoom;
 
                 let src_rect = Rect::new(
                     icon_col as f32 * icon_size,
@@ -1525,10 +1561,66 @@ impl Renderer {
         if show_name {
             let name = npc.name();
             let name_width = self.measure_text_sharp(&name, 16.0).width;
+            let name_y = top_y - 5.0 * zoom;
+            let padding = 4.0;
+
+            // Get the small icon texture for the name bar
+            let small_icon: Option<&Texture2D> = if npc.is_quest_giver {
+                self.chat_small_icon.as_ref()
+            } else if npc.is_merchant {
+                self.coin_small_icon.as_ref()
+            } else {
+                None
+            };
+
+            let icon_gap = 4.0;  // Gap between icon and text
+
+            // Calculate total width and starting position
+            let (total_width, icon_width) = if let Some(tex) = small_icon {
+                let w = tex.width();
+                (w + icon_gap + name_width, w)
+            } else {
+                (name_width, 0.0)
+            };
+            let content_x = screen_x - total_width / 2.0;
+
+            // Background for readability
+            let bar_height = 18.0;
+            draw_rectangle(
+                content_x - padding,
+                name_y - 14.0,
+                total_width + padding * 2.0,
+                bar_height,
+                Color::from_rgba(0, 0, 0, 180),
+            );
+
+            // Draw small icon if present
+            if let Some(tex) = small_icon {
+                let icon_h = tex.height();
+                // Center icon vertically in the bar
+                let bar_top = name_y - 14.0;
+                let icon_y = bar_top + (bar_height - icon_h) / 2.0;
+
+                draw_texture_ex(
+                    tex,
+                    content_x,
+                    icon_y,
+                    WHITE,
+                    DrawTextureParams::default(),
+                );
+            }
+
+            // Draw name text (offset by icon if present)
+            let text_x = if small_icon.is_some() {
+                content_x + icon_width + icon_gap
+            } else {
+                content_x
+            };
+
             self.draw_text_sharp(
                 &name,
-                screen_x - name_width / 2.0,
-                top_y - 5.0 * zoom,
+                text_x,
+                name_y,
                 16.0,
                 name_color,
             );

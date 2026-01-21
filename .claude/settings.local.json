@@ -26,7 +26,8 @@
       "Bash(sips:*)",
       "Bash(identify:*)",
       "Skill(superpowers:systematic-debugging)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Skill(superpowers:brainstorming)"
     ]
   }
 }

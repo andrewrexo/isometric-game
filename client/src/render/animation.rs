@@ -60,7 +60,7 @@ pub fn get_animation_config(state: AnimationState) -> AnimationConfig {
         // Walking is directional - down/right on row 0, up/left on row 1
         AnimationState::Walking => AnimationConfig::new(0, 4, 10.0, true, true),
         // Attacking is directional - down/right frames 0-1, up/left frames 2-3 on row 2
-        AnimationState::Attacking => AnimationConfig::new(2, 2, 6.0, false, true),
+        AnimationState::Attacking => AnimationConfig::new(2, 2, 7.0, false, true),
         // Sitting chair on row 2, frames 4-5
         AnimationState::SittingChair => AnimationConfig::new(2, 2, 1.0, true, false),
         // Sitting ground on row 3, frames 0-1

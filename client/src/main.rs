@@ -112,7 +112,7 @@ async fn main() {
 
             match &mut app_state {
                 AppState::Login(screen) => {
-                    let result = screen.update();
+                    let result = screen.update(&audio);
                     screen.render();
 
                     match result {
@@ -146,7 +146,7 @@ async fn main() {
                 }
 
                 AppState::CharacterSelect(screen) => {
-                    let result = screen.update();
+                    let result = screen.update(&audio);
                     screen.render();
 
                     match result {
@@ -191,7 +191,7 @@ async fn main() {
                 }
 
                 AppState::CharacterCreate(screen) => {
-                    let result = screen.update();
+                    let result = screen.update(&audio);
                     screen.render();
 
                     match result {
