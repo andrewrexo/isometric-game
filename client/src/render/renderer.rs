@@ -6,7 +6,7 @@ use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
 use super::ui::common::{SlotState, CORNER_ACCENT_SIZE};
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
-use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, NpcAnimation};
+use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset};
 use super::font::BitmapFont;
 
 /// Timing data from a render pass
@@ -105,6 +105,8 @@ pub struct Renderer {
     player_sprites: HashMap<String, Texture2D>,
     /// Equipment sprite sheets by item ID (e.g., "peasant_suit")
     equipment_sprites: HashMap<String, Texture2D>,
+    /// Weapon sprite sheets by item ID (e.g., "goblin_axe")
+    weapon_sprites: HashMap<String, Texture2D>,
     /// Item inventory sprites by item ID (sprite sheets with icon on left half)
     pub(crate) item_sprites: HashMap<String, Texture2D>,
     /// Map object sprites by filename number (e.g., "101" -> Texture2D)
@@ -184,6 +186,31 @@ impl Renderer {
             }
         }
         log::info!("Loaded {} equipment sprite variants", equipment_sprites.len());
+
+        // Load weapon sprites from assets/sprites/weapons/ (scan directory)
+        let mut weapon_sprites = HashMap::new();
+        if let Ok(entries) = std::fs::read_dir("assets/sprites/weapons") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "png") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        let item_id = stem.to_string();
+                        let path_str = path.to_string_lossy().to_string();
+                        match load_texture(&path_str).await {
+                            Ok(tex) => {
+                                tex.set_filter(FilterMode::Nearest);
+                                log::info!("Loaded weapon sprite: {} ({}x{})", item_id, tex.width(), tex.height());
+                                weapon_sprites.insert(item_id, tex);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load weapon sprite {}: {}", path_str, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        log::info!("Loaded {} weapon sprite variants", weapon_sprites.len());
 
         // Load item inventory sprites from assets/sprites/inventory/ (scan directory)
         let mut item_sprites = HashMap::new();
@@ -341,6 +368,7 @@ impl Renderer {
             tileset,
             player_sprites,
             equipment_sprites,
+            weapon_sprites,
             item_sprites,
             object_sprites,
             npc_sprites,
@@ -1149,6 +1177,41 @@ impl Renderer {
             let draw_x = screen_x - scaled_sprite_width / 2.0;
             let draw_y = screen_y - scaled_sprite_height + 8.0 * zoom; // Offset to align feet with tile
 
+            // Calculate weapon frame info if weapon is equipped
+            let weapon_info = player.equipped_weapon.as_ref().and_then(|weapon_id| {
+                self.weapon_sprites.get(weapon_id).map(|weapon_sprite| {
+                    let anim_frame = player.animation.frame as u32;
+                    let weapon_frame = get_weapon_frame(player.animation.state, player.animation.direction, anim_frame);
+                    let (offset_x, offset_y) = get_weapon_offset(player.animation.state, player.animation.direction, anim_frame);
+                    (weapon_sprite, weapon_frame, offset_x, offset_y)
+                })
+            });
+
+            // Scaled weapon dimensions
+            let scaled_weapon_width = WEAPON_SPRITE_WIDTH * zoom;
+            let scaled_weapon_height = WEAPON_SPRITE_HEIGHT * zoom;
+
+            // Draw weapon under-layer (before player sprite)
+            if let Some((weapon_sprite, ref weapon_frame, offset_x, offset_y)) = weapon_info {
+                let weapon_src_x = weapon_frame.frame_under as f32 * WEAPON_SPRITE_WIDTH;
+                let weapon_draw_x = draw_x + offset_x * zoom;
+                let weapon_draw_y = draw_y + offset_y * zoom;
+
+                draw_texture_ex(
+                    weapon_sprite,
+                    weapon_draw_x,
+                    weapon_draw_y,
+                    tint,
+                    DrawTextureParams {
+                        source: Some(Rect::new(weapon_src_x, 0.0, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT)),
+                        dest_size: Some(Vec2::new(scaled_weapon_width, scaled_weapon_height)),
+                        flip_x: weapon_frame.flip_h,
+                        ..Default::default()
+                    },
+                );
+            }
+
+            // Draw player sprite
             draw_texture_ex(
                 sprite,
                 draw_x,
@@ -1192,6 +1255,28 @@ impl Renderer {
                             source: Some(Rect::new(src_x, src_y, src_w, src_h)),
                             dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
                             flip_x: coords.flip_h,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+
+            // Draw weapon over-layer (after equipment, for attack frame 2 front overlay)
+            if let Some((weapon_sprite, ref weapon_frame, offset_x, offset_y)) = weapon_info {
+                if let Some(frame_over) = weapon_frame.frame_over {
+                    let weapon_src_x = frame_over as f32 * WEAPON_SPRITE_WIDTH;
+                    let weapon_draw_x = draw_x + offset_x * zoom;
+                    let weapon_draw_y = draw_y + offset_y * zoom;
+
+                    draw_texture_ex(
+                        weapon_sprite,
+                        weapon_draw_x,
+                        weapon_draw_y,
+                        tint,
+                        DrawTextureParams {
+                            source: Some(Rect::new(weapon_src_x, 0.0, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT)),
+                            dest_size: Some(Vec2::new(scaled_weapon_width, scaled_weapon_height)),
+                            flip_x: weapon_frame.flip_h,
                             ..Default::default()
                         },
                     );

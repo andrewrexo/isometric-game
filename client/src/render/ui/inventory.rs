@@ -238,16 +238,6 @@ impl Renderer {
             }
         }
 
-        // ===== FOOTER SECTION =====
-        let footer_x = inv_x + FRAME_THICKNESS;
-        let footer_y = inv_y + INV_HEIGHT - FRAME_THICKNESS - FOOTER_HEIGHT;
-        let footer_w = INV_WIDTH - FRAME_THICKNESS * 2.0;
-
-        draw_rectangle(footer_x, footer_y, footer_w, FOOTER_HEIGHT, FOOTER_BG);
-        draw_line(footer_x + 10.0, footer_y, footer_x + footer_w - 10.0, footer_y, 1.0, HEADER_BORDER);
-
-        self.draw_text_sharp("[I] Close", footer_x + 10.0, footer_y + 20.0, 16.0, TEXT_DIM);
-        self.draw_text_sharp("Right-click: Options", footer_x + 90.0, footer_y + 20.0, 16.0, Color::new(0.392, 0.392, 0.431, 1.0));
     }
 
     pub(crate) fn draw_item_icon(&self, item_id: &str, x: f32, y: f32, slot_width: f32, slot_height: f32, state: &GameState, with_backdrop: bool) {

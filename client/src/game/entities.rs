@@ -9,6 +9,10 @@ pub enum Direction {
     Left = 1,
     Up = 2,
     Right = 3,
+    DownLeft = 4,
+    DownRight = 5,
+    UpLeft = 6,
+    UpRight = 7,
 }
 
 impl Default for Direction {
@@ -24,6 +28,10 @@ impl Direction {
             1 => Direction::Left,
             2 => Direction::Up,
             3 => Direction::Right,
+            4 => Direction::DownLeft,
+            5 => Direction::DownRight,
+            6 => Direction::UpLeft,
+            7 => Direction::UpRight,
             _ => Direction::Down,
         }
     }
@@ -35,11 +43,19 @@ impl Direction {
             return Direction::Down;
         }
 
-        // Use 4 quadrants: vertical axis takes priority when |dy| > |dx|
-        if dy.abs() > dx.abs() {
-            if dy < 0.0 { Direction::Up } else { Direction::Down }
-        } else {
-            if dx < 0.0 { Direction::Left } else { Direction::Right }
+        let angle = dy.atan2(dx);
+        let octant = ((angle + std::f32::consts::PI) / (std::f32::consts::PI / 4.0)) as i32 % 8;
+
+        match octant {
+            0 => Direction::Left,
+            1 => Direction::UpLeft,
+            2 => Direction::Up,
+            3 => Direction::UpRight,
+            4 => Direction::Right,
+            5 => Direction::DownRight,
+            6 => Direction::Down,
+            7 => Direction::DownLeft,
+            _ => Direction::Down,
         }
     }
 
@@ -49,6 +65,10 @@ impl Direction {
             Direction::Up => (0.0, -1.0),
             Direction::Left => (-1.0, 0.0),
             Direction::Right => (1.0, 0.0),
+            Direction::DownLeft => (-0.707, 0.707),
+            Direction::DownRight => (0.707, 0.707),
+            Direction::UpLeft => (-0.707, -0.707),
+            Direction::UpRight => (0.707, -0.707),
         }
     }
 }
@@ -324,6 +344,9 @@ impl Player {
 
             self.is_moving = true;
             actually_moving = true;
+
+            // Update direction from actual movement vector, not stored velocity
+            self.direction = Direction::from_velocity(dx, dy);
         }
 
         // Update animation state based on movement and actions

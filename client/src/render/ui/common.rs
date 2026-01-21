@@ -91,7 +91,7 @@ pub const EXP_BAR_FILL_LIGHT: Color = Color::new(0.90, 0.70, 0.25, 1.0);     // 
 // ============================================================================
 
 pub const INV_WIDTH: f32 = 240.0;  // Compact: inventory grid only (4 columns)
-pub const INV_HEIGHT: f32 = 352.0; // Adjusted for 4x5 grid without gear section
+pub const INV_HEIGHT: f32 = 322.0; // 4x5 grid without footer
 pub const HEADER_HEIGHT: f32 = 40.0;
 pub const FOOTER_HEIGHT: f32 = 30.0;
 pub const GRID_PADDING: f32 = 15.0;
