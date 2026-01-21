@@ -313,109 +313,94 @@ attack_bonus = 55
 strength_bonus = 62
 defence_bonus = 0
 
-[bronze_sword]
-display_name = "Bronze Sword"
-sprite = "bronze_sword"
-description = "A basic sword made of bronze."
-category = "equipment"
-max_stack = 1
-base_price = 50
-sellable = true
-[bronze_sword.equipment]
-slot_type = "weapon"
-attack_level_required = 1
-attack_bonus = 4
-strength_bonus = 5
-defence_bonus = 0
-
-[iron_sword]
-display_name = "Iron Sword"
-sprite = "iron_sword"
-description = "A sturdy iron blade."
+[steel_sword]
+display_name = "Steel Sword"
+sprite = "steel_sword"
+description = "A basic sword made of steel."
 category = "equipment"
 max_stack = 1
 base_price = 150
 sellable = true
-[iron_sword.equipment]
+[steel_sword.equipment]
 slot_type = "weapon"
-attack_level_required = 10
-attack_bonus = 10
+attack_level_required = 1
+attack_bonus = 5
+strength_bonus = 5
+defence_bonus = 0
+
+[chain]
+display_name = "Chain"
+sprite = "chain"
+description = "A heavy chain that can be swung as a weapon."
+category = "equipment"
+max_stack = 1
+base_price = 80
+sellable = true
+[chain.equipment]
+slot_type = "weapon"
+attack_level_required = 5
+attack_bonus = 8
 strength_bonus = 12
 defence_bonus = 0
 
-[steel_sword]
-display_name = "Steel Sword"
-sprite = "steel_sword"
-description = "A well-forged steel sword."
+[rapier]
+display_name = "Rapier"
+sprite = "rapier"
+description = "A slender, sharply pointed sword for thrusting attacks."
 category = "equipment"
 max_stack = 1
-base_price = 400
+base_price = 200
 sellable = true
-[steel_sword.equipment]
+[rapier.equipment]
 slot_type = "weapon"
-attack_level_required = 20
+attack_level_required = 15
 attack_bonus = 18
-strength_bonus = 20
+strength_bonus = 10
 defence_bonus = 0
 
-[mithril_sword]
-display_name = "Mithril Sword"
-sprite = "mithril_sword"
-description = "A lightweight but deadly mithril blade."
+[gutter_blade]
+display_name = "Gutter Blade"
+sprite = "gutter_blade"
+description = "A wicked blade forged in the sewers of the underworld."
 category = "equipment"
 max_stack = 1
-base_price = 1000
+base_price = 450
 sellable = true
-[mithril_sword.equipment]
+[gutter_blade.equipment]
 slot_type = "weapon"
 attack_level_required = 30
-attack_bonus = 28
-strength_bonus = 30
+attack_bonus = 30
+strength_bonus = 35
 defence_bonus = 0
 
-[adamant_sword]
-display_name = "Adamant Sword"
-sprite = "adamant_sword"
-description = "A powerful sword forged from adamantite."
+[long_bow]
+display_name = "Long Bow"
+sprite = "long_bow"
+description = "A tall bow for long-range attacks."
 category = "equipment"
 max_stack = 1
-base_price = 2500
+base_price = 250
 sellable = true
-[adamant_sword.equipment]
+[long_bow.equipment]
 slot_type = "weapon"
-attack_level_required = 40
-attack_bonus = 38
-strength_bonus = 42
+attack_level_required = 20
+attack_bonus = 25
+strength_bonus = 18
 defence_bonus = 0
 
-[rune_sword]
-display_name = "Rune Sword"
-sprite = "rune_sword"
-description = "An ancient runite sword of great power."
+[dark_bow]
+display_name = "Dark Bow"
+sprite = "dark_bow"
+description = "A bow imbued with dark magic. Fires with devastating power."
 category = "equipment"
 max_stack = 1
-base_price = 6000
+base_price = 1500
 sellable = true
-[rune_sword.equipment]
+[dark_bow.equipment]
 slot_type = "weapon"
 attack_level_required = 50
-attack_bonus = 50
+attack_bonus = 48
 strength_bonus = 55
-defence_bonus = 0
-
-[dragon_sword]
-display_name = "Dragon Sword"
-sprite = "dragon_sword"
-description = "A legendary blade forged in dragon fire."
-category = "equipment"
-max_stack = 1
-base_price = 15000
-sellable = true
-[dragon_sword.equipment]
-slot_type = "weapon"
-attack_level_required = 60
-attack_bonus = 65
-strength_bonus = 70
 defence_bonus = 0
 
 # =============================================================================
