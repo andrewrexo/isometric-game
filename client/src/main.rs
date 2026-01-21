@@ -97,6 +97,9 @@ async fn main() {
     // Native build with auth flow
     #[cfg(not(target_arch = "wasm32"))]
     {
+        // Start menu music
+        audio.play_music("assets/audio/menu.ogg").await;
+
         let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
         login_screen.load_font().await;
         let mut app_state = AppState::Login(login_screen);
@@ -210,8 +213,8 @@ async fn main() {
 
                     // Check for disconnect request
                     if game_state.disconnect_requested {
-                        // Stop music and disconnect from server
-                        audio.stop_music();
+                        // Switch to menu music and disconnect from server
+                        audio.play_music("assets/audio/menu.ogg").await;
                         network.disconnect();
                         let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
                         login_screen.load_font().await;
@@ -222,7 +225,7 @@ async fn main() {
                     // Check for reconnection failure (server disconnected and retries exhausted)
                     if game_state.reconnection_failed {
                         log::info!("Reconnection failed, returning to login screen");
-                        audio.stop_music();
+                        audio.play_music("assets/audio/menu.ogg").await;
                         network.disconnect();
                         let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
                         login_screen.load_font().await;
