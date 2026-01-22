@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use macroquad::models::{Mesh, Vertex, draw_mesh};
 use std::collections::HashMap;
 use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction};
 use crate::game::npc::{Npc, NpcState};
@@ -737,6 +738,121 @@ impl Renderer {
         }
     }
 
+    /// Create a mesh for a rounded rectangle with optional tail (no overlapping geometry)
+    fn create_rounded_rect_mesh(x: f32, y: f32, w: f32, h: f32, r: f32, color: Color) -> Mesh {
+        Self::create_bubble_mesh(x, y, w, h, r, color, None)
+    }
+
+    /// Create a mesh for a chat bubble with tail (no overlapping geometry)
+    fn create_bubble_mesh(x: f32, y: f32, w: f32, h: f32, r: f32, color: Color, tail: Option<(f32, f32, f32)>) -> Mesh {
+        let color_arr = [
+            (color.r * 255.0) as u8,
+            (color.g * 255.0) as u8,
+            (color.b * 255.0) as u8,
+            (color.a * 255.0) as u8,
+        ];
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        // Helper to add a vertex
+        let mut add_vertex = |px: f32, py: f32| -> u16 {
+            let idx = vertices.len() as u16;
+            vertices.push(Vertex {
+                position: Vec3::new(px, py, 0.0),
+                uv: Vec2::ZERO,
+                color: color_arr,
+                normal: Vec4::ZERO,
+            });
+            idx
+        };
+
+        // Corner circle segment count
+        let segments = 8;
+
+        // Center rectangle vertices (4 corners where the rounded corners meet)
+        let c_tl = add_vertex(x + r, y + r);     // top-left inner corner
+        let c_tr = add_vertex(x + w - r, y + r); // top-right inner corner
+        let c_bl = add_vertex(x + r, y + h - r); // bottom-left inner corner
+        let c_br = add_vertex(x + w - r, y + h - r); // bottom-right inner corner
+
+        // Center rectangle (2 triangles)
+        indices.extend_from_slice(&[c_tl, c_tr, c_br, c_tl, c_br, c_bl]);
+
+        // Top edge strip
+        let t_tl = add_vertex(x + r, y);
+        let t_tr = add_vertex(x + w - r, y);
+        indices.extend_from_slice(&[t_tl, t_tr, c_tr, t_tl, c_tr, c_tl]);
+
+        // Bottom edge strip
+        let b_bl = add_vertex(x + r, y + h);
+        let b_br = add_vertex(x + w - r, y + h);
+        indices.extend_from_slice(&[c_bl, c_br, b_br, c_bl, b_br, b_bl]);
+
+        // Left edge strip
+        let l_tl = add_vertex(x, y + r);
+        let l_bl = add_vertex(x, y + h - r);
+        indices.extend_from_slice(&[l_tl, c_tl, c_bl, l_tl, c_bl, l_bl]);
+
+        // Right edge strip
+        let r_tr = add_vertex(x + w, y + r);
+        let r_br = add_vertex(x + w, y + h - r);
+        indices.extend_from_slice(&[c_tr, r_tr, r_br, c_tr, r_br, c_br]);
+
+        // Corner fans (quarter circles)
+        use std::f32::consts::PI;
+
+        // Top-left corner (180° to 270°)
+        let mut prev = l_tl; // starts at left edge
+        for i in 1..=segments {
+            let angle = PI + (PI / 2.0) * (i as f32 / segments as f32);
+            let px = x + r + r * angle.cos();
+            let py = y + r + r * angle.sin();
+            let curr = add_vertex(px, py);
+            indices.extend_from_slice(&[c_tl, prev, curr]);
+            prev = curr;
+        }
+
+        // Top-right corner (270° to 360°)
+        prev = t_tr; // starts at top edge
+        for i in 1..=segments {
+            let angle = PI * 1.5 + (PI / 2.0) * (i as f32 / segments as f32);
+            let px = x + w - r + r * angle.cos();
+            let py = y + r + r * angle.sin();
+            let curr = add_vertex(px, py);
+            indices.extend_from_slice(&[c_tr, prev, curr]);
+            prev = curr;
+        }
+
+        // Bottom-right corner (0° to 90°)
+        prev = r_br; // starts at right edge
+        for i in 1..=segments {
+            let angle = (PI / 2.0) * (i as f32 / segments as f32);
+            let px = x + w - r + r * angle.cos();
+            let py = y + h - r + r * angle.sin();
+            let curr = add_vertex(px, py);
+            indices.extend_from_slice(&[c_br, prev, curr]);
+            prev = curr;
+        }
+
+        // Bottom-left corner (90° to 180°)
+        prev = b_bl; // starts at bottom edge
+        for i in 1..=segments {
+            let angle = PI / 2.0 + (PI / 2.0) * (i as f32 / segments as f32);
+            let px = x + r + r * angle.cos();
+            let py = y + h - r + r * angle.sin();
+            let curr = add_vertex(px, py);
+            indices.extend_from_slice(&[c_bl, prev, curr]);
+            prev = curr;
+        }
+
+        Mesh {
+            vertices,
+            indices,
+            texture: None,
+        }
+    }
+
     /// Render chat bubbles above players' heads
     fn render_chat_bubbles(&self, state: &GameState) {
         let current_time = macroquad::time::get_time();
@@ -766,11 +882,12 @@ impl Renderer {
             let max_bubble_width = 220.0;
             let font_size = 16.0;
             let line_height = 18.0;
-            let padding = 2.0;
+            let padding_h = 4.0;
+            let padding_v = 1.0;
             let tail_height = 6.0;
-            let corner_radius = 3.0;
+            let corner_radius = 5.0;
 
-            let lines = self.wrap_text(&bubble.text, max_bubble_width - padding * 2.0, font_size);
+            let lines = self.wrap_text(&bubble.text, max_bubble_width - padding_h * 2.0, font_size);
             let num_lines = lines.len().max(1);
 
             // Calculate bubble dimensions
@@ -780,79 +897,82 @@ impl Renderer {
                 max_line_width = max_line_width.max(width);
             }
 
-            let bubble_width = (max_line_width + padding * 2.0).max(30.0);
-            let bubble_height = num_lines as f32 * line_height + padding * 2.0;
+            let bubble_width = (max_line_width + padding_h * 2.0).max(18.0);
+            let bubble_height = num_lines as f32 * line_height + padding_v * 2.0;
 
-            // Position bubble above player (above name tag)
+            // Position bubble above player's head
+            // Base offset: sprite height (78) minus feet offset (8) = 70, scaled by zoom
+            let zoom = state.camera.zoom;
+            let base_offset = (SPRITE_HEIGHT - 8.0) * zoom;
+
+            // Check if name tag is showing (hovered or selected) - need extra space
+            let is_hovered = state.hovered_entity_id.as_ref() == Some(&bubble.player_id);
+            let is_selected = state.selected_entity_id.as_ref() == Some(&bubble.player_id);
+            let name_offset = if is_hovered || is_selected { 16.0 } else { 0.0 };
+
             let bubble_x = screen_x - bubble_width / 2.0;
-            let bubble_y = screen_y - 75.0 - bubble_height - tail_height;
+            let bubble_y = screen_y - base_offset - name_offset - bubble_height - tail_height;
 
             // Colors with alpha - off-white paper/comic book style
-            let bg_color = Color::from_rgba(255, 250, 240, alpha); // Warm off-white/cream
+            let bg_alpha = (alpha as f32 * 0.8) as u8; // 80% opacity for background
+            let bg_color = Color::from_rgba(255, 250, 240, bg_alpha); // Warm off-white/cream
             let border_color = Color::from_rgba(60, 50, 40, alpha); // Dark brown border
             let text_color = Color::from_rgba(30, 25, 20, alpha); // Dark brown text
 
-            // Draw rounded rectangle bubble body (pixel-aligned for clean edges)
-            // Using chamfered corners - no circles, just two overlapping rectangles
+            // Draw rounded rectangle bubble body using mesh (no overlapping geometry)
             let r = corner_radius;
             let bx = bubble_x.floor();
             let by = bubble_y.floor();
             let bw = bubble_width.floor();
             let bh = bubble_height.floor();
 
-            // Horizontal strip (full width, inset top/bottom by radius)
-            draw_rectangle(bx, by + r, bw, bh - r * 2.0, bg_color);
-            // Vertical strip (full height, inset left/right by radius)
-            draw_rectangle(bx + r, by, bw - r * 2.0, bh, bg_color);
-            // Corner triangles to fill the chamfered corners
-            // Top-left
-            draw_triangle(Vec2::new(bx, by + r), Vec2::new(bx + r, by), Vec2::new(bx + r, by + r), bg_color);
-            // Top-right
-            draw_triangle(Vec2::new(bx + bw - r, by), Vec2::new(bx + bw, by + r), Vec2::new(bx + bw - r, by + r), bg_color);
-            // Bottom-left
-            draw_triangle(Vec2::new(bx, by + bh - r), Vec2::new(bx + r, by + bh - r), Vec2::new(bx + r, by + bh), bg_color);
-            // Bottom-right
-            draw_triangle(Vec2::new(bx + bw - r, by + bh - r), Vec2::new(bx + bw, by + bh - r), Vec2::new(bx + bw - r, by + bh), bg_color);
+            // Draw border first (slightly larger rounded rect)
+            let border_mesh = Self::create_rounded_rect_mesh(bx - 1.0, by - 1.0, bw + 2.0, bh + 2.0, r + 1.0, border_color);
+            draw_mesh(&border_mesh);
 
-            // Draw tail (triangle pointing down)
+            // Draw fill on top using mesh (no overlapping = no alpha stacking)
+            let fill_mesh = Self::create_rounded_rect_mesh(bx, by, bw, bh, r, bg_color);
+            draw_mesh(&fill_mesh);
+
+            // Draw tail
             let tail_x = screen_x.floor();
             let tail_top_y = by + bh;
             let tail_bottom_y = tail_top_y + tail_height;
-            let tail_half_width = 5.0;
+            let tail_half_width = 4.0;
 
+            // Tail border
             draw_triangle(
-                Vec2::new(tail_x - tail_half_width, tail_top_y),
-                Vec2::new(tail_x + tail_half_width, tail_top_y),
-                Vec2::new(tail_x, tail_bottom_y),
-                bg_color,
+                Vec2::new(tail_x - tail_half_width - 1.0, tail_top_y),
+                Vec2::new(tail_x + tail_half_width + 1.0, tail_top_y),
+                Vec2::new(tail_x, tail_bottom_y + 1.0),
+                border_color,
             );
+            // Tail fill - use a mesh vertex approach to match the bubble's alpha exactly
+            // Create a small mesh for just the tail triangle
+            let tail_color_arr = [
+                (bg_color.r * 255.0) as u8,
+                (bg_color.g * 255.0) as u8,
+                (bg_color.b * 255.0) as u8,
+                (bg_color.a * 255.0) as u8,
+            ];
+            let tail_mesh = Mesh {
+                vertices: vec![
+                    Vertex { position: Vec3::new(tail_x - tail_half_width, tail_top_y, 0.0), uv: Vec2::ZERO, color: tail_color_arr, normal: Vec4::ZERO },
+                    Vertex { position: Vec3::new(tail_x + tail_half_width, tail_top_y, 0.0), uv: Vec2::ZERO, color: tail_color_arr, normal: Vec4::ZERO },
+                    Vertex { position: Vec3::new(tail_x, tail_bottom_y, 0.0), uv: Vec2::ZERO, color: tail_color_arr, normal: Vec4::ZERO },
+                ],
+                indices: vec![0, 1, 2],
+                texture: None,
+            };
+            draw_mesh(&tail_mesh);
 
-            // Draw border - rounded corners with lines
-            // Top edge
-            draw_line(bx + r, by, bx + bw - r, by, 1.0, border_color);
-            // Bottom edge (with gap for tail)
-            draw_line(bx + r, by + bh, tail_x - tail_half_width, by + bh, 1.0, border_color);
-            draw_line(tail_x + tail_half_width, by + bh, bx + bw - r, by + bh, 1.0, border_color);
-            // Left edge
-            draw_line(bx, by + r, bx, by + bh - r, 1.0, border_color);
-            // Right edge
-            draw_line(bx + bw, by + r, bx + bw, by + bh - r, 1.0, border_color);
-            // Corner arcs (diagonal lines for pixel-art look)
-            // Top-left
-            draw_line(bx, by + r, bx + r, by, 1.0, border_color);
-            // Top-right
-            draw_line(bx + bw - r, by, bx + bw, by + r, 1.0, border_color);
-            // Bottom-left
-            draw_line(bx, by + bh - r, bx + r, by + bh, 1.0, border_color);
-            // Bottom-right
-            draw_line(bx + bw - r, by + bh, bx + bw, by + bh - r, 1.0, border_color);
-            // Tail edges
+            // Tail border lines
             draw_line(tail_x - tail_half_width, tail_top_y, tail_x, tail_bottom_y, 1.0, border_color);
             draw_line(tail_x + tail_half_width, tail_top_y, tail_x, tail_bottom_y, 1.0, border_color);
 
             // Draw text lines (centered)
             let bubble_center_x = bx + bw / 2.0;
-            let mut text_y = by + padding + font_size * 0.85;
+            let mut text_y = by + padding_v + font_size * 0.85;
 
             for line in &lines {
                 let line_width = self.measure_text_sharp(line, font_size).width;
@@ -1901,7 +2021,7 @@ impl Renderer {
             // Fade out after 6 seconds (announcements last 8 seconds total)
             let alpha = if age > 6.0 { ((8.0 - age) / 2.0 * 255.0) as u8 } else { 255 };
 
-            let font_size = 24.0;
+            let font_size = 32.0;
             let text = format!("[ANNOUNCEMENT] {}", announcement.text);
             let text_dims = self.measure_text_sharp(&text, font_size);
             let text_x = (screen_width() - text_dims.width) / 2.0;
@@ -1909,11 +2029,13 @@ impl Renderer {
 
             // Dark background for visibility
             let padding = 10.0;
+            let rect_h = text_dims.height + padding;
+            let rect_y = text_y - text_dims.offset_y - padding / 2.0;
             draw_rectangle(
                 text_x - padding,
-                text_y - font_size - padding / 2.0,
+                rect_y,
                 text_dims.width + padding * 2.0,
-                font_size + padding,
+                rect_h,
                 Color::from_rgba(0, 0, 0, (180.0 * alpha as f32 / 255.0) as u8),
             );
 

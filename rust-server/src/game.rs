@@ -3063,9 +3063,8 @@ impl GameRoom {
             .unwrap()
             .as_millis() as u64;
 
-        // Center item on tile (add 0.5 to tile coordinates)
-        let drop_x = player_x as f32 + 0.5;
-        let drop_y = player_y as f32 + 0.5;
+        let drop_x = player_x as f32;
+        let drop_y = player_y as f32;
 
         let ground_item = GroundItem::new(
             &uuid::Uuid::new_v4().to_string(),

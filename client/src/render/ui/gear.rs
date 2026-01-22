@@ -50,7 +50,7 @@ impl Renderer {
         );
 
         // Header text
-        let header_text = "GEAR";
+        let header_text = "CHARACTER";
         let text_dims = self.measure_text_sharp(header_text, 16.0);
         let text_x = header_x + (header_w - text_dims.width) / 2.0;
         self.draw_text_sharp(header_text, text_x, header_y + 17.0, 16.0, TEXT_TITLE);
