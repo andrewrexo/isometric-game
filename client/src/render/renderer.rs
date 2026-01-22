@@ -1001,9 +1001,11 @@ impl Renderer {
             let (world_x, world_y) = projectile.current_pos(current_time);
             let (screen_x, screen_y) = world_to_screen(world_x, world_y, &state.camera);
 
-            // Calculate direction and snap to 8 directions (45° increments)
-            let dx = projectile.end_x - projectile.start_x;
-            let dy = projectile.end_y - projectile.start_y;
+            // Calculate direction in SCREEN space (accounts for isometric transform)
+            let (start_screen_x, start_screen_y) = world_to_screen(projectile.start_x, projectile.start_y, &state.camera);
+            let (end_screen_x, end_screen_y) = world_to_screen(projectile.end_x, projectile.end_y, &state.camera);
+            let dx = end_screen_x - start_screen_x;
+            let dy = end_screen_y - start_screen_y;
             let angle = dy.atan2(dx);
 
             // Snap to nearest 45° (π/4 radians)
