@@ -1579,6 +1579,33 @@ impl InputHandler {
                 log::info!("Space held - sending Attack command");
                 commands.push(InputCommand::Attack);
                 self.last_attack_time = current_time;
+
+                // Set attack animation based on weapon type
+                // First, determine the animation type by reading weapon info
+                let anim_state = if let Some(player) = state.get_local_player() {
+                    if let Some(ref weapon_id) = player.equipped_weapon {
+                        if let Some(item_def) = state.item_registry.get(weapon_id) {
+                            if item_def.weapon_type.as_deref() == Some("ranged") {
+                                AnimationState::ShootingBow
+                            } else {
+                                AnimationState::Attacking
+                            }
+                        } else {
+                            AnimationState::Attacking
+                        }
+                    } else {
+                        AnimationState::Attacking
+                    }
+                } else {
+                    AnimationState::Attacking
+                };
+
+                // Now apply the animation to the player
+                if let Some(local_id) = &state.local_player_id.clone() {
+                    if let Some(player) = state.players.get_mut(local_id) {
+                        player.animation.set_state(anim_state);
+                    }
+                }
             }
         }
 
