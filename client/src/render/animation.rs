@@ -68,7 +68,7 @@ pub fn get_animation_config(state: AnimationState) -> AnimationConfig {
         // Casting on row 1, frames 4-5
         AnimationState::Casting => AnimationConfig::new(1, 2, 6.0, false, false),
         // Shooting bow on row 3, frame 2 for down/right, frame 3 for up/left (single frame per direction)
-        AnimationState::ShootingBow => AnimationConfig::new(3, 1, 8.0, false, false),
+        AnimationState::ShootingBow => AnimationConfig::new(3, 1, 7.0, false, false),
     }
 }
 
@@ -472,7 +472,7 @@ pub fn get_weapon_offset(state: AnimationState, direction: Direction, anim_frame
             }
         }
         AnimationState::Casting => (0.0, 0.0),
-        AnimationState::ShootingBow => (0.0, 0.0),
+        AnimationState::ShootingBow => (-8.0, 0.0), // Shift bow left (mirrored for right/up)
         AnimationState::SittingGround | AnimationState::SittingChair => (0.0, 0.0),
     };
 
