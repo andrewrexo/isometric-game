@@ -6,7 +6,7 @@ use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
 use super::ui::common::{SlotState, CORNER_ACCENT_SIZE};
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
-use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset};
+use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, AnimationState};
 use super::font::BitmapFont;
 
 /// Timing data from a render pass
@@ -1291,10 +1291,25 @@ impl Renderer {
                     let scaled_hair_width = HAIR_SPRITE_WIDTH * zoom;
                     let scaled_hair_height = HAIR_SPRITE_HEIGHT * zoom;
 
-                    // Hair offset: 3 pixels up, 1 pixel left (when not flipped)
-                    // When flipped, x offset is mirrored
-                    let hair_offset_x = if coords.flip_h { 1.0 } else { -1.0 };
-                    let hair_offset_y = -3.0;
+                    // Hair offsets depend on animation state and frame
+                    // Attack offsets only apply on 2nd frame (frame index 1)
+                    let is_attack_frame_2 = player.animation.state == AnimationState::Attacking && (player.animation.frame as u32 % 2) == 1;
+                    let (hair_offset_x, hair_offset_y) = if is_attack_frame_2 {
+                        // Attack frame 2 offsets vary by direction
+                        let y_offset = if is_back { -3.0 } else { 3.0 };
+                        let x_offset = if coords.flip_h {
+                            6.0  // Up and Right directions (flipped)
+                        } else if is_back {
+                            -4.0 // Left direction (back, not flipped)
+                        } else {
+                            -6.0 // Down direction (front, not flipped)
+                        };
+                        (x_offset, y_offset)
+                    } else {
+                        // Normal offsets: up 3, left 1 (mirrored when flipped)
+                        let x_offset = if coords.flip_h { 1.0 } else { -1.0 };
+                        (x_offset, -3.0)
+                    };
 
                     // Center hair horizontally on player, apply offsets
                     let hair_draw_x = draw_x + (scaled_sprite_width - scaled_hair_width) / 2.0 + hair_offset_x * zoom;
