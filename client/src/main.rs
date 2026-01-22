@@ -435,8 +435,19 @@ fn run_game_frame(
             InputCommand::Attack => {
                 // Trigger attack animation and sound on local player
                 if let Some(local_id) = &game_state.local_player_id {
+                    // Check weapon type to determine animation
+                    let is_ranged = game_state.players.get(local_id)
+                        .and_then(|p| p.equipped_weapon.as_ref())
+                        .and_then(|weapon_id| game_state.item_registry.get(weapon_id))
+                        .map(|item_def| item_def.weapon_type.as_deref() == Some("ranged"))
+                        .unwrap_or(false);
+
                     if let Some(player) = game_state.players.get_mut(local_id) {
-                        player.play_attack();
+                        if is_ranged {
+                            player.play_shoot_bow();
+                        } else {
+                            player.play_attack();
+                        }
                         let has_weapon = player.equipped_weapon.is_some();
                         audio.play_attack_sound(has_weapon);
                     }
