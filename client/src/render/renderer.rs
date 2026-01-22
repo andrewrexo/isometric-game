@@ -661,6 +661,14 @@ impl Renderer {
                 }
             }
         }
+
+        // Render subtle local player silhouette (high z-index, visible through trees)
+        if let Some(ref local_id) = state.local_player_id {
+            if let Some(local_player) = state.players.get(local_id) {
+                self.render_player_silhouette(local_player, &state.camera);
+            }
+        }
+
         timings.entities_ms = (get_time() - t1) * 1000.0;
 
         // 4. Render overhead layer (always on top)
@@ -1602,6 +1610,175 @@ impl Renderer {
             let hp_ratio = player.hp as f32 / player.max_hp.max(1) as f32;
 
             self.draw_entity_health_bar(bar_x, bar_y, bar_width, bar_height, hp_ratio, 1.0);
+        }
+    }
+
+    /// Renders a semi-transparent silhouette of the player that's always visible
+    /// This provides visual feedback when the player is behind tall objects like trees
+    fn render_player_silhouette(&self, player: &Player, camera: &Camera) {
+        // Don't show silhouette for dead players
+        if player.is_dead {
+            return;
+        }
+
+        let (screen_x, screen_y) = world_to_screen(player.x, player.y, camera);
+        let zoom = camera.zoom;
+
+        let scaled_sprite_width = SPRITE_WIDTH * zoom;
+        let scaled_sprite_height = SPRITE_HEIGHT * zoom;
+
+        // Subtle semi-transparent tint (~20% opacity)
+        let silhouette_tint = Color::from_rgba(255, 255, 255, 50);
+
+        if let Some(sprite) = self.get_player_sprite(&player.gender, &player.skin) {
+            let coords = player.animation.get_sprite_coords();
+            let (src_x, src_y, src_w, src_h) = coords.to_source_rect();
+
+            let draw_x = screen_x - scaled_sprite_width / 2.0;
+            let draw_y = screen_y - scaled_sprite_height + 8.0 * zoom;
+
+            // Calculate weapon frame info if weapon is equipped
+            let weapon_info = player.equipped_weapon.as_ref().and_then(|weapon_id| {
+                self.weapon_sprites.get(weapon_id).map(|weapon_sprite| {
+                    let anim_frame = player.animation.frame as u32;
+                    let weapon_frame = get_weapon_frame(player.animation.state, player.animation.direction, anim_frame);
+                    let (offset_x, offset_y) = get_weapon_offset(player.animation.state, player.animation.direction, anim_frame);
+                    (weapon_sprite, weapon_frame, offset_x, offset_y)
+                })
+            });
+
+            let scaled_weapon_width = WEAPON_SPRITE_WIDTH * zoom;
+            let scaled_weapon_height = WEAPON_SPRITE_HEIGHT * zoom;
+
+            // Draw weapon under-layer (before player sprite)
+            if let Some((weapon_sprite, ref weapon_frame, offset_x, offset_y)) = weapon_info {
+                let weapon_src_x = weapon_frame.frame_under as f32 * WEAPON_SPRITE_WIDTH;
+                let weapon_draw_x = draw_x + offset_x * zoom;
+                let weapon_draw_y = draw_y + offset_y * zoom;
+
+                draw_texture_ex(
+                    weapon_sprite,
+                    weapon_draw_x,
+                    weapon_draw_y,
+                    silhouette_tint,
+                    DrawTextureParams {
+                        source: Some(Rect::new(weapon_src_x, 0.0, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT)),
+                        dest_size: Some(Vec2::new(scaled_weapon_width, scaled_weapon_height)),
+                        flip_x: weapon_frame.flip_h,
+                        ..Default::default()
+                    },
+                );
+            }
+
+            // Draw player base sprite (skip if body armor equipped to avoid transparency stacking)
+            if player.equipped_body.is_none() {
+                draw_texture_ex(
+                    sprite,
+                    draw_x,
+                    draw_y,
+                    silhouette_tint,
+                    DrawTextureParams {
+                        source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                        dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
+                        flip_x: coords.flip_h,
+                        ..Default::default()
+                    },
+                );
+            }
+
+            // Draw hair silhouette
+            const HAIR_SPRITE_WIDTH: f32 = 28.0;
+            const HAIR_SPRITE_HEIGHT: f32 = 54.0;
+            if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
+                if let Some(hair_tex) = self.hair_sprites.get(&style) {
+                    let is_back = matches!(player.direction, Direction::Up | Direction::Left);
+                    let frame_index = color * 2 + if is_back { 1 } else { 0 };
+                    let hair_src_x = frame_index as f32 * HAIR_SPRITE_WIDTH;
+
+                    let scaled_hair_width = HAIR_SPRITE_WIDTH * zoom;
+                    let scaled_hair_height = HAIR_SPRITE_HEIGHT * zoom;
+
+                    // Hair offset based on direction
+                    let x_offset = if is_back {
+                        if coords.flip_h { 2.0 } else { -2.0 }
+                    } else {
+                        if coords.flip_h { 1.0 } else { -1.0 }
+                    };
+                    let hair_draw_x = draw_x + (scaled_sprite_width - scaled_hair_width) / 2.0 + x_offset * zoom;
+                    let hair_draw_y = draw_y - 3.0 * zoom;
+
+                    draw_texture_ex(
+                        hair_tex,
+                        hair_draw_x,
+                        hair_draw_y,
+                        silhouette_tint,
+                        DrawTextureParams {
+                            source: Some(Rect::new(hair_src_x, 0.0, HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)),
+                            dest_size: Some(Vec2::new(scaled_hair_width, scaled_hair_height)),
+                            flip_x: coords.flip_h,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+
+            // Draw equipment silhouette (body armor)
+            if let Some(ref body_item_id) = player.equipped_body {
+                if let Some(equip_sprite) = self.equipment_sprites.get(body_item_id) {
+                    draw_texture_ex(
+                        equip_sprite,
+                        draw_x,
+                        draw_y,
+                        silhouette_tint,
+                        DrawTextureParams {
+                            source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                            dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
+                            flip_x: coords.flip_h,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+
+            // Draw equipment silhouette (boots)
+            if let Some(ref feet_item_id) = player.equipped_feet {
+                if let Some(equip_sprite) = self.equipment_sprites.get(feet_item_id) {
+                    draw_texture_ex(
+                        equip_sprite,
+                        draw_x,
+                        draw_y,
+                        silhouette_tint,
+                        DrawTextureParams {
+                            source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                            dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
+                            flip_x: coords.flip_h,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+
+            // Draw weapon over-layer (after equipment)
+            if let Some((weapon_sprite, ref weapon_frame, offset_x, offset_y)) = weapon_info {
+                if let Some(frame_over) = weapon_frame.frame_over {
+                    let weapon_src_x = frame_over as f32 * WEAPON_SPRITE_WIDTH;
+                    let weapon_draw_x = draw_x + offset_x * zoom;
+                    let weapon_draw_y = draw_y + offset_y * zoom;
+
+                    draw_texture_ex(
+                        weapon_sprite,
+                        weapon_draw_x,
+                        weapon_draw_y,
+                        silhouette_tint,
+                        DrawTextureParams {
+                            source: Some(Rect::new(weapon_src_x, 0.0, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT)),
+                            dest_size: Some(Vec2::new(scaled_weapon_width, scaled_weapon_height)),
+                            flip_x: weapon_frame.flip_h,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
         }
     }
 
