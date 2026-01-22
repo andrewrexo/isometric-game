@@ -277,7 +277,8 @@ impl Player {
             self.target_y = new_y;
         }
 
-        // Update direction from velocity
+        // Update direction from velocity (for player.direction only)
+        // animation.direction is synced separately in update_animation to avoid conflicts
         if vel_x != 0.0 || vel_y != 0.0 {
             self.direction = Direction::from_velocity(vel_x, vel_y);
         }
@@ -329,31 +330,65 @@ impl Player {
             self.is_moving = true;
             actually_moving = true;
 
-            // Update direction from actual movement vector, not stored velocity
-            self.direction = Direction::from_velocity(dx, dy);
+            // Only update direction from movement vector if:
+            // 1. We DON'T have server velocity (trust velocity when present)
+            // 2. NOT in an action animation (direction was set when action started)
+            // Movement vector can point wrong way during visual corrections
+            let in_action = matches!(
+                self.animation.state,
+                AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
+            );
+            if self.vel_x == 0.0 && self.vel_y == 0.0 && !in_action {
+                self.direction = Direction::from_velocity(dx, dy);
+            }
         }
 
+        // Check if movement direction matches velocity direction
+        // This prevents "moonwalking" - sprite changing direction before visual moves that way
+        let movement_matches_velocity = if self.vel_x != 0.0 || self.vel_y != 0.0 {
+            let movement_dir = Direction::from_velocity(
+                self.target_x - self.x,
+                self.target_y - self.y
+            );
+            let velocity_dir = Direction::from_velocity(self.vel_x, self.vel_y);
+            movement_dir == velocity_dir
+        } else {
+            true // No velocity = trust movement direction
+        };
+
         // Update animation state based on movement and actions
-        self.update_animation(delta, actually_moving);
+        self.update_animation(delta, actually_moving, movement_matches_velocity);
     }
 
     /// Update animation state and frame
     /// actually_moving: true only when visual position is actively changing
-    fn update_animation(&mut self, delta: f32, actually_moving: bool) {
-        // Only sync direction to animation when actually moving
-        if actually_moving {
+    /// movement_aligned: true only when movement direction matches velocity direction
+    fn update_animation(&mut self, delta: f32, actually_moving: bool, movement_aligned: bool) {
+        // Check if player has velocity (intending to move, even if at tile boundary)
+        let has_velocity = self.vel_x != 0.0 || self.vel_y != 0.0;
+
+        // Handle action animations (attack, cast, etc) - they take priority
+        // Direction is locked in when the action starts (in play_attack/play_cast/play_shoot_bow)
+        // Don't sync direction during actions - visual interpolation may still be catching up
+        let in_action_animation = self.animation.state == AnimationState::Attacking
+            || self.animation.state == AnimationState::Casting
+            || self.animation.state == AnimationState::ShootingBow;
+
+        // Only sync direction to animation when:
+        // 1. Actually moving, AND
+        // 2. Movement direction matches velocity (not correcting backward), AND
+        // 3. NOT in an action animation (direction is locked for attacks/casts/shots)
+        // This prevents "moonwalking" where sprite faces new direction before moving that way
+        // Face commands handle turning-in-place separately (updates animation.direction directly)
+        if actually_moving && movement_aligned && !in_action_animation {
             self.animation.direction = self.direction;
         }
 
-        // Handle action animations (attack, cast, etc) - they take priority
-        if self.animation.state == AnimationState::Attacking
-            || self.animation.state == AnimationState::Casting
-            || self.animation.state == AnimationState::ShootingBow
-        {
+        if in_action_animation {
             self.animation.update(delta);
             // Return to idle/walking when action animation completes
             if self.animation.is_finished() {
-                if actually_moving {
+                if actually_moving || has_velocity {
                     self.animation.set_state(AnimationState::Walking);
                 } else {
                     self.animation.set_state(AnimationState::Idle);
@@ -367,28 +402,37 @@ impl Player {
             self.animation.set_state(AnimationState::Walking);
             self.animation.update(delta);
         } else {
-            // Only go to idle if not in a sitting state
+            // Only go to idle if not in a sitting state AND we have no velocity
+            // Having velocity means we're at a tile boundary waiting for server confirmation
+            // during continuous movement - keep Walking state to prevent jitter
             if self.animation.state != AnimationState::SittingGround
                 && self.animation.state != AnimationState::SittingChair
+                && !has_velocity
             {
                 self.animation.set_state(AnimationState::Idle);
             }
-            // Don't update animation frame when idle (or update slowly)
+            // Don't update animation frame when idle or waiting at tile boundary
         }
     }
 
     /// Trigger attack animation
     pub fn play_attack(&mut self) {
+        // Sync animation direction to player direction before attacking
+        // This ensures attack faces the current intended direction, even if
+        // the player just changed direction while standing still
+        self.animation.direction = self.direction;
         self.animation.set_state(AnimationState::Attacking);
     }
 
     /// Trigger spell casting animation
     pub fn play_cast(&mut self) {
+        self.animation.direction = self.direction;
         self.animation.set_state(AnimationState::Casting);
     }
 
     /// Trigger bow shooting animation
     pub fn play_shoot_bow(&mut self) {
+        self.animation.direction = self.direction;
         self.animation.set_state(AnimationState::ShootingBow);
     }
 

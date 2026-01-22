@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 use std::collections::HashSet;
 use crate::game::{GameState, ContextMenu, DragState, DragSource, PathState, pathfinding};
+use crate::render::animation::AnimationState;
 use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
 use crate::network::messages::ClientMessage;
@@ -1231,10 +1232,19 @@ impl InputHandler {
                     self.last_send_time = current_time;
                 } else {
                     // Never sent a move (quick tap or frame timing edge case) - send Face command
-                    let dir = self.prev_dir.to_direction_u8();
-                    log::info!("[INPUT] Sending Face command: direction={} (prev_dir={:?})", dir, self.prev_dir);
-                    commands.push(InputCommand::Face { direction: dir });
-                    self.last_send_time = current_time;
+                    // But not if attacking - player must finish attack first
+                    let attack_anim = state.get_local_player().map_or(false, |p| {
+                        matches!(
+                            p.animation.state,
+                            AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
+                        )
+                    });
+                    if !attack_anim {
+                        let dir = self.prev_dir.to_direction_u8();
+                        log::info!("[INPUT] Sending Face command: direction={} (prev_dir={:?})", dir, self.prev_dir);
+                        commands.push(InputCommand::Face { direction: dir });
+                        self.last_send_time = current_time;
+                    }
                 }
             } else if new_dir != CardinalDir::None && self.prev_dir != CardinalDir::None {
                 // Direction changed while holding
@@ -1261,8 +1271,13 @@ impl InputHandler {
         };
 
         // Only send Move commands if held past the threshold
-        // Don't move while attacking (Space held) - player must stand still to attack
-        let is_attacking = is_key_down(KeyCode::Space);
+        // Don't move while attacking - check both Space key and animation state
+        let is_attacking = is_key_down(KeyCode::Space) || state.get_local_player().map_or(false, |p| {
+            matches!(
+                p.animation.state,
+                AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
+            )
+        });
         if new_dir != CardinalDir::None && !is_attacking {
             let hold_duration = current_time - self.dir_press_time;
             if hold_duration >= FACE_THRESHOLD {

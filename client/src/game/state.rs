@@ -7,6 +7,7 @@ use super::tilemap::Tilemap;
 use super::chunk::ChunkManager;
 use super::pathfinding::PathState;
 use super::shop::{ShopData, ShopSubTab};
+use crate::render::animation::AnimationState;
 use crate::ui::UiElementId;
 
 /// Frame timing diagnostics for performance analysis
@@ -531,10 +532,14 @@ impl GameState {
         // Update local player - smoothly interpolate visual toward server grid position
         if let Some(local_id) = &self.local_player_id {
             if let Some(player) = self.players.get_mut(local_id) {
-                // Update facing direction based on input only when NOT moving
+                // Update facing direction based on input only when NOT moving and NOT attacking
                 // This prevents 1-frame direction jitter at tile boundaries
                 // (is_moving reflects previous frame, set by interpolate_visual)
-                if !player.is_moving && (input_dx != 0.0 || input_dy != 0.0) {
+                let is_attacking = matches!(
+                    player.animation.state,
+                    AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
+                );
+                if !player.is_moving && !is_attacking && (input_dx != 0.0 || input_dy != 0.0) {
                     let new_dir = super::entities::Direction::from_velocity(input_dx, input_dy);
                     player.direction = new_dir;
                     player.animation.direction = new_dir;

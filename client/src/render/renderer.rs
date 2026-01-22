@@ -1408,8 +1408,9 @@ impl Renderer {
             const HAIR_SPRITE_HEIGHT: f32 = 54.0;
             if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
                 if let Some(hair_tex) = self.hair_sprites.get(&style) {
-                    // Determine front vs back frame based on player direction
-                    let is_back = matches!(player.direction, Direction::Up | Direction::Left);
+                    // Determine front vs back frame based on animation direction (not player.direction)
+                    // This keeps hair in sync with player sprite which also uses animation.direction
+                    let is_back = matches!(player.animation.direction, Direction::Up | Direction::Left);
                     let frame_index = color * 2 + if is_back { 1 } else { 0 };
 
                     // Calculate source rect for hair sprite
@@ -1691,7 +1692,7 @@ impl Renderer {
             const HAIR_SPRITE_HEIGHT: f32 = 54.0;
             if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
                 if let Some(hair_tex) = self.hair_sprites.get(&style) {
-                    let is_back = matches!(player.direction, Direction::Up | Direction::Left);
+                    let is_back = matches!(player.animation.direction, Direction::Up | Direction::Left);
                     let frame_index = color * 2 + if is_back { 1 } else { 0 };
                     let hair_src_x = frame_index as f32 * HAIR_SPRITE_WIDTH;
 

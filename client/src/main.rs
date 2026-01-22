@@ -20,6 +20,7 @@ use game::GameState;
 use network::NetworkClient;
 use render::Renderer;
 use input::{InputHandler, InputCommand};
+use render::animation::AnimationState;
 
 #[cfg(not(target_arch = "wasm32"))]
 use ui::{Screen, ScreenState, LoginScreen, CharacterSelectScreen, CharacterCreateScreen};
@@ -405,6 +406,18 @@ fn run_game_frame(
             InputCommand::Move { dx, dy } => ClientMessage::Move { dx: *dx, dy: *dy },
             InputCommand::Face { direction } => {
                 log::info!("[MAIN] Processing Face command: direction={}", direction);
+                // Skip direction update if attacking - player must finish attack first
+                if let Some(local_id) = &game_state.local_player_id {
+                    if let Some(player) = game_state.players.get(local_id) {
+                        let is_attacking = matches!(
+                            player.animation.state,
+                            AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
+                        );
+                        if is_attacking {
+                            continue;
+                        }
+                    }
+                }
                 // Record when we sent Face to ignore stale server updates
                 game_state.last_face_command_time = get_time();
                 // Immediately update local player direction for responsiveness
