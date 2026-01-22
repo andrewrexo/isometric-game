@@ -25,6 +25,10 @@ pub struct ItemDefinition {
     pub sellable: bool,
     /// Equipment stats (only for equippable items)
     pub equipment: Option<EquipmentStats>,
+    /// Weapon type (e.g., "melee", "bow", "staff")
+    pub weapon_type: Option<String>,
+    /// Attack range in tiles (1 for melee, >1 for ranged)
+    pub range: Option<i32>,
 }
 
 impl ItemDefinition {
@@ -78,6 +82,8 @@ impl ItemRegistry {
             base_price: 0,
             sellable: false,
             equipment: None,
+            weapon_type: None,
+            range: None,
         })
     }
 

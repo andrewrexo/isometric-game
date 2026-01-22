@@ -1236,6 +1236,10 @@ impl NetworkClient {
                                     }
                                 });
 
+                            // Parse weapon fields
+                            let weapon_type = extract_string(item_value, "weapon_type");
+                            let range = extract_i32(item_value, "range");
+
                             items.push(ItemDefinition {
                                 id,
                                 display_name,
@@ -1246,6 +1250,8 @@ impl NetworkClient {
                                 base_price,
                                 sellable,
                                 equipment,
+                                weapon_type,
+                                range,
                             });
                         }
                     }
