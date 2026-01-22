@@ -646,6 +646,9 @@ impl GameState {
         // Clean up old chat bubbles (older than 5.0 seconds)
         self.chat_bubbles.retain(|bubble| current_time - bubble.time < 5.0);
 
+        // Clean up completed projectiles
+        self.projectiles.retain(|p| !p.is_complete(current_time));
+
         // Clean up old quest completion events (older than 4 seconds)
         self.ui_state.quest_completed_events.retain(|event| current_time - event.time < 4.0);
 

@@ -685,6 +685,9 @@ impl Renderer {
 
         // 7. Render chat bubbles above players
         self.render_chat_bubbles(state);
+
+        // 7.5. Render projectiles
+        self.render_projectiles(state);
         timings.effects_ms = (get_time() - t3) * 1000.0;
 
         // 8. Render UI (non-interactive elements)
@@ -987,6 +990,36 @@ impl Renderer {
                 let text_x = bubble_center_x - line_width / 2.0;
                 self.draw_text_sharp(line, text_x, text_y, font_size, text_color);
                 text_y += line_height;
+            }
+        }
+    }
+
+    fn render_projectiles(&self, state: &GameState) {
+        let current_time = macroquad::time::get_time();
+
+        for projectile in &state.projectiles {
+            let (world_x, world_y) = projectile.current_pos(current_time);
+            let (screen_x, screen_y) = world_to_screen(world_x, world_y, &state.camera);
+
+            // Calculate direction from start to end
+            let dx = projectile.end_x - projectile.start_x;
+            let dy = projectile.end_y - projectile.start_y;
+
+            // Draw arrow as a simple line (can be upgraded to texture later)
+            // Normalize direction for consistent arrow length
+            let len = (dx * dx + dy * dy).sqrt();
+            if len > 0.0 {
+                let norm_dx = dx / len;
+                let norm_dy = dy / len;
+                let arrow_half_len = 12.0;
+                draw_line(
+                    screen_x - norm_dx * arrow_half_len,
+                    screen_y - norm_dy * arrow_half_len,
+                    screen_x + norm_dx * arrow_half_len,
+                    screen_y + norm_dy * arrow_half_len,
+                    3.0,
+                    BROWN,
+                );
             }
         }
     }
