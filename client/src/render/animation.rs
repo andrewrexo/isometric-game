@@ -67,8 +67,8 @@ pub fn get_animation_config(state: AnimationState) -> AnimationConfig {
         AnimationState::SittingGround => AnimationConfig::new(3, 2, 1.0, true, false),
         // Casting on row 1, frames 4-5
         AnimationState::Casting => AnimationConfig::new(1, 2, 6.0, false, false),
-        // Shooting bow on row 3, frames 2-3
-        AnimationState::ShootingBow => AnimationConfig::new(3, 2, 8.0, false, false),
+        // Shooting bow on row 3, frame 2 for down/right, frame 3 for up/left (single frame per direction)
+        AnimationState::ShootingBow => AnimationConfig::new(3, 1, 8.0, false, false),
     }
 }
 
@@ -185,8 +185,12 @@ impl PlayerAnimation {
                 (1, 4 + frame_index)
             }
             AnimationState::ShootingBow => {
-                // Row 3, frames 2-3
-                (3, 2 + frame_index)
+                // Row 3, frame 2 for down/right, frame 3 for up/left
+                if use_up_left_anim {
+                    (3, 3)
+                } else {
+                    (3, 2)
+                }
             }
         };
 
