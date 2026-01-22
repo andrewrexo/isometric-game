@@ -1499,11 +1499,15 @@ impl Renderer {
             self.render_tile_selection(npc.x, npc.y, camera);
         }
 
-        // Name color based on hostility
+        // Name color based on NPC type
         let name_color = if npc.is_hostile() {
             Color::from_rgba(255, 150, 150, 255) // Red for hostile
+        } else if npc.is_quest_giver {
+            Color::from_rgba(150, 220, 255, 255) // Cyan for quest givers
+        } else if npc.is_merchant {
+            Color::from_rgba(150, 255, 150, 255) // Light green for merchants
         } else {
-            Color::from_rgba(150, 220, 255, 255) // Cyan for friendly
+            Color::from_rgba(255, 255, 255, 255) // White for other friendly NPCs
         };
 
         // Try to render with sprite, fall back to ellipse
@@ -1584,15 +1588,9 @@ impl Renderer {
         // Top of NPC for UI elements
         let top_y = screen_y - sprite_height + 4.0 * zoom;
 
-        // Determine icon coords for friendly NPCs (quest givers, merchants)
-        let icon_coords: Option<(u32, u32)> = if !npc.is_hostile() {
-            if npc.is_quest_giver {
-                Some((8, 3))  // Quest giver icon
-            } else if npc.is_merchant {
-                Some((8, 4))  // Merchant icon
-            } else {
-                None
-            }
+        // Determine icon coords for friendly NPCs (quest givers only)
+        let icon_coords: Option<(u32, u32)> = if !npc.is_hostile() && npc.is_quest_giver {
+            Some((8, 3))  // Quest giver icon
         } else {
             None
         };
@@ -1642,11 +1640,9 @@ impl Renderer {
             let name_y = top_y - 5.0 * zoom;
             let padding = 4.0;
 
-            // Get the small icon texture for the name bar
+            // Get the small icon texture for the name bar (quest givers only)
             let small_icon: Option<&Texture2D> = if npc.is_quest_giver {
                 self.chat_small_icon.as_ref()
-            } else if npc.is_merchant {
-                self.coin_small_icon.as_ref()
             } else {
                 None
             };
