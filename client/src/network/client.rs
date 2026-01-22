@@ -575,6 +575,8 @@ impl NetworkClient {
                             damage: -heal_amount, // Negative = healing
                             time: current_time,
                             target_id,
+                            source_id: None,
+                            projectile: None,
                         });
                     }
 
@@ -646,6 +648,8 @@ impl NetworkClient {
                             damage: -heal_amount, // Negative = healing
                             time: current_time,
                             target_id,
+                            source_id: None,
+                            projectile: None,
                         });
                     }
                 }
@@ -702,18 +706,21 @@ impl NetworkClient {
 
             "damageEvent" => {
                 if let Some(value) = data {
-                    let source_id = extract_string(value, "source_id").unwrap_or_default();
+                    let source_id = extract_string(value, "source_id");
                     let target_id = extract_string(value, "target_id").unwrap_or_default();
                     let damage = extract_i32(value, "damage").unwrap_or(0);
                     let target_hp = extract_i32(value, "target_hp").unwrap_or(0);
                     let target_x = extract_f32(value, "target_x").unwrap_or(0.0);
                     let target_y = extract_f32(value, "target_y").unwrap_or(0.0);
+                    let projectile = extract_string(value, "projectile");
 
-                    log::debug!("Damage event: {} took {} damage from {} (HP: {})", target_id, damage, source_id, target_hp);
+                    log::debug!("Damage event: {} took {} damage from {:?} (HP: {})", target_id, damage, source_id, target_hp);
 
                     // If source is an NPC, trigger its attack animation
-                    if let Some(npc) = state.npcs.get_mut(&source_id) {
-                        npc.trigger_attack_animation();
+                    if let Some(ref src_id) = source_id {
+                        if let Some(npc) = state.npcs.get_mut(src_id) {
+                            npc.trigger_attack_animation();
+                        }
                     }
 
                     // Update target's HP and last damage time (could be player or NPC)
@@ -733,6 +740,8 @@ impl NetworkClient {
                         damage,
                         time: macroquad::time::get_time(),
                         target_id,
+                        source_id,
+                        projectile,
                     });
                 }
             }

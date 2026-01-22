@@ -202,6 +202,8 @@ pub struct DamageEvent {
     pub time: f64,
     /// Entity ID to look up sprite height at render time
     pub target_id: String,
+    pub source_id: Option<String>,
+    pub projectile: Option<String>,
 }
 
 /// Floating level up text
