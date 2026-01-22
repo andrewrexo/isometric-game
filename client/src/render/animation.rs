@@ -402,8 +402,8 @@ pub fn get_weapon_frame(state: AnimationState, direction: Direction, anim_frame:
             }
         }
         AnimationState::ShootingBow => {
-            // Use frame 17 for ranged (if available), otherwise fall back to attack
-            if use_back { (15, None) } else { (17, None) }
+            // Use frame 17 for all directions (flipped horizontally for up/left)
+            (17, None)
         }
         // Sitting animations don't show weapons
         AnimationState::SittingGround | AnimationState::SittingChair => {
