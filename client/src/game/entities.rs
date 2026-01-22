@@ -98,6 +98,8 @@ pub struct Player {
     // Appearance
     pub gender: String, // "male" or "female"
     pub skin: String,   // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
+    pub hair_style: Option<i32>, // 0-2 (or None for bald)
+    pub hair_color: Option<i32>, // 0-6 (color variant index)
 
     // Equipment
     pub equipped_head: Option<String>,   // Item ID of equipped helmet/hat
@@ -144,6 +146,8 @@ impl Player {
             death_time: 0.0,
             gender,
             skin,
+            hair_style: None,
+            hair_color: None,
             equipped_head: None,
             equipped_body: None,
             equipped_weapon: None,

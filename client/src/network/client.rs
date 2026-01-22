@@ -409,6 +409,8 @@ impl NetworkClient {
                     // Appearance
                     let gender = extract_string(value, "gender").unwrap_or_else(|| "male".to_string());
                     let skin = extract_string(value, "skin").unwrap_or_else(|| "tan".to_string());
+                    let hair_style = extract_i32(value, "hair_style");
+                    let hair_color = extract_i32(value, "hair_color");
                     // Equipment (filter empty strings to None)
                     let equipped_head = extract_string(value, "equipped_head").filter(|s| !s.is_empty());
                     let equipped_body = extract_string(value, "equipped_body").filter(|s| !s.is_empty());
@@ -424,6 +426,8 @@ impl NetworkClient {
 
                     log::info!("Player joined: {} at ({}, {}) [{}/{}]", name, x, y, gender, skin);
                     let mut player = Player::new(id.clone(), name, x, y, gender, skin);
+                    player.hair_style = hair_style;
+                    player.hair_color = hair_color;
                     player.equipped_head = equipped_head;
                     player.equipped_body = equipped_body;
                     player.equipped_weapon = equipped_weapon;
@@ -471,6 +475,8 @@ impl NetworkClient {
                             let hitpoints_level = extract_i32(player_value, "hitpointsLevel");
                             let combat_skill_level = extract_i32(player_value, "combatSkillLevel");
                             let gold = extract_i32(player_value, "gold");
+                            let hair_style = extract_i32(player_value, "hair_style");
+                            let hair_color = extract_i32(player_value, "hair_color");
                             let equipped_head = extract_string(player_value, "equipped_head").filter(|s| !s.is_empty());
                             let equipped_body = extract_string(player_value, "equipped_body").filter(|s| !s.is_empty());
                             let equipped_weapon = extract_string(player_value, "equipped_weapon").filter(|s| !s.is_empty());
@@ -534,6 +540,9 @@ impl NetworkClient {
                                 if let Some(level) = combat_skill_level {
                                     player.skills.combat.level = level;
                                 }
+                                // Update hair
+                                player.hair_style = hair_style;
+                                player.hair_color = hair_color;
                                 // Update equipment
                                 player.equipped_head = equipped_head.clone();
                                 player.equipped_body = equipped_body.clone();

@@ -495,6 +495,10 @@ struct CharacterInfo {
     level: i32,
     gender: String,
     skin: String,
+    #[serde(rename = "hairStyle")]
+    hair_style: Option<i32>,
+    #[serde(rename = "hairColor")]
+    hair_color: Option<i32>,
     #[serde(rename = "playedTime")]
     played_time: i64,
 }
@@ -504,6 +508,8 @@ struct CreateCharacterRequest {
     name: String,
     gender: String,
     skin: String,
+    hair_style: Option<i32>,
+    hair_color: Option<i32>,
 }
 
 #[derive(Serialize)]
@@ -554,6 +560,8 @@ async fn list_characters(
                 level: c.skills.combat_level(),
                 gender: c.gender,
                 skin: c.skin,
+                hair_style: c.hair_style,
+                hair_color: c.hair_color,
                 played_time: c.played_time,
             }).collect();
 
@@ -650,7 +658,7 @@ async fn create_character(
     }
 
     // Create the character
-    match state.db.create_character(account_id, name, &req.gender, &req.skin).await {
+    match state.db.create_character(account_id, name, &req.gender, &req.skin, req.hair_style, req.hair_color).await {
         Ok(char_data) => {
             info!("Created character '{}' for account {}", name, account_id);
             (
@@ -663,6 +671,8 @@ async fn create_character(
                         level: char_data.skills.combat_level(),
                         gender: char_data.gender,
                         skin: char_data.skin,
+                        hair_style: char_data.hair_style,
+                        hair_color: char_data.hair_color,
                         played_time: char_data.played_time,
                     }),
                     error: None,
@@ -894,6 +904,8 @@ async fn matchmake_join_or_create(
         &character_data.inventory_json,
         &character_data.gender,
         &character_data.skin,
+        character_data.hair_style,
+        character_data.hair_color,
         character_data.equipped_head.clone(),
         character_data.equipped_body.clone(),
         character_data.equipped_weapon.clone(),
@@ -1088,6 +1100,8 @@ async fn handle_socket(
                 y: existing_player.y,
                 gender: existing_player.gender.clone(),
                 skin: existing_player.skin.clone(),
+                hair_style: existing_player.hair_style,
+                hair_color: existing_player.hair_color,
             };
             if let Ok(bytes) = protocol::encode_server_message(&msg) {
                 let _ = sender.send(Message::Binary(bytes)).await;
@@ -1112,6 +1126,7 @@ async fn handle_socket(
     // Notify others about this player
     let (x, y) = room.get_player_position(&player_id).await.unwrap_or((0, 0));
     let (gender, skin) = room.get_player_appearance(&player_id).await.unwrap_or_else(|| ("male".to_string(), "tan".to_string()));
+    let (hair_style, hair_color) = room.get_player_hair(&player_id).await.unwrap_or((None, None));
     room.broadcast(ServerMessage::PlayerJoined {
         id: player_id.clone(),
         name: player_name.clone(),
@@ -1119,6 +1134,8 @@ async fn handle_socket(
         y,
         gender,
         skin,
+        hair_style,
+        hair_color,
     })
     .await;
 

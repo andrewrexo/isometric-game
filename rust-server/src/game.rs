@@ -142,6 +142,8 @@ pub struct Player {
     // Character appearance
     pub gender: String, // "male" or "female"
     pub skin: String,   // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
+    pub hair_style: Option<i32>, // 0-2 (or None for bald)
+    pub hair_color: Option<i32>, // 0-6 (color variant index)
     // Equipment
     pub equipped_head: Option<String>,
     pub equipped_body: Option<String>,
@@ -162,7 +164,7 @@ pub struct Player {
 const PLAYER_RESPAWN_TIME_MS: u64 = 5000; // 5 seconds to respawn
 
 impl Player {
-    pub fn new(id: &str, name: &str, spawn_x: i32, spawn_y: i32, gender: &str, skin: &str) -> Self {
+    pub fn new(id: &str, name: &str, spawn_x: i32, spawn_y: i32, gender: &str, skin: &str, hair_style: Option<i32>, hair_color: Option<i32>) -> Self {
         let skills = Skills::new(); // HP 10, Attack/Strength/Defence 1
         Self {
             id: id.to_string(),
@@ -185,6 +187,8 @@ impl Player {
             inventory: Inventory::new(),
             gender: gender.to_string(),
             skin: skin.to_string(),
+            hair_style,
+            hair_color,
             equipped_head: None,
             equipped_body: None,
             equipped_weapon: None,
@@ -373,6 +377,8 @@ pub struct PlayerUpdate {
     // Character appearance
     pub gender: String,
     pub skin: String,
+    pub hair_style: Option<i32>,
+    pub hair_color: Option<i32>,
     // Equipment
     pub equipped_head: Option<String>,
     pub equipped_body: Option<String>,
@@ -544,10 +550,10 @@ impl GameRoom {
         }
     }
 
-    pub async fn reserve_player(&self, player_id: &str, name: &str, gender: &str, skin: &str) {
+    pub async fn reserve_player(&self, player_id: &str, name: &str, gender: &str, skin: &str, hair_style: Option<i32>, hair_color: Option<i32>) {
         let (spawn_x, spawn_y) = self.world.get_spawn_position().await;
         let mut players = self.players.write().await;
-        let player = Player::new(player_id, name, spawn_x, spawn_y, gender, skin);
+        let player = Player::new(player_id, name, spawn_x, spawn_y, gender, skin, hair_style, hair_color);
         players.insert(player_id.to_string(), player);
 
         // Track player's starting chunk
@@ -569,6 +575,8 @@ impl GameRoom {
         inventory_json: &str,
         gender: &str,
         skin: &str,
+        hair_style: Option<i32>,
+        hair_color: Option<i32>,
         equipped_head: Option<String>,
         equipped_body: Option<String>,
         equipped_weapon: Option<String>,
@@ -581,7 +589,7 @@ impl GameRoom {
         is_admin: bool,
     ) {
         let mut players = self.players.write().await;
-        let mut player = Player::new(player_id, name, x, y, gender, skin);
+        let mut player = Player::new(player_id, name, x, y, gender, skin, hair_style, hair_color);
 
         // Restore saved stats
         player.hp = hp.min(skills.hitpoints.level); // Cap HP at max (hitpoints level)
@@ -753,6 +761,11 @@ impl GameRoom {
     pub async fn get_player_appearance(&self, player_id: &str) -> Option<(String, String)> {
         let players = self.players.read().await;
         players.get(player_id).map(|p| (p.gender.clone(), p.skin.clone()))
+    }
+
+    pub async fn get_player_hair(&self, player_id: &str) -> Option<(Option<i32>, Option<i32>)> {
+        let players = self.players.read().await;
+        players.get(player_id).map(|p| (p.hair_style, p.hair_color))
     }
 
     /// Get the initial inventory update message for a player (used on connection)
@@ -3246,6 +3259,8 @@ impl GameRoom {
                     gold: player.inventory.gold,
                     gender: player.gender.clone(),
                     skin: player.skin.clone(),
+                    hair_style: player.hair_style,
+                    hair_color: player.hair_color,
                     equipped_head: player.equipped_head.clone(),
                     equipped_body: player.equipped_body.clone(),
                     equipped_weapon: player.equipped_weapon.clone(),

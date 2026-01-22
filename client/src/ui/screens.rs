@@ -35,12 +35,19 @@ fn point_in_rect(px: f32, py: f32, rx: f32, ry: f32, rw: f32, rh: f32) -> bool {
     px >= rx && px < rx + rw && py >= ry && py < ry + rh
 }
 
+// Hair sprite dimensions (different from player sprites)
+const HAIR_SPRITE_WIDTH: f32 = 28.0;
+const HAIR_SPRITE_HEIGHT: f32 = 54.0;
+
 /// Draw a character preview sprite at the given position
 /// Uses the idle frame (row 0, column 0) facing down
 fn draw_character_preview(
     sprites: &HashMap<String, Texture2D>,
+    hair_sprites: &HashMap<i32, Texture2D>,
     gender: &str,
     skin: &str,
+    hair_style: Option<i32>,
+    hair_color: i32,
     x: f32,
     y: f32,
     scale: f32,
@@ -54,6 +61,7 @@ fn draw_character_preview(
         let dest_w = SPRITE_WIDTH * scale;
         let dest_h = SPRITE_HEIGHT * scale;
 
+        // Draw base character sprite
         draw_texture_ex(
             texture,
             x,
@@ -65,6 +73,39 @@ fn draw_character_preview(
                 ..Default::default()
             },
         );
+
+        // Draw hair if selected
+        if let Some(style) = hair_style {
+            if let Some(hair_tex) = hair_sprites.get(&style) {
+                // Front frame for preview (facing down)
+                let hair_frame_index = hair_color * 2; // front frame
+                let hair_src_x = hair_frame_index as f32 * HAIR_SPRITE_WIDTH;
+
+                // Scale hair sprite
+                let hair_dest_w = HAIR_SPRITE_WIDTH * scale;
+                let hair_dest_h = HAIR_SPRITE_HEIGHT * scale;
+
+                // Hair offset: 3 pixels up, 1 pixel left (facing down, not flipped)
+                let hair_offset_x = -1.0 * scale;
+                let hair_offset_y = -3.0 * scale;
+
+                // Center hair horizontally on player, apply offsets
+                let hair_x = x + (dest_w - hair_dest_w) / 2.0 + hair_offset_x;
+                let hair_y = y + hair_offset_y;
+
+                draw_texture_ex(
+                    hair_tex,
+                    hair_x,
+                    hair_y,
+                    WHITE,
+                    DrawTextureParams {
+                        source: Some(Rect::new(hair_src_x, 0.0, HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)),
+                        dest_size: Some(Vec2::new(hair_dest_w, hair_dest_h)),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
     } else {
         // Fallback: draw a colored rectangle if sprite not found
         let dest_w = SPRITE_WIDTH * scale;
@@ -402,6 +443,7 @@ pub struct CharacterSelectScreen {
     font: BitmapFont,
     confirm_delete: bool,
     player_sprites: HashMap<String, Texture2D>,
+    hair_sprites: HashMap<i32, Texture2D>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -421,6 +463,7 @@ impl CharacterSelectScreen {
             font: BitmapFont::default(),
             confirm_delete: false,
             player_sprites: HashMap::new(),
+            hair_sprites: HashMap::new(),
         }
     }
 
@@ -428,6 +471,14 @@ impl CharacterSelectScreen {
     pub async fn load_font(&mut self) {
         self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
         self.player_sprites = load_player_sprites().await;
+        // Load hair sprites
+        for style in 0..3i32 {
+            let path = format!("assets/sprites/hair/hair_{}.png", style);
+            if let Ok(tex) = load_texture(&path).await {
+                tex.set_filter(FilterMode::Nearest);
+                self.hair_sprites.insert(style, tex);
+            }
+        }
     }
 
     /// Refresh the character list from the server
@@ -669,8 +720,11 @@ impl Screen for CharacterSelectScreen {
                 let preview_y = y + (item_height - 5.0 - preview_h) / 2.0;
                 draw_character_preview(
                     &self.player_sprites,
+                    &self.hair_sprites,
                     &character.gender,
                     &character.skin,
+                    character.hair_style,
+                    character.hair_color.unwrap_or(0),
                     list_x + 10.0,
                     preview_y,
                     preview_scale,
@@ -752,12 +806,18 @@ pub struct CharacterCreateScreen {
     name: String,
     gender_index: usize,
     skin_index: usize,
+    hair_style_index: Option<usize>,  // None = bald, Some(0-2) = style
+    hair_color_index: usize,          // 0-6
     error_message: Option<String>,
     auth_client: AuthClient,
     font: BitmapFont,
     active_field: CreateField,
     player_sprites: HashMap<String, Texture2D>,
+    hair_sprites: HashMap<i32, Texture2D>,
 }
+
+const HAIR_STYLES: usize = 3;  // 0, 1, 2
+const HAIR_COLORS: usize = 10; // 0-9 (20 frames / 2 front-back pairs)
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(PartialEq, Clone, Copy)]
@@ -765,6 +825,8 @@ enum CreateField {
     Name,
     Gender,
     Skin,
+    HairStyle,
+    HairColor,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -775,17 +837,33 @@ impl CharacterCreateScreen {
             name: String::new(),
             gender_index: 0,
             skin_index: 0,
+            hair_style_index: None,
+            hair_color_index: 0,
             error_message: None,
             auth_client: AuthClient::new(server_url),
             font: BitmapFont::default(),
             active_field: CreateField::Name,
             player_sprites: HashMap::new(),
+            hair_sprites: HashMap::new(),
         }
     }
 
     pub async fn load_font(&mut self) {
         self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
         self.player_sprites = load_player_sprites().await;
+        // Load hair sprites
+        for style in 0..HAIR_STYLES as i32 {
+            let path = format!("assets/sprites/hair/hair_{}.png", style);
+            match load_texture(&path).await {
+                Ok(tex) => {
+                    tex.set_filter(FilterMode::Nearest);
+                    self.hair_sprites.insert(style, tex);
+                }
+                Err(e) => {
+                    log::warn!("Failed to load hair sprite {}: {}", path, e);
+                }
+            }
+        }
     }
 
     fn draw_text_sharp(&self, text: &str, x: f32, y: f32, font_size: f32, color: Color) {
@@ -817,15 +895,19 @@ impl CharacterCreateScreen {
 impl Screen for CharacterCreateScreen {
     fn update(&mut self, audio: &AudioManager) -> ScreenState {
         let sw = screen_width();
-        let sh = screen_height();
+        let _sh = screen_height();
         let (mx, my) = mouse_position();
         let clicked = is_mouse_button_pressed(MouseButton::Left);
 
         // Layout constants (must match render)
-        let form_x = (sw - 400.0) / 2.0;
-        let form_y = 120.0;
-        let field_height = 80.0;
-        let inst_y = sh - 70.0;
+        let total_width = 460.0;
+        let content_x = (sw - total_width) / 2.0;
+        let content_y = 70.0;
+        let preview_w = 140.0;
+        let form_x = content_x + preview_w + 20.0;
+        let form_w = 300.0;
+        let field_height = 70.0;
+        let half_width = (form_w - 10.0) / 2.0;
 
         // Handle name input when name field is active
         if self.active_field == CreateField::Name {
@@ -835,18 +917,18 @@ impl Screen for CharacterCreateScreen {
         // Mouse: Click on fields to focus
         if clicked {
             // Name field box
-            let name_box_y = form_y + 24.0;
-            if point_in_rect(mx, my, form_x, name_box_y, 400.0, 40.0) {
+            let name_box_y = content_y + 20.0;
+            if point_in_rect(mx, my, form_x, name_box_y, form_w, 36.0) {
                 self.active_field = CreateField::Name;
             }
 
             // Gender field box
-            let gender_box_y = form_y + field_height + 24.0;
-            if point_in_rect(mx, my, form_x, gender_box_y, 400.0, 40.0) {
+            let gender_box_y = content_y + field_height + 20.0;
+            if point_in_rect(mx, my, form_x, gender_box_y, form_w, 36.0) {
                 self.active_field = CreateField::Gender;
 
                 // Check if clicked on left arrow area
-                if point_in_rect(mx, my, form_x, gender_box_y, 60.0, 40.0) {
+                if point_in_rect(mx, my, form_x, gender_box_y, 50.0, 36.0) {
                     self.gender_index = if self.gender_index == 0 {
                         GENDERS.len() - 1
                     } else {
@@ -854,18 +936,18 @@ impl Screen for CharacterCreateScreen {
                     };
                 }
                 // Check if clicked on right arrow area
-                if point_in_rect(mx, my, form_x + 340.0, gender_box_y, 60.0, 40.0) {
+                if point_in_rect(mx, my, form_x + form_w - 50.0, gender_box_y, 50.0, 36.0) {
                     self.gender_index = (self.gender_index + 1) % GENDERS.len();
                 }
             }
 
             // Skin field box
-            let skin_box_y = form_y + field_height * 2.0 + 24.0;
-            if point_in_rect(mx, my, form_x, skin_box_y, 400.0, 40.0) {
+            let skin_box_y = content_y + field_height * 2.0 + 20.0;
+            if point_in_rect(mx, my, form_x, skin_box_y, form_w, 36.0) {
                 self.active_field = CreateField::Skin;
 
                 // Check if clicked on left arrow area
-                if point_in_rect(mx, my, form_x, skin_box_y, 60.0, 40.0) {
+                if point_in_rect(mx, my, form_x, skin_box_y, 50.0, 36.0) {
                     self.skin_index = if self.skin_index == 0 {
                         SKINS.len() - 1
                     } else {
@@ -873,14 +955,59 @@ impl Screen for CharacterCreateScreen {
                     };
                 }
                 // Check if clicked on right arrow area
-                if point_in_rect(mx, my, form_x + 340.0, skin_box_y, 60.0, 40.0) {
+                if point_in_rect(mx, my, form_x + form_w - 50.0, skin_box_y, 50.0, 36.0) {
                     self.skin_index = (self.skin_index + 1) % SKINS.len();
                 }
             }
 
+            // Hair style field box (left half of hair row)
+            let hair_box_y = content_y + field_height * 3.0 + 20.0;
+            if point_in_rect(mx, my, form_x, hair_box_y, half_width, 36.0) {
+                self.active_field = CreateField::HairStyle;
+
+                // Check if clicked on left arrow area
+                if point_in_rect(mx, my, form_x, hair_box_y, 35.0, 36.0) {
+                    self.hair_style_index = match self.hair_style_index {
+                        None => Some(HAIR_STYLES - 1),
+                        Some(0) => None,
+                        Some(i) => Some(i - 1),
+                    };
+                }
+                // Check if clicked on right arrow area
+                if point_in_rect(mx, my, form_x + half_width - 35.0, hair_box_y, 35.0, 36.0) {
+                    self.hair_style_index = match self.hair_style_index {
+                        None => Some(0),
+                        Some(i) if i >= HAIR_STYLES - 1 => None,
+                        Some(i) => Some(i + 1),
+                    };
+                }
+            }
+
+            // Hair color field box (right half of hair row, only if hair style selected)
+            let hair_color_x = form_x + half_width + 10.0;
+            if self.hair_style_index.is_some() && point_in_rect(mx, my, hair_color_x, hair_box_y, half_width, 36.0) {
+                self.active_field = CreateField::HairColor;
+
+                // Check if clicked on left arrow area
+                if point_in_rect(mx, my, hair_color_x, hair_box_y, 35.0, 36.0) {
+                    self.hair_color_index = if self.hair_color_index == 0 {
+                        HAIR_COLORS - 1
+                    } else {
+                        self.hair_color_index - 1
+                    };
+                }
+                // Check if clicked on right arrow area
+                if point_in_rect(mx, my, hair_color_x + half_width - 35.0, hair_box_y, 35.0, 36.0) {
+                    self.hair_color_index = (self.hair_color_index + 1) % HAIR_COLORS;
+                }
+            }
+
+            // Buttons row
+            let buttons_y = content_y + field_height * 4.0 + 10.0;
+            let button_w = (form_w - 10.0) / 2.0;
+
             // Create button
-            if point_in_rect(mx, my, form_x, inst_y - 10.0, 120.0, 30.0) {
-                // Trigger create
+            if point_in_rect(mx, my, form_x, buttons_y, button_w, 36.0) {
                 let name = self.name.trim();
                 if name.len() < 2 {
                     self.error_message = Some("Name must be at least 2 characters".to_string());
@@ -893,8 +1020,10 @@ impl Screen for CharacterCreateScreen {
 
                 let gender = GENDERS[self.gender_index];
                 let skin = SKINS[self.skin_index];
+                let hair_style = self.hair_style_index.map(|i| i as i32);
+                let hair_color = if self.hair_style_index.is_some() { Some(self.hair_color_index as i32) } else { None };
 
-                match self.auth_client.create_character(&self.session.token, name, gender, skin) {
+                match self.auth_client.create_character(&self.session.token, name, gender, skin, hair_style, hair_color) {
                     Ok(_) => {
                         return ScreenState::ToCharacterSelect(self.session.clone());
                     }
@@ -905,7 +1034,8 @@ impl Screen for CharacterCreateScreen {
             }
 
             // Cancel button
-            if point_in_rect(mx, my, form_x + 150.0, inst_y - 10.0, 120.0, 30.0) {
+            let cancel_x = form_x + button_w + 10.0;
+            if point_in_rect(mx, my, cancel_x, buttons_y, button_w, 36.0) {
                 return ScreenState::ToCharacterSelect(self.session.clone());
             }
         }
@@ -916,15 +1046,31 @@ impl Screen for CharacterCreateScreen {
             self.active_field = match self.active_field {
                 CreateField::Name => CreateField::Gender,
                 CreateField::Gender => CreateField::Skin,
-                CreateField::Skin => CreateField::Name,
+                CreateField::Skin => CreateField::HairStyle,
+                CreateField::HairStyle => {
+                    if self.hair_style_index.is_some() {
+                        CreateField::HairColor
+                    } else {
+                        CreateField::Name
+                    }
+                }
+                CreateField::HairColor => CreateField::Name,
             };
         }
         if is_key_pressed(KeyCode::Up) {
             audio.play_sfx("enter");
             self.active_field = match self.active_field {
-                CreateField::Name => CreateField::Skin,
+                CreateField::Name => {
+                    if self.hair_style_index.is_some() {
+                        CreateField::HairColor
+                    } else {
+                        CreateField::HairStyle
+                    }
+                }
                 CreateField::Gender => CreateField::Name,
                 CreateField::Skin => CreateField::Gender,
+                CreateField::HairStyle => CreateField::Skin,
+                CreateField::HairColor => CreateField::HairStyle,
             };
         }
 
@@ -945,6 +1091,20 @@ impl Screen for CharacterCreateScreen {
                         self.skin_index - 1
                     };
                 }
+                CreateField::HairStyle => {
+                    self.hair_style_index = match self.hair_style_index {
+                        None => Some(HAIR_STYLES - 1),
+                        Some(0) => None,
+                        Some(i) => Some(i - 1),
+                    };
+                }
+                CreateField::HairColor => {
+                    self.hair_color_index = if self.hair_color_index == 0 {
+                        HAIR_COLORS - 1
+                    } else {
+                        self.hair_color_index - 1
+                    };
+                }
                 _ => {}
             }
         }
@@ -955,6 +1115,16 @@ impl Screen for CharacterCreateScreen {
                 }
                 CreateField::Skin => {
                     self.skin_index = (self.skin_index + 1) % SKINS.len();
+                }
+                CreateField::HairStyle => {
+                    self.hair_style_index = match self.hair_style_index {
+                        None => Some(0),
+                        Some(i) if i >= HAIR_STYLES - 1 => None,
+                        Some(i) => Some(i + 1),
+                    };
+                }
+                CreateField::HairColor => {
+                    self.hair_color_index = (self.hair_color_index + 1) % HAIR_COLORS;
                 }
                 _ => {}
             }
@@ -980,8 +1150,10 @@ impl Screen for CharacterCreateScreen {
 
             let gender = GENDERS[self.gender_index];
             let skin = SKINS[self.skin_index];
+            let hair_style = self.hair_style_index.map(|i| i as i32);
+            let hair_color = if self.hair_style_index.is_some() { Some(self.hair_color_index as i32) } else { None };
 
-            match self.auth_client.create_character(&self.session.token, name, gender, skin) {
+            match self.auth_client.create_character(&self.session.token, name, gender, skin, hair_style, hair_color) {
                 Ok(_) => {
                     return ScreenState::ToCharacterSelect(self.session.clone());
                 }
@@ -1011,16 +1183,71 @@ impl Screen for CharacterCreateScreen {
         // Title
         let title = "CREATE CHARACTER";
         let title_width = self.measure_text_sharp(title, 16.0).width;
-        self.draw_text_sharp(title, (sw - title_width) / 2.0, 50.0, 16.0, WHITE);
+        self.draw_text_sharp(title, (sw - title_width) / 2.0, 30.0, 16.0, WHITE);
 
-        // Form area
-        let form_x = (sw - 400.0) / 2.0;
-        let form_y = 120.0;
-        let field_height = 80.0;
+        // Layout: Preview on left, form on right
+        let total_width = 460.0;  // Preview (140) + gap (20) + form (300)
+        let content_x = (sw - total_width) / 2.0;
+        let content_y = 70.0;
+
+        // === LEFT SIDE: Character Preview ===
+        let preview_w = 140.0;
+        let preview_h = 200.0;
+
+        // Decorative frame around preview
+        let frame_padding = 8.0;
+        let frame_x = content_x - frame_padding;
+        let frame_y = content_y - frame_padding;
+        let frame_w = preview_w + frame_padding * 2.0;
+        let frame_h = preview_h + frame_padding * 2.0;
+
+        // Outer glow
+        draw_rectangle(frame_x - 2.0, frame_y - 2.0, frame_w + 4.0, frame_h + 4.0, Color::from_rgba(60, 80, 120, 100));
+        // Frame background
+        draw_rectangle(frame_x, frame_y, frame_w, frame_h, Color::from_rgba(40, 45, 60, 255));
+        // Inner preview area
+        draw_rectangle(content_x, content_y, preview_w, preview_h, Color::from_rgba(20, 22, 30, 255));
+        // Frame border
+        draw_rectangle_lines(frame_x, frame_y, frame_w, frame_h, 2.0, Color::from_rgba(80, 100, 140, 255));
+        // Corner accents
+        let accent_size = 8.0;
+        let accent_color = Color::from_rgba(100, 140, 200, 255);
+        draw_line(frame_x, frame_y + accent_size, frame_x + accent_size, frame_y, 2.0, accent_color);
+        draw_line(frame_x + frame_w - accent_size, frame_y, frame_x + frame_w, frame_y + accent_size, 2.0, accent_color);
+        draw_line(frame_x, frame_y + frame_h - accent_size, frame_x + accent_size, frame_y + frame_h, 2.0, accent_color);
+        draw_line(frame_x + frame_w - accent_size, frame_y + frame_h, frame_x + frame_w, frame_y + frame_h - accent_size, 2.0, accent_color);
+
+        // Draw character sprite preview (scaled up for visibility)
+        let preview_scale = 1.5;
+        let sprite_w = SPRITE_WIDTH * preview_scale;
+        let sprite_h = SPRITE_HEIGHT * preview_scale;
+        let sprite_x = content_x + (preview_w - sprite_w) / 2.0;
+        let sprite_y = content_y + (preview_h - sprite_h) / 2.0 - 10.0;
+        draw_character_preview(
+            &self.player_sprites,
+            &self.hair_sprites,
+            GENDERS[self.gender_index],
+            SKINS[self.skin_index],
+            self.hair_style_index.map(|i| i as i32),
+            self.hair_color_index as i32,
+            sprite_x,
+            sprite_y,
+            preview_scale,
+        );
+
+        // Preview label below character
+        let preview_label = format!("{} {}", GENDERS[self.gender_index], SKINS[self.skin_index]);
+        let label_width = self.measure_text_sharp(&preview_label, 16.0).width;
+        self.draw_text_sharp(&preview_label, content_x + (preview_w - label_width) / 2.0, content_y + preview_h - 30.0, 16.0, LIGHTGRAY);
+
+        // === RIGHT SIDE: Form Fields ===
+        let form_x = content_x + preview_w + 20.0;
+        let form_w = 300.0;
+        let field_height = 70.0;
 
         // Name field
         let name_active = self.active_field == CreateField::Name;
-        let name_y = form_y;
+        let name_y = content_y;
         self.draw_text_sharp("Name", form_x, name_y, 16.0, if name_active { WHITE } else { GRAY });
 
         let name_box_color = if name_active {
@@ -1028,8 +1255,8 @@ impl Screen for CharacterCreateScreen {
         } else {
             Color::from_rgba(60, 60, 80, 255)
         };
-        draw_rectangle(form_x, name_y + 24.0, 400.0, 40.0, name_box_color);
-        draw_rectangle_lines(form_x, name_y + 24.0, 400.0, 40.0, 2.0, if name_active { WHITE } else { GRAY });
+        draw_rectangle(form_x, name_y + 20.0, form_w, 36.0, name_box_color);
+        draw_rectangle_lines(form_x, name_y + 20.0, form_w, 36.0, 2.0, if name_active { WHITE } else { GRAY });
 
         let cursor = if name_active && (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
         let name_display = if self.name.is_empty() && !name_active {
@@ -1038,11 +1265,11 @@ impl Screen for CharacterCreateScreen {
             format!("{}{}", self.name, cursor)
         };
         let text_color = if self.name.is_empty() && !name_active { DARKGRAY } else { WHITE };
-        self.draw_text_sharp(&name_display, form_x + 12.0, name_y + 52.0, 16.0, text_color);
+        self.draw_text_sharp(&name_display, form_x + 10.0, name_y + 44.0, 16.0, text_color);
 
         // Gender field
         let gender_active = self.active_field == CreateField::Gender;
-        let gender_y = form_y + field_height;
+        let gender_y = content_y + field_height;
         self.draw_text_sharp("Gender", form_x, gender_y, 16.0, if gender_active { WHITE } else { GRAY });
 
         let gender_box_color = if gender_active {
@@ -1050,21 +1277,18 @@ impl Screen for CharacterCreateScreen {
         } else {
             Color::from_rgba(60, 60, 80, 255)
         };
-        draw_rectangle(form_x, gender_y + 24.0, 400.0, 40.0, gender_box_color);
-        draw_rectangle_lines(form_x, gender_y + 24.0, 400.0, 40.0, 2.0, if gender_active { WHITE } else { GRAY });
+        draw_rectangle(form_x, gender_y + 20.0, form_w, 36.0, gender_box_color);
+        draw_rectangle_lines(form_x, gender_y + 20.0, form_w, 36.0, 2.0, if gender_active { WHITE } else { GRAY });
 
-        // Left arrow
-        self.draw_text_sharp("<", form_x + 20.0, gender_y + 52.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
-        // Current gender
+        self.draw_text_sharp("<", form_x + 15.0, gender_y + 44.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
         let gender_text = GENDERS[self.gender_index];
         let gender_width = self.measure_text_sharp(gender_text, 16.0).width;
-        self.draw_text_sharp(gender_text, form_x + 200.0 - gender_width / 2.0, gender_y + 52.0, 16.0, WHITE);
-        // Right arrow
-        self.draw_text_sharp(">", form_x + 370.0, gender_y + 52.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
+        self.draw_text_sharp(gender_text, form_x + form_w / 2.0 - gender_width / 2.0, gender_y + 44.0, 16.0, WHITE);
+        self.draw_text_sharp(">", form_x + form_w - 25.0, gender_y + 44.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
 
         // Skin field
         let skin_active = self.active_field == CreateField::Skin;
-        let skin_y = form_y + field_height * 2.0;
+        let skin_y = content_y + field_height * 2.0;
         self.draw_text_sharp("Skin", form_x, skin_y, 16.0, if skin_active { WHITE } else { GRAY });
 
         let skin_box_color = if skin_active {
@@ -1072,60 +1296,100 @@ impl Screen for CharacterCreateScreen {
         } else {
             Color::from_rgba(60, 60, 80, 255)
         };
-        draw_rectangle(form_x, skin_y + 24.0, 400.0, 40.0, skin_box_color);
-        draw_rectangle_lines(form_x, skin_y + 24.0, 400.0, 40.0, 2.0, if skin_active { WHITE } else { GRAY });
+        draw_rectangle(form_x, skin_y + 20.0, form_w, 36.0, skin_box_color);
+        draw_rectangle_lines(form_x, skin_y + 20.0, form_w, 36.0, 2.0, if skin_active { WHITE } else { GRAY });
 
-        // Left arrow
-        self.draw_text_sharp("<", form_x + 20.0, skin_y + 52.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
-        // Current skin
+        self.draw_text_sharp("<", form_x + 15.0, skin_y + 44.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
         let skin_text = SKINS[self.skin_index];
         let skin_width = self.measure_text_sharp(skin_text, 16.0).width;
-        self.draw_text_sharp(skin_text, form_x + 200.0 - skin_width / 2.0, skin_y + 52.0, 16.0, WHITE);
-        // Right arrow
-        self.draw_text_sharp(">", form_x + 370.0, skin_y + 52.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
+        self.draw_text_sharp(skin_text, form_x + form_w / 2.0 - skin_width / 2.0, skin_y + 44.0, 16.0, WHITE);
+        self.draw_text_sharp(">", form_x + form_w - 25.0, skin_y + 44.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
 
-        // Character Preview
-        let preview_y = form_y + field_height * 3.0 + 20.0;
-        self.draw_text_sharp("Preview", form_x, preview_y, 16.0, LIGHTGRAY);
+        // Hair row: Style and Color side by side
+        let hair_y = content_y + field_height * 3.0;
+        let half_width = (form_w - 10.0) / 2.0;  // 10px gap between
 
-        // Draw preview box with darker background
-        let preview_box_y = preview_y + 20.0;
-        let preview_box_w = 100.0;
-        let preview_box_h = 140.0;
-        draw_rectangle(form_x, preview_box_y, preview_box_w, preview_box_h, Color::from_rgba(30, 30, 45, 255));
-        draw_rectangle_lines(form_x, preview_box_y, preview_box_w, preview_box_h, 1.0, GRAY);
+        // Hair Style (left half)
+        let hair_style_active = self.active_field == CreateField::HairStyle;
+        self.draw_text_sharp("Style", form_x, hair_y, 16.0, if hair_style_active { WHITE } else { GRAY });
 
-        // Draw character sprite preview (scaled up for visibility)
-        let preview_scale = 1.0;
-        let sprite_w = SPRITE_WIDTH * preview_scale;
-        let sprite_h = SPRITE_HEIGHT * preview_scale;
-        let sprite_x = form_x + (preview_box_w - sprite_w) / 2.0;
-        let sprite_y = preview_box_y + (preview_box_h - sprite_h) / 2.0;
-        draw_character_preview(
-            &self.player_sprites,
-            GENDERS[self.gender_index],
-            SKINS[self.skin_index],
-            sprite_x,
-            sprite_y,
-            preview_scale,
-        );
+        let hair_style_box_color = if hair_style_active {
+            Color::from_rgba(80, 120, 180, 255)
+        } else {
+            Color::from_rgba(60, 60, 80, 255)
+        };
+        draw_rectangle(form_x, hair_y + 20.0, half_width, 36.0, hair_style_box_color);
+        draw_rectangle_lines(form_x, hair_y + 20.0, half_width, 36.0, 2.0, if hair_style_active { WHITE } else { GRAY });
 
-        // Preview label
-        let preview_text = format!("{} {}", GENDERS[self.gender_index], SKINS[self.skin_index]);
-        self.draw_text_sharp(&preview_text, form_x + preview_box_w + 20.0, preview_box_y + 60.0, 16.0, WHITE);
+        self.draw_text_sharp("<", form_x + 10.0, hair_y + 44.0, 16.0, if hair_style_active { YELLOW } else { DARKGRAY });
+        let hair_style_text = match self.hair_style_index {
+            None => "Bald",
+            Some(0) => "Style 1",
+            Some(1) => "Style 2",
+            Some(2) => "Style 3",
+            _ => "?",
+        };
+        let hair_style_width = self.measure_text_sharp(hair_style_text, 16.0).width;
+        self.draw_text_sharp(hair_style_text, form_x + half_width / 2.0 - hair_style_width / 2.0, hair_y + 44.0, 16.0, WHITE);
+        self.draw_text_sharp(">", form_x + half_width - 20.0, hair_y + 44.0, 16.0, if hair_style_active { YELLOW } else { DARKGRAY });
+
+        // Hair Color (right half) - only enabled if hair style selected
+        let hair_color_x = form_x + half_width + 10.0;
+        let hair_color_active = self.active_field == CreateField::HairColor;
+        let has_hair = self.hair_style_index.is_some();
+
+        self.draw_text_sharp("Color", hair_color_x, hair_y, 16.0, if has_hair { if hair_color_active { WHITE } else { GRAY } } else { DARKGRAY });
+
+        let hair_color_box_color = if !has_hair {
+            Color::from_rgba(40, 40, 50, 255)  // Disabled look
+        } else if hair_color_active {
+            Color::from_rgba(80, 120, 180, 255)
+        } else {
+            Color::from_rgba(60, 60, 80, 255)
+        };
+        draw_rectangle(hair_color_x, hair_y + 20.0, half_width, 36.0, hair_color_box_color);
+        draw_rectangle_lines(hair_color_x, hair_y + 20.0, half_width, 36.0, 2.0, if has_hair { if hair_color_active { WHITE } else { GRAY } } else { DARKGRAY });
+
+        if has_hair {
+            self.draw_text_sharp("<", hair_color_x + 10.0, hair_y + 44.0, 16.0, if hair_color_active { YELLOW } else { DARKGRAY });
+            let hair_color_text = format!("{}", self.hair_color_index + 1);
+            let hair_color_width = self.measure_text_sharp(&hair_color_text, 16.0).width;
+            self.draw_text_sharp(&hair_color_text, hair_color_x + half_width / 2.0 - hair_color_width / 2.0, hair_y + 44.0, 16.0, WHITE);
+            self.draw_text_sharp(">", hair_color_x + half_width - 20.0, hair_y + 44.0, 16.0, if hair_color_active { YELLOW } else { DARKGRAY });
+        } else {
+            let dash_width = self.measure_text_sharp("-", 16.0).width;
+            self.draw_text_sharp("-", hair_color_x + half_width / 2.0 - dash_width / 2.0, hair_y + 44.0, 16.0, DARKGRAY);
+        }
+
+        // Buttons row
+        let buttons_y = content_y + field_height * 4.0 + 10.0;
+        let button_w = (form_w - 10.0) / 2.0;
+
+        // Create button
+        draw_rectangle(form_x, buttons_y, button_w, 36.0, Color::from_rgba(40, 100, 60, 255));
+        draw_rectangle_lines(form_x, buttons_y, button_w, 36.0, 2.0, Color::from_rgba(60, 140, 80, 255));
+        let create_text = "Create";
+        let create_width = self.measure_text_sharp(create_text, 16.0).width;
+        self.draw_text_sharp(create_text, form_x + button_w / 2.0 - create_width / 2.0, buttons_y + 24.0, 16.0, WHITE);
+
+        // Cancel button
+        let cancel_x = form_x + button_w + 10.0;
+        draw_rectangle(cancel_x, buttons_y, button_w, 36.0, Color::from_rgba(80, 60, 60, 255));
+        draw_rectangle_lines(cancel_x, buttons_y, button_w, 36.0, 2.0, Color::from_rgba(120, 80, 80, 255));
+        let cancel_text = "Cancel";
+        let cancel_width = self.measure_text_sharp(cancel_text, 16.0).width;
+        self.draw_text_sharp(cancel_text, cancel_x + button_w / 2.0 - cancel_width / 2.0, buttons_y + 24.0, 16.0, WHITE);
 
         // Error message
         if let Some(ref error) = self.error_message {
-            let error_y = sh - 130.0;
+            let error_y = buttons_y + 50.0;
             let error_width = self.measure_text_sharp(error, 16.0).width;
-            self.draw_text_sharp(error, (sw - error_width) / 2.0, error_y, 16.0, RED);
+            self.draw_text_sharp(error, form_x + (form_w - error_width) / 2.0, error_y, 16.0, RED);
         }
 
-        // Instructions
-        let inst_y = sh - 70.0;
-        self.draw_text_sharp("[Enter] Create", form_x, inst_y, 16.0, GREEN);
-        self.draw_text_sharp("[Escape] Cancel", form_x + 150.0, inst_y, 16.0, LIGHTGRAY);
-
-        self.draw_text_sharp("[Tab] Switch field    [A/D] Change option", form_x, inst_y + 24.0, 16.0, DARKGRAY);
+        // Keyboard hints at bottom
+        let hints_y = sh - 30.0;
+        self.draw_text_sharp("[Tab] Next field    [A/D] Change    [Enter] Create    [Esc] Cancel",
+            (sw - 450.0) / 2.0, hints_y, 16.0, DARKGRAY);
     }
 }

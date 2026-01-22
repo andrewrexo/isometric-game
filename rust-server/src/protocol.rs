@@ -102,6 +102,8 @@ pub enum ServerMessage {
         y: i32,
         gender: String,
         skin: String,
+        hair_style: Option<i32>,
+        hair_color: Option<i32>,
     },
     PlayerLeft {
         id: String,
@@ -483,7 +485,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             ));
             Value::Map(map)
         }
-        ServerMessage::PlayerJoined { id, name, x, y, gender, skin } => {
+        ServerMessage::PlayerJoined { id, name, x, y, gender, skin, hair_style, hair_color } => {
             let mut map = Vec::new();
             map.push((Value::String("id".into()), Value::String(id.clone().into())));
             map.push((
@@ -494,6 +496,20 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("y".into()), Value::Integer((*y as i64).into())));
             map.push((Value::String("gender".into()), Value::String(gender.clone().into())));
             map.push((Value::String("skin".into()), Value::String(skin.clone().into())));
+            map.push((
+                Value::String("hair_style".into()),
+                match hair_style {
+                    Some(style) => Value::Integer((*style as i64).into()),
+                    None => Value::Nil,
+                },
+            ));
+            map.push((
+                Value::String("hair_color".into()),
+                match hair_color {
+                    Some(color) => Value::Integer((*color as i64).into()),
+                    None => Value::Nil,
+                },
+            ));
             Value::Map(map)
         }
         ServerMessage::PlayerLeft { id } => {
@@ -531,6 +547,20 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     pmap.push((Value::String("gold".into()), Value::Integer((p.gold as i64).into())));
                     pmap.push((Value::String("gender".into()), Value::String(p.gender.clone().into())));
                     pmap.push((Value::String("skin".into()), Value::String(p.skin.clone().into())));
+                    pmap.push((
+                        Value::String("hair_style".into()),
+                        match p.hair_style {
+                            Some(style) => Value::Integer((style as i64).into()),
+                            None => Value::Nil,
+                        },
+                    ));
+                    pmap.push((
+                        Value::String("hair_color".into()),
+                        match p.hair_color {
+                            Some(color) => Value::Integer((color as i64).into()),
+                            None => Value::Nil,
+                        },
+                    ));
                     pmap.push((
                         Value::String("equipped_head".into()),
                         match &p.equipped_head {

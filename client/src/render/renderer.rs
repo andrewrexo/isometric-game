@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use std::collections::HashMap;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
@@ -103,6 +103,8 @@ pub struct Renderer {
     tileset: Option<Texture2D>,
     /// Player sprite sheets by appearance key (e.g., "male_tan")
     player_sprites: HashMap<String, Texture2D>,
+    /// Hair sprite sheets by style index (0, 1, 2)
+    hair_sprites: HashMap<i32, Texture2D>,
     /// Equipment sprite sheets by item ID (e.g., "peasant_suit")
     equipment_sprites: HashMap<String, Texture2D>,
     /// Weapon sprite sheets by item ID (e.g., "goblin_axe")
@@ -165,6 +167,23 @@ impl Renderer {
             }
         }
         log::info!("Loaded {} player sprite variants", player_sprites.len());
+
+        // Load hair sprites from assets/sprites/hair/
+        let mut hair_sprites = HashMap::new();
+        for style in 0..3 {
+            let path = format!("assets/sprites/hair/hair_{}.png", style);
+            match load_texture(&path).await {
+                Ok(tex) => {
+                    tex.set_filter(FilterMode::Nearest);
+                    log::info!("Loaded hair sprite: style {} ({}x{})", style, tex.width(), tex.height());
+                    hair_sprites.insert(style, tex);
+                }
+                Err(e) => {
+                    log::warn!("Failed to load hair sprite {}: {}", path, e);
+                }
+            }
+        }
+        log::info!("Loaded {} hair sprite variants", hair_sprites.len());
 
         // Load equipment sprites from assets/sprites/equipment/ (scan directory)
         let mut equipment_sprites = HashMap::new();
@@ -394,6 +413,7 @@ impl Renderer {
             local_player_color: Color::from_rgba(100, 255, 150, 255),
             tileset,
             player_sprites,
+            hair_sprites,
             equipment_sprites,
             weapon_sprites,
             item_sprites,
@@ -1253,6 +1273,47 @@ impl Renderer {
                     ..Default::default()
                 },
             );
+
+            // Draw hair (after base sprite, before equipment)
+            // Hair sprites are 28x54, smaller than player sprites (34x78)
+            const HAIR_SPRITE_WIDTH: f32 = 28.0;
+            const HAIR_SPRITE_HEIGHT: f32 = 54.0;
+            if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
+                if let Some(hair_tex) = self.hair_sprites.get(&style) {
+                    // Determine front vs back frame based on player direction
+                    let is_back = matches!(player.direction, Direction::Up | Direction::Left);
+                    let frame_index = color * 2 + if is_back { 1 } else { 0 };
+
+                    // Calculate source rect for hair sprite
+                    let hair_src_x = frame_index as f32 * HAIR_SPRITE_WIDTH;
+
+                    // Scale hair to match zoom
+                    let scaled_hair_width = HAIR_SPRITE_WIDTH * zoom;
+                    let scaled_hair_height = HAIR_SPRITE_HEIGHT * zoom;
+
+                    // Hair offset: 3 pixels up, 1 pixel left (when not flipped)
+                    // When flipped, x offset is mirrored
+                    let hair_offset_x = if coords.flip_h { 1.0 } else { -1.0 };
+                    let hair_offset_y = -3.0;
+
+                    // Center hair horizontally on player, apply offsets
+                    let hair_draw_x = draw_x + (scaled_sprite_width - scaled_hair_width) / 2.0 + hair_offset_x * zoom;
+                    let hair_draw_y = draw_y + hair_offset_y * zoom;
+
+                    draw_texture_ex(
+                        hair_tex,
+                        hair_draw_x,
+                        hair_draw_y,
+                        tint,
+                        DrawTextureParams {
+                            source: Some(Rect::new(hair_src_x, 0.0, HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)),
+                            dest_size: Some(Vec2::new(scaled_hair_width, scaled_hair_height)),
+                            flip_x: coords.flip_h,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
 
             // Draw equipment overlay (body armor)
             if let Some(ref body_item_id) = player.equipped_body {

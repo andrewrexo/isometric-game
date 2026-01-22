@@ -28,6 +28,8 @@ pub struct CharacterData {
     pub name: String,
     pub gender: String,         // "male" or "female"
     pub skin: String,           // "tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"
+    pub hair_style: Option<i32>, // 0-2 (or None for bald)
+    pub hair_color: Option<i32>, // 0-6 (color variant index)
     pub x: f32,
     pub y: f32,
     pub hp: i32,
@@ -137,6 +139,36 @@ impl Database {
                 .execute(pool)
                 .await
                 .ok(); // Ignore error if column already exists
+        }
+
+        // Migration: Add hair_style column if it doesn't exist
+        let hair_style_exists: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('characters') WHERE name = 'hair_style'"
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+
+        if !hair_style_exists {
+            sqlx::query("ALTER TABLE characters ADD COLUMN hair_style INTEGER DEFAULT NULL")
+                .execute(pool)
+                .await
+                .ok();
+        }
+
+        // Migration: Add hair_color column if it doesn't exist
+        let hair_color_exists: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('characters') WHERE name = 'hair_color'"
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+
+        if !hair_color_exists {
+            sqlx::query("ALTER TABLE characters ADD COLUMN hair_color INTEGER DEFAULT NULL")
+                .execute(pool)
+                .await
+                .ok();
         }
 
         // Character quest tables (renamed from player_*)
@@ -271,7 +303,7 @@ impl Database {
     /// Get all characters for an account
     pub async fn get_characters_for_account(&self, account_id: i64) -> Result<Vec<CharacterData>, sqlx::Error> {
         let rows = sqlx::query(
-            r#"SELECT id, account_id, name, gender, skin, x, y, hp, gold,
+            r#"SELECT id, account_id, name, gender, skin, hair_style, hair_color, x, y, hp, gold,
                 equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet,
                 equipped_ring, equipped_gloves, equipped_necklace, equipped_belt,
                 inventory_json, skills_json, played_time, is_admin, created_at
@@ -305,6 +337,8 @@ impl Database {
                 name: r.get("name"),
                 gender: r.get("gender"),
                 skin: r.get("skin"),
+                hair_style: r.try_get::<i32, _>("hair_style").ok(),
+                hair_color: r.try_get::<i32, _>("hair_color").ok(),
                 x: r.get("x"),
                 y: r.get("y"),
                 hp: r.get("hp"),
@@ -353,6 +387,8 @@ impl Database {
         name: &str,
         gender: &str,
         skin: &str,
+        hair_style: Option<i32>,
+        hair_color: Option<i32>,
     ) -> Result<CharacterData, String> {
         // Validate gender and skin
         if !GENDERS.contains(&gender) {
@@ -362,13 +398,27 @@ impl Database {
             return Err(format!("Invalid skin: {}", skin));
         }
 
+        // Validate hair_style (0-2) and hair_color (0-9) if provided
+        if let Some(style) = hair_style {
+            if style < 0 || style > 2 {
+                return Err(format!("Invalid hair style: {} (must be 0-2)", style));
+            }
+        }
+        if let Some(color) = hair_color {
+            if color < 0 || color > 9 {
+                return Err(format!("Invalid hair color: {} (must be 0-9)", color));
+            }
+        }
+
         let result = sqlx::query(
-            "INSERT INTO characters (account_id, name, gender, skin) VALUES (?, ?, ?, ?)",
+            "INSERT INTO characters (account_id, name, gender, skin, hair_style, hair_color) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(account_id)
         .bind(name)
         .bind(gender)
         .bind(skin)
+        .bind(hair_style)
+        .bind(hair_color)
         .execute(&self.pool)
         .await
         .map_err(|e| {
@@ -380,8 +430,8 @@ impl Database {
         })?;
 
         let character_id = result.last_insert_rowid();
-        tracing::info!("Created character: {} (id: {}) for account {} as {} {}",
-            name, character_id, account_id, gender, skin);
+        tracing::info!("Created character: {} (id: {}) for account {} as {} {} hair:{:?}/{:?}",
+            name, character_id, account_id, gender, skin, hair_style, hair_color);
 
         // Fetch and return the created character
         self.get_character(character_id).await
@@ -392,7 +442,7 @@ impl Database {
     /// Get a character by ID
     pub async fn get_character(&self, character_id: i64) -> Result<Option<CharacterData>, sqlx::Error> {
         let row = sqlx::query(
-            r#"SELECT id, account_id, name, gender, skin, x, y, hp, gold,
+            r#"SELECT id, account_id, name, gender, skin, hair_style, hair_color, x, y, hp, gold,
                 equipped_head, equipped_body, equipped_weapon, equipped_back, equipped_feet,
                 equipped_ring, equipped_gloves, equipped_necklace, equipped_belt,
                 inventory_json, skills_json, played_time, is_admin, created_at
@@ -426,6 +476,8 @@ impl Database {
                 name: r.get("name"),
                 gender: r.get("gender"),
                 skin: r.get("skin"),
+                hair_style: r.try_get::<i32, _>("hair_style").ok(),
+                hair_color: r.try_get::<i32, _>("hair_color").ok(),
                 x: r.get("x"),
                 y: r.get("y"),
                 hp: r.get("hp"),

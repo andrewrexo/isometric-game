@@ -38,6 +38,10 @@ pub struct CharacterInfo {
     pub level: i32,
     pub gender: String,
     pub skin: String,
+    #[serde(rename = "hairStyle")]
+    pub hair_style: Option<i32>,
+    #[serde(rename = "hairColor")]
+    pub hair_color: Option<i32>,
     #[serde(rename = "playedTime")]
     pub played_time: i64,
 }
@@ -200,7 +204,7 @@ impl AuthClient {
     }
 
     /// Create a new character
-    pub fn create_character(&self, token: &str, name: &str, gender: &str, skin: &str) -> Result<CharacterInfo, AuthError> {
+    pub fn create_character(&self, token: &str, name: &str, gender: &str, skin: &str, hair_style: Option<i32>, hair_color: Option<i32>) -> Result<CharacterInfo, AuthError> {
         let url = format!("{}/api/characters", self.base_url);
 
         let response = ureq::post(&url)
@@ -209,11 +213,14 @@ impl AuthClient {
             .send_json(ureq::json!({
                 "name": name,
                 "gender": gender,
-                "skin": skin
+                "skin": skin,
+                "hair_style": hair_style,
+                "hair_color": hair_color
             }))
             .map_err(|e| {
                 let error_str = e.to_string();
-                if error_str.contains("already exists") {
+                log::error!("Character creation error: {}", error_str);
+                if error_str.contains("already exists") || error_str.contains("409") {
                     return AuthError::CharacterNameTaken;
                 }
                 if error_str.contains("limit") {
