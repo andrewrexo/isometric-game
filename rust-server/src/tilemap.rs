@@ -114,4 +114,40 @@ impl Tilemap {
         // Fallback to center
         (center_x, center_y)
     }
+
+    /// Check if there's a clear line of sight between two points (Bresenham's line)
+    /// Returns true if no solid tiles block the path
+    pub fn has_line_of_sight(&self, x0: i32, y0: i32, x1: i32, y1: i32) -> bool {
+        let dx = (x1 - x0).abs();
+        let dy = -(y1 - y0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let sy = if y0 < y1 { 1 } else { -1 };
+        let mut err = dx + dy;
+
+        let mut x = x0;
+        let mut y = y0;
+
+        loop {
+            // Don't check start position (attacker's tile)
+            if (x != x0 || y != y0) && !self.is_tile_walkable(x, y) {
+                return false;
+            }
+
+            if x == x1 && y == y1 {
+                return true;
+            }
+
+            let e2 = 2 * err;
+            if e2 >= dy {
+                if x == x1 { return true; }
+                err += dy;
+                x += sx;
+            }
+            if e2 <= dx {
+                if y == y1 { return true; }
+                err += dx;
+                y += sy;
+            }
+        }
+    }
 }
