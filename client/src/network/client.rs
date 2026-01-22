@@ -747,20 +747,24 @@ impl NetworkClient {
                     // Spawn projectile for ranged attacks
                     if let Some(ref projectile_type) = projectile {
                         if let Some(ref source_id) = source_id {
-                            // Get source position
+                            // Get source tile center (rounded to ensure straight isometric lines)
                             let source_pos = if let Some(player) = state.players.get(source_id) {
-                                Some((player.x, player.y))
+                                Some((player.x.round(), player.y.round()))
                             } else {
                                 None
                             };
 
                             if let Some((src_x, src_y)) = source_pos {
+                                // Target tile center (rounded for straight isometric lines)
+                                let end_x = target_x.round();
+                                let end_y = target_y.round();
+
                                 state.projectiles.push(crate::game::Projectile {
                                     sprite: projectile_type.clone(),
                                     start_x: src_x,
                                     start_y: src_y,
-                                    end_x: target_x,
-                                    end_y: target_y,
+                                    end_x,
+                                    end_y,
                                     start_time: current_time,
                                     duration: 0.15, // Fast arrow travel
                                 });
