@@ -2489,6 +2489,11 @@ impl Renderer {
             self.render_dialogue(dialogue, hovered, &mut layout);
         }
 
+        // Gold drop dialog (when active)
+        if let Some(ref dialog) = state.ui_state.gold_drop_dialog {
+            self.render_gold_drop_dialog(dialog, state.inventory.gold, hovered, &mut layout);
+        }
+
         // Render context menu on top of everything
         if let Some(ref context_menu) = state.ui_state.context_menu {
             self.render_context_menu(context_menu, state, &mut layout);

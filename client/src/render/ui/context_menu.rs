@@ -1,7 +1,7 @@
 //! Right-click context menu rendering
 
 use macroquad::prelude::*;
-use crate::game::{GameState, ContextMenu};
+use crate::game::{GameState, ContextMenu, ContextMenuTarget};
 use crate::ui::{UiElementId, UiLayout};
 use super::super::Renderer;
 use super::common::*;
@@ -14,22 +14,29 @@ impl Renderer {
         let option_height = 28.0;
         let menu_width = 120.0;
 
-        // Determine which options to show
+        // Determine which options to show and header title
         let mut options: Vec<(&str, UiElementId)> = Vec::new();
-
-        if menu.is_equipment {
-            // Equipment slot - only unequip option
-            options.push(("Unequip", UiElementId::ContextMenuOption(0)));
-        } else {
-            // Inventory slot - check if item is equippable
-            if let Some(slot) = state.inventory.slots.get(menu.slot_index).and_then(|s| s.as_ref()) {
-                let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
-                if item_def.equipment.is_some() {
-                    options.push(("Equip", UiElementId::ContextMenuOption(0)));
-                }
+        let header_title = match &menu.target {
+            ContextMenuTarget::EquipmentSlot(_) => {
+                options.push(("Unequip", UiElementId::ContextMenuOption(0)));
+                "Equipment"
             }
-            options.push(("Drop", UiElementId::ContextMenuOption(options.len())));
-        }
+            ContextMenuTarget::Gold => {
+                options.push(("Drop", UiElementId::ContextMenuOption(0)));
+                "Gold"
+            }
+            ContextMenuTarget::InventorySlot(slot_index) => {
+                // Check if item is equippable
+                if let Some(slot) = state.inventory.slots.get(*slot_index).and_then(|s| s.as_ref()) {
+                    let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                    if item_def.equipment.is_some() {
+                        options.push(("Equip", UiElementId::ContextMenuOption(0)));
+                    }
+                }
+                options.push(("Drop", UiElementId::ContextMenuOption(options.len())));
+                "Item"
+            }
+        };
 
         let content_height = options.len() as f32 * option_height + padding;
         let menu_height = header_height + content_height + padding;
@@ -58,7 +65,7 @@ impl Renderer {
         draw_line(menu_x, menu_y + header_height, menu_x + menu_width, menu_y + header_height, 1.0, HEADER_BORDER);
 
         // Header title
-        self.draw_text_sharp("Options", (menu_x + 8.0).floor(), (menu_y + 17.0).floor(), 16.0, TEXT_TITLE);
+        self.draw_text_sharp(header_title, (menu_x + 8.0).floor(), (menu_y + 17.0).floor(), 16.0, TEXT_TITLE);
 
         // Small accent dots on header
         draw_rectangle((menu_x + menu_width - 18.0).floor(), (menu_y + 10.0).floor(), 3.0, 3.0, FRAME_ACCENT);

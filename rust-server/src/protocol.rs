@@ -72,6 +72,10 @@ pub enum ClientMessage {
     #[serde(rename = "dropItem")]
     DropItem { slot_index: u8, quantity: u32 },
 
+    /// Drop gold to the ground
+    #[serde(rename = "dropGold")]
+    DropGold { amount: i32 },
+
     /// Swap two inventory slots
     #[serde(rename = "swapSlots")]
     SwapSlots { from_slot: u8, to_slot: u8 },
@@ -1487,6 +1491,10 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
                 .and_then(|(_, v)| v.as_u64().map(|u| u as u32))
                 .unwrap_or(1);
             Ok(ClientMessage::DropItem { slot_index, quantity })
+        }
+        "dropGold" => {
+            let amount = extract_i32(msg_data, "amount").unwrap_or(0);
+            Ok(ClientMessage::DropGold { amount })
         }
         "swapSlots" => {
             let from_slot = msg_data.as_map()

@@ -13,3 +13,4 @@ pub mod menu;
 pub mod shop;
 pub mod bottom_bar;
 pub mod skills;
+pub mod gold_drop_dialog;

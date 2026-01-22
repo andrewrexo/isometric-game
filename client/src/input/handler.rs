@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use std::collections::HashSet;
-use crate::game::{GameState, ContextMenu, DragState, DragSource, PathState, pathfinding};
+use crate::game::{GameState, ContextMenu, ContextMenuTarget, DragState, DragSource, GoldDropDialog, PathState, pathfinding};
 use crate::render::animation::AnimationState;
 use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
@@ -53,6 +53,7 @@ pub enum InputCommand {
     Unequip { slot_type: String, target_slot: Option<u8> },
     // Inventory commands
     DropItem { slot_index: u8, quantity: u32 },
+    DropGold { amount: i32 },
     SwapSlots { from_slot: u8, to_slot: u8 },
     // Shop commands
     ShopBuy { npc_id: String, item_id: String, quantity: u32 },
@@ -397,24 +398,37 @@ impl InputHandler {
             let menu_width = 120.0;
 
             // Calculate number of options (same logic as render_context_menu)
-            let num_options = if menu.is_equipment {
-                1 // Unequip only
-            } else {
-                let is_equippable = state.inventory.slots.get(menu.slot_index)
-                    .and_then(|s| s.as_ref())
-                    .map(|slot| {
-                        let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
-                        item_def.equipment.is_some()
-                    })
-                    .unwrap_or(false);
-                if is_equippable { 2 } else { 1 } // Equip+Drop or just Drop
+            let num_options = match &menu.target {
+                ContextMenuTarget::EquipmentSlot(_) => 1, // Unequip only
+                ContextMenuTarget::Gold => 1, // Drop only
+                ContextMenuTarget::InventorySlot(slot_index) => {
+                    let is_equippable = state.inventory.slots.get(*slot_index)
+                        .and_then(|s| s.as_ref())
+                        .map(|slot| {
+                            let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                            item_def.equipment.is_some()
+                        })
+                        .unwrap_or(false);
+                    if is_equippable { 2 } else { 1 } // Equip+Drop or just Drop
+                }
             };
 
             let content_height = num_options as f32 * option_height + padding;
             let menu_height = header_height + content_height + padding;
 
-            let menu_x = menu.x.floor();
-            let menu_y = menu.y.floor();
+            // Apply same screen clamping as render_context_menu
+            let mut menu_x = menu.x.floor();
+            let mut menu_y = menu.y.floor();
+
+            let screen_w = screen_width();
+            let screen_h = screen_height();
+
+            if menu_x + menu_width > screen_w {
+                menu_x = (screen_w - menu_width - 5.0).floor();
+            }
+            if menu_y + menu_height > screen_h {
+                menu_y = (screen_h - menu_height - 5.0).floor();
+            }
 
             // Add some margin for easier interaction
             let margin = 4.0;
@@ -436,43 +450,54 @@ impl InputHandler {
                             // Get menu info before clearing it
                             let menu = state.ui_state.context_menu.take().unwrap();
 
-                            if menu.is_equipment {
-                                // Equipment slot context menu - only unequip option
-                                if *option_idx == 0 {
-                                    if let Some(ref slot_type) = menu.equipment_slot {
+                            match &menu.target {
+                                ContextMenuTarget::EquipmentSlot(slot_type) => {
+                                    // Equipment slot context menu - only unequip option
+                                    if *option_idx == 0 {
                                         commands.push(InputCommand::Unequip {
                                             slot_type: slot_type.clone(),
                                             target_slot: None, // Use first available slot
                                         });
                                     }
                                 }
-                            } else {
-                                // Inventory slot context menu
-                                // Check if item is equippable to determine option indices
-                                let is_equippable = state.inventory.slots.get(menu.slot_index)
-                                    .and_then(|s| s.as_ref())
-                                    .map(|slot| {
-                                        let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
-                                        item_def.equipment.is_some()
-                                    })
-                                    .unwrap_or(false);
-
-                                if is_equippable {
-                                    // Options: Equip (0), Drop (1)
-                                    match option_idx {
-                                        0 => commands.push(InputCommand::Equip { slot_index: menu.slot_index as u8 }),
-                                        1 => {
-                                            if let Some(slot) = state.inventory.slots.get(menu.slot_index).and_then(|s| s.as_ref()) {
-                                                commands.push(InputCommand::DropItem { slot_index: menu.slot_index as u8, quantity: slot.quantity as u32 });
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                } else {
-                                    // Options: Drop (0) only
+                                ContextMenuTarget::Gold => {
+                                    // Gold context menu - only drop option
                                     if *option_idx == 0 {
-                                        if let Some(slot) = state.inventory.slots.get(menu.slot_index).and_then(|s| s.as_ref()) {
-                                            commands.push(InputCommand::DropItem { slot_index: menu.slot_index as u8, quantity: slot.quantity as u32 });
+                                        // Open gold drop dialog
+                                        state.ui_state.gold_drop_dialog = Some(GoldDropDialog {
+                                            input: String::new(),
+                                            cursor: 0,
+                                        });
+                                    }
+                                }
+                                ContextMenuTarget::InventorySlot(slot_index) => {
+                                    // Inventory slot context menu
+                                    // Check if item is equippable to determine option indices
+                                    let is_equippable = state.inventory.slots.get(*slot_index)
+                                        .and_then(|s| s.as_ref())
+                                        .map(|slot| {
+                                            let item_def = state.item_registry.get_or_placeholder(&slot.item_id);
+                                            item_def.equipment.is_some()
+                                        })
+                                        .unwrap_or(false);
+
+                                    if is_equippable {
+                                        // Options: Equip (0), Drop (1)
+                                        match option_idx {
+                                            0 => commands.push(InputCommand::Equip { slot_index: *slot_index as u8 }),
+                                            1 => {
+                                                if let Some(slot) = state.inventory.slots.get(*slot_index).and_then(|s| s.as_ref()) {
+                                                    commands.push(InputCommand::DropItem { slot_index: *slot_index as u8, quantity: slot.quantity as u32 });
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    } else {
+                                        // Options: Drop (0) only
+                                        if *option_idx == 0 {
+                                            if let Some(slot) = state.inventory.slots.get(*slot_index).and_then(|s| s.as_ref()) {
+                                                commands.push(InputCommand::DropItem { slot_index: *slot_index as u8, quantity: slot.quantity as u32 });
+                                            }
                                         }
                                     }
                                 }
@@ -652,6 +677,121 @@ impl InputHandler {
             }
 
             // Don't process other input while escape menu is open
+            return commands;
+        }
+
+        // Handle gold drop dialog
+        if state.ui_state.gold_drop_dialog.is_some() {
+            // Handle button clicks
+            if mouse_clicked {
+                if let Some(ref element) = clicked_element {
+                    match element {
+                        UiElementId::GoldDropConfirm => {
+                            // Parse amount and validate
+                            let dialog = state.ui_state.gold_drop_dialog.as_ref().unwrap();
+                            if let Ok(amount) = dialog.input.parse::<i32>() {
+                                if amount > 0 && amount <= state.inventory.gold {
+                                    commands.push(InputCommand::DropGold { amount });
+                                    state.ui_state.gold_drop_dialog = None;
+                                }
+                            }
+                            return commands;
+                        }
+                        UiElementId::GoldDropCancel => {
+                            state.ui_state.gold_drop_dialog = None;
+                            return commands;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // Handle keyboard input
+            if is_key_pressed(KeyCode::Escape) {
+                state.ui_state.gold_drop_dialog = None;
+                return commands;
+            }
+
+            if is_key_pressed(KeyCode::Enter) {
+                // Confirm with Enter key
+                let dialog = state.ui_state.gold_drop_dialog.as_ref().unwrap();
+                if let Ok(amount) = dialog.input.parse::<i32>() {
+                    if amount > 0 && amount <= state.inventory.gold {
+                        commands.push(InputCommand::DropGold { amount });
+                        state.ui_state.gold_drop_dialog = None;
+                    }
+                }
+                return commands;
+            }
+
+            // Number key input
+            let number_keys = [
+                (KeyCode::Key0, '0'), (KeyCode::Key1, '1'), (KeyCode::Key2, '2'),
+                (KeyCode::Key3, '3'), (KeyCode::Key4, '4'), (KeyCode::Key5, '5'),
+                (KeyCode::Key6, '6'), (KeyCode::Key7, '7'), (KeyCode::Key8, '8'),
+                (KeyCode::Key9, '9'),
+                (KeyCode::Kp0, '0'), (KeyCode::Kp1, '1'), (KeyCode::Kp2, '2'),
+                (KeyCode::Kp3, '3'), (KeyCode::Kp4, '4'), (KeyCode::Kp5, '5'),
+                (KeyCode::Kp6, '6'), (KeyCode::Kp7, '7'), (KeyCode::Kp8, '8'),
+                (KeyCode::Kp9, '9'),
+            ];
+
+            for (key, digit) in &number_keys {
+                if is_key_pressed(*key) {
+                    let dialog = state.ui_state.gold_drop_dialog.as_mut().unwrap();
+                    // Limit input length (max 10 digits for gold amounts)
+                    if dialog.input.len() < 10 {
+                        dialog.input.insert(dialog.cursor, *digit);
+                        dialog.cursor += 1;
+                    }
+                }
+            }
+
+            // Backspace
+            if is_key_pressed(KeyCode::Backspace) {
+                let dialog = state.ui_state.gold_drop_dialog.as_mut().unwrap();
+                if dialog.cursor > 0 {
+                    dialog.input.remove(dialog.cursor - 1);
+                    dialog.cursor -= 1;
+                }
+            }
+
+            // Delete
+            if is_key_pressed(KeyCode::Delete) {
+                let dialog = state.ui_state.gold_drop_dialog.as_mut().unwrap();
+                if dialog.cursor < dialog.input.len() {
+                    dialog.input.remove(dialog.cursor);
+                }
+            }
+
+            // Left/Right arrow navigation
+            if is_key_pressed(KeyCode::Left) {
+                let dialog = state.ui_state.gold_drop_dialog.as_mut().unwrap();
+                if dialog.cursor > 0 {
+                    dialog.cursor -= 1;
+                }
+            }
+            if is_key_pressed(KeyCode::Right) {
+                let dialog = state.ui_state.gold_drop_dialog.as_mut().unwrap();
+                if dialog.cursor < dialog.input.len() {
+                    dialog.cursor += 1;
+                }
+            }
+
+            // Home/End
+            if is_key_pressed(KeyCode::Home) {
+                let dialog = state.ui_state.gold_drop_dialog.as_mut().unwrap();
+                dialog.cursor = 0;
+            }
+            if is_key_pressed(KeyCode::End) {
+                let dialog = state.ui_state.gold_drop_dialog.as_mut().unwrap();
+                dialog.cursor = dialog.input.len();
+            }
+
+            // Drain character queue to prevent ghost characters
+            while get_char_pressed().is_some() {}
+
+            // Don't process other input while gold drop dialog is open
             return commands;
         }
 
@@ -1435,11 +1575,9 @@ impl InputHandler {
                         // Right-click on quick slot opens context menu (if item exists)
                         if state.inventory.slots.get(*idx).and_then(|s| s.as_ref()).is_some() {
                             state.ui_state.context_menu = Some(ContextMenu {
-                                slot_index: *idx,
+                                target: ContextMenuTarget::InventorySlot(*idx),
                                 x: mx,
                                 y: my,
-                                is_equipment: false,
-                                equipment_slot: None,
                             });
                         }
                     }
@@ -1450,11 +1588,9 @@ impl InputHandler {
                         // Right-click opens context menu (if item exists)
                         if state.inventory.slots.get(*idx).and_then(|s| s.as_ref()).is_some() {
                             state.ui_state.context_menu = Some(ContextMenu {
-                                slot_index: *idx,
+                                target: ContextMenuTarget::InventorySlot(*idx),
                                 x: mx,
                                 y: my,
-                                is_equipment: false,
-                                equipment_slot: None,
                             });
                         }
                     }
@@ -1477,13 +1613,22 @@ impl InputHandler {
                         };
                         if has_item {
                             state.ui_state.context_menu = Some(ContextMenu {
-                                slot_index: 0, // Not used for equipment
+                                target: ContextMenuTarget::EquipmentSlot(slot_type.clone()),
                                 x: mx,
                                 y: my,
-                                is_equipment: true,
-                                equipment_slot: Some(slot_type.clone()),
                             });
                         }
+                    }
+                    return commands;
+                }
+                UiElementId::GoldDisplay => {
+                    if mouse_right_clicked && state.inventory.gold > 0 {
+                        // Right-click on gold display opens context menu
+                        state.ui_state.context_menu = Some(ContextMenu {
+                            target: ContextMenuTarget::Gold,
+                            x: mx,
+                            y: my,
+                        });
                     }
                     return commands;
                 }

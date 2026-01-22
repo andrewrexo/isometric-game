@@ -282,14 +282,27 @@ pub struct Announcement {
     pub time: f64,
 }
 
+/// Target for context menu - what was right-clicked
+#[derive(Debug, Clone)]
+pub enum ContextMenuTarget {
+    InventorySlot(usize),
+    EquipmentSlot(String),
+    Gold,
+}
+
 /// Context menu for right-clicking items
 #[derive(Debug, Clone)]
 pub struct ContextMenu {
-    pub slot_index: usize,
+    pub target: ContextMenuTarget,
     pub x: f32,
     pub y: f32,
-    pub is_equipment: bool, // true if this is an equipment slot, not inventory
-    pub equipment_slot: Option<String>, // "body", "feet", etc. when is_equipment is true
+}
+
+/// Dialog for entering gold drop amount
+#[derive(Debug, Clone)]
+pub struct GoldDropDialog {
+    pub input: String,
+    pub cursor: usize,
 }
 
 /// Source of a drag operation
@@ -359,6 +372,8 @@ pub struct UiState {
     pub hovered_element: Option<UiElementId>,
     // Context menu state
     pub context_menu: Option<ContextMenu>,
+    // Gold drop dialog state
+    pub gold_drop_dialog: Option<GoldDropDialog>,
     // Drag state for inventory slot rearrangement
     pub drag_state: Option<DragState>,
     // Double-click tracking for equipping items
@@ -406,6 +421,7 @@ impl Default for UiState {
             gear_panel_open: false,
             hovered_element: None,
             context_menu: None,
+            gold_drop_dialog: None,
             drag_state: None,
             double_click_state: DoubleClickState {
                 last_click_slot: None,

@@ -3101,6 +3101,88 @@ impl GameRoom {
         }).await;
     }
 
+    /// Handle dropping gold to the ground
+    pub async fn handle_drop_gold(&self, player_id: &str, amount: i32) {
+        // Validate amount
+        if amount <= 0 {
+            return;
+        }
+
+        // Get player position and validate gold amount
+        let drop_info: Option<(i32, i32, i32)> = {
+            let players = self.players.read().await;
+            let player = match players.get(player_id) {
+                Some(p) if p.active && !p.is_dead => p,
+                _ => return,
+            };
+
+            if amount > player.inventory.gold {
+                return;
+            }
+
+            Some((player.x, player.y, player.inventory.gold))
+        };
+
+        let (player_x, player_y, _current_gold) = match drop_info {
+            Some(info) => info,
+            None => return,
+        };
+
+        // Deduct gold from inventory
+        let (inventory_update, new_gold) = {
+            let mut players = self.players.write().await;
+            if let Some(player) = players.get_mut(player_id) {
+                player.inventory.gold -= amount;
+                (player.inventory.to_update(), player.inventory.gold)
+            } else {
+                return;
+            }
+        };
+
+        // Create ground item with owner protection
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let drop_x = player_x as f32;
+        let drop_y = player_y as f32;
+
+        let ground_item = GroundItem::new(
+            &uuid::Uuid::new_v4().to_string(),
+            GOLD_ITEM_ID,
+            drop_x,
+            drop_y,
+            amount,
+            Some(player_id.to_string()),
+            current_time,
+        );
+
+        tracing::info!("Player {} dropped {}g (protected for 10s)", player_id, amount);
+
+        // Broadcast item drop
+        self.broadcast(ServerMessage::ItemDropped {
+            id: ground_item.id.clone(),
+            item_id: GOLD_ITEM_ID.to_string(),
+            x: drop_x,
+            y: drop_y,
+            quantity: amount,
+        }).await;
+
+        // Store in ground_items
+        {
+            let mut items = self.ground_items.write().await;
+            items.insert(ground_item.id.clone(), ground_item);
+        }
+
+        // Send inventory update to dropping player
+        self.send_to_player(player_id, ServerMessage::InventoryUpdate {
+            player_id: player_id.to_string(),
+            slots: inventory_update,
+            gold: new_gold,
+        }).await;
+    }
+
     /// Swap two inventory slots
     pub async fn handle_swap_slots(&self, player_id: &str, from_slot: u8, to_slot: u8) {
         let from_idx = from_slot as usize;

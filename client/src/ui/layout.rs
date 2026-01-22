@@ -59,6 +59,13 @@ pub enum UiElementId {
 
     // Skills Panel
     SkillSlot(usize),
+
+    // Gold Display (inventory header)
+    GoldDisplay,
+
+    // Gold Drop Dialog
+    GoldDropConfirm,
+    GoldDropCancel,
 }
 
 /// A single interactive UI element with its bounds

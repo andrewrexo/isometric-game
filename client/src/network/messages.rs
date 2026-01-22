@@ -64,6 +64,9 @@ pub enum ClientMessage {
     #[serde(rename = "dropItem")]
     DropItem { slot_index: u8, quantity: u32 },
 
+    #[serde(rename = "dropGold")]
+    DropGold { amount: i32 },
+
     #[serde(rename = "swapSlots")]
     SwapSlots { from_slot: u8, to_slot: u8 },
 
@@ -164,6 +167,10 @@ impl ClientMessage {
                 data.insert("slot_index".into(), Value::Integer((*slot_index as i64).into()));
                 data.insert("quantity".into(), Value::Integer((*quantity as i64).into()));
                 "dropItem"
+            }
+            ClientMessage::DropGold { amount } => {
+                data.insert("amount".into(), Value::Integer((*amount as i64).into()));
+                "dropGold"
             }
             ClientMessage::SwapSlots { from_slot, to_slot } => {
                 data.insert("from_slot".into(), Value::Integer((*from_slot as i64).into()));

@@ -174,6 +174,10 @@ impl Renderer {
 
         self.draw_text_sharp(&gold_text, coin_x + icon_size + icon_margin, header_y + 26.0, 16.0, TEXT_GOLD);
 
+        // Register gold display bounds for right-click context menu
+        let gold_bounds = Rect::new(coin_x, header_y, icon_size + icon_margin + gold_width + 8.0, HEADER_HEIGHT);
+        layout.add(UiElementId::GoldDisplay, gold_bounds);
+
         // ===== INVENTORY GRID =====
         let content_y = inv_y + FRAME_THICKNESS + HEADER_HEIGHT + 10.0;
         let grid_x = inv_x + GRID_PADDING;
