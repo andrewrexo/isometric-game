@@ -206,6 +206,38 @@ pub struct DamageEvent {
     pub projectile: Option<String>,
 }
 
+/// Active projectile for ranged attack visualization
+pub struct Projectile {
+    pub sprite: String,
+    pub start_x: f32,
+    pub start_y: f32,
+    pub end_x: f32,
+    pub end_y: f32,
+    pub start_time: f64,
+    pub duration: f64,
+}
+
+impl Projectile {
+    /// Get current position (0.0 to 1.0 progress)
+    pub fn progress(&self, current_time: f64) -> f32 {
+        let elapsed = current_time - self.start_time;
+        (elapsed / self.duration).min(1.0) as f32
+    }
+
+    /// Check if projectile animation is complete
+    pub fn is_complete(&self, current_time: f64) -> bool {
+        current_time - self.start_time >= self.duration
+    }
+
+    /// Get current world position
+    pub fn current_pos(&self, current_time: f64) -> (f32, f32) {
+        let t = self.progress(current_time);
+        let x = self.start_x + (self.end_x - self.start_x) * t;
+        let y = self.start_y + (self.end_y - self.start_y) * t;
+        (x, y)
+    }
+}
+
 /// Floating level up text
 pub struct LevelUpEvent {
     pub x: f32,
@@ -468,6 +500,7 @@ pub struct GameState {
     pub damage_events: Vec<DamageEvent>,
     pub level_up_events: Vec<LevelUpEvent>,
     pub skill_xp_events: Vec<SkillXpEvent>,
+    pub projectiles: Vec<Projectile>,
 
     // Chat bubbles above players
     pub chat_bubbles: Vec<ChatBubble>,
@@ -525,6 +558,7 @@ impl GameState {
             damage_events: Vec::new(),
             level_up_events: Vec::new(),
             skill_xp_events: Vec::new(),
+            projectiles: Vec::new(),
             chat_bubbles: Vec::new(),
             inventory: Inventory::new(),
             item_registry: ItemRegistry::new(),
