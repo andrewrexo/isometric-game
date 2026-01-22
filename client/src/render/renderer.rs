@@ -1001,26 +1001,80 @@ impl Renderer {
             let (world_x, world_y) = projectile.current_pos(current_time);
             let (screen_x, screen_y) = world_to_screen(world_x, world_y, &state.camera);
 
-            // Calculate direction from start to end
+            // Calculate direction and snap to 8 directions (45° increments)
             let dx = projectile.end_x - projectile.start_x;
             let dy = projectile.end_y - projectile.start_y;
+            let angle = dy.atan2(dx);
 
-            // Draw arrow as a simple line (can be upgraded to texture later)
-            // Normalize direction for consistent arrow length
-            let len = (dx * dx + dy * dy).sqrt();
-            if len > 0.0 {
-                let norm_dx = dx / len;
-                let norm_dy = dy / len;
-                let arrow_half_len = 12.0;
-                draw_line(
-                    screen_x - norm_dx * arrow_half_len,
-                    screen_y - norm_dy * arrow_half_len,
-                    screen_x + norm_dx * arrow_half_len,
-                    screen_y + norm_dy * arrow_half_len,
-                    3.0,
-                    BROWN,
-                );
-            }
+            // Snap to nearest 45° (π/4 radians)
+            let snapped_angle = (angle / (std::f32::consts::PI / 4.0)).round() * (std::f32::consts::PI / 4.0);
+
+            // Direction vector from snapped angle
+            let dir_x = snapped_angle.cos();
+            let dir_y = snapped_angle.sin();
+
+            // Perpendicular vector for arrow width
+            let perp_x = -dir_y;
+            let perp_y = dir_x;
+
+            // Arrow dimensions
+            let shaft_length = 18.0;
+            let shaft_width = 2.0;
+            let head_length = 6.0;
+            let head_width = 5.0;
+            let fletch_length = 4.0;
+            let fletch_width = 3.0;
+
+            // Colors
+            let shaft_color = Color::new(0.55, 0.35, 0.15, 1.0); // Wood brown
+            let head_color = Color::new(0.45, 0.45, 0.5, 1.0);   // Metal gray
+            let fletch_color = Color::new(0.85, 0.85, 0.8, 1.0); // Light feathers
+
+            // Arrow positions
+            let tip_x = screen_x + dir_x * (shaft_length / 2.0 + head_length);
+            let tip_y = screen_y + dir_y * (shaft_length / 2.0 + head_length);
+            let back_x = screen_x - dir_x * shaft_length / 2.0;
+            let back_y = screen_y - dir_y * shaft_length / 2.0;
+
+            // Draw shaft (thick line)
+            draw_line(
+                back_x,
+                back_y,
+                screen_x + dir_x * shaft_length / 2.0,
+                screen_y + dir_y * shaft_length / 2.0,
+                shaft_width,
+                shaft_color,
+            );
+
+            // Draw arrowhead (triangle pointing forward)
+            let head_base_x = screen_x + dir_x * shaft_length / 2.0;
+            let head_base_y = screen_y + dir_y * shaft_length / 2.0;
+            draw_triangle(
+                Vec2::new(tip_x, tip_y),
+                Vec2::new(head_base_x + perp_x * head_width / 2.0, head_base_y + perp_y * head_width / 2.0),
+                Vec2::new(head_base_x - perp_x * head_width / 2.0, head_base_y - perp_y * head_width / 2.0),
+                head_color,
+            );
+
+            // Draw fletching (two small triangles at the back)
+            let fletch_base_x = back_x + dir_x * fletch_length;
+            let fletch_base_y = back_y + dir_y * fletch_length;
+
+            // Left fletch
+            draw_triangle(
+                Vec2::new(back_x + perp_x * shaft_width / 2.0, back_y + perp_y * shaft_width / 2.0),
+                Vec2::new(fletch_base_x + perp_x * shaft_width / 2.0, fletch_base_y + perp_y * shaft_width / 2.0),
+                Vec2::new(back_x + perp_x * fletch_width, back_y + perp_y * fletch_width),
+                fletch_color,
+            );
+
+            // Right fletch
+            draw_triangle(
+                Vec2::new(back_x - perp_x * shaft_width / 2.0, back_y - perp_y * shaft_width / 2.0),
+                Vec2::new(fletch_base_x - perp_x * shaft_width / 2.0, fletch_base_y - perp_y * shaft_width / 2.0),
+                Vec2::new(back_x - perp_x * fletch_width, back_y - perp_y * fletch_width),
+                fletch_color,
+            );
         }
     }
 
