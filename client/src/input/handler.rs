@@ -322,6 +322,18 @@ impl InputHandler {
                     UiElementId::InventorySlot(idx) | UiElementId::QuickSlot(idx) => {
                         // Check if slot has an item
                         if let Some(Some(slot)) = state.inventory.slots.get(*idx) {
+                            // Check for shift+click to drop (if enabled)
+                            let shift_held = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
+                            if shift_held && state.ui_state.shift_drop_enabled {
+                                // Drop the entire stack
+                                commands.push(InputCommand::DropItem {
+                                    slot_index: *idx as u8,
+                                    quantity: slot.quantity as u32,
+                                });
+                                audio.play_sfx("item_put");
+                                return commands;
+                            }
+
                             // Check for double-click
                             let is_double_click = state.ui_state.double_click_state.last_click_slot == Some(*idx)
                                 && current_time - state.ui_state.double_click_state.last_click_time < DOUBLE_CLICK_THRESHOLD;
@@ -651,6 +663,11 @@ impl InputHandler {
                             audio.play_sfx("enter");
                             state.ui_state.audio_muted = !state.ui_state.audio_muted;
                             audio.toggle_mute();
+                            return commands;
+                        }
+                        UiElementId::EscapeMenuShiftDropToggle => {
+                            audio.play_sfx("enter");
+                            state.ui_state.shift_drop_enabled = !state.ui_state.shift_drop_enabled;
                             return commands;
                         }
                         UiElementId::EscapeMenuDisconnect => {

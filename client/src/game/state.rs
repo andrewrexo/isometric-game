@@ -363,6 +363,8 @@ pub struct UiState {
     pub audio_volume: f32,
     pub audio_sfx_volume: f32,
     pub audio_muted: bool,
+    // Input settings
+    pub shift_drop_enabled: bool,
     // Menu button panel states
     pub character_open: bool,
     pub social_open: bool,
@@ -415,6 +417,7 @@ impl Default for UiState {
             audio_volume: 0.7,
             audio_sfx_volume: 0.7,
             audio_muted: false,
+            shift_drop_enabled: true,
             character_open: false,
             social_open: false,
             skills_open: false,

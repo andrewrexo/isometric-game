@@ -13,7 +13,7 @@ impl Renderer {
         draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.5));
 
         let menu_width = 260.0;
-        let menu_height = 420.0;
+        let menu_height = 470.0;
         let menu_x = ((screen_width() - menu_width) / 2.0).floor();
         let menu_y = ((screen_height() - menu_height) / 2.0).floor();
 
@@ -176,8 +176,27 @@ impl Renderer {
         let mute_text = if state.ui_state.audio_muted { "Unmute" } else { "Mute" };
         draw_button(mute_btn_x, mute_btn_y, mute_btn_width, mute_btn_height, mute_text, state.ui_state.audio_muted, is_mute_hovered, self);
 
+        // ===== INVENTORY SECTION =====
+        let inventory_y = mute_btn_y + mute_btn_height + 16.0;
+        self.draw_text_sharp("Inventory", content_x.floor(), (inventory_y + 12.0).floor(), 16.0, TEXT_DIM);
+
+        // Shift-Drop toggle button
+        let shift_drop_btn_width = 140.0;
+        let shift_drop_btn_height = 28.0;
+        let shift_drop_btn_x = (menu_x + (menu_width - shift_drop_btn_width) / 2.0).floor();
+        let shift_drop_btn_y = (inventory_y + 22.0).floor();
+
+        let shift_drop_bounds = Rect::new(shift_drop_btn_x, shift_drop_btn_y, shift_drop_btn_width, shift_drop_btn_height);
+        layout.add(UiElementId::EscapeMenuShiftDropToggle, shift_drop_bounds);
+
+        let is_shift_drop_hovered = mouse_x >= shift_drop_bounds.x && mouse_x <= shift_drop_bounds.x + shift_drop_bounds.w
+            && mouse_y >= shift_drop_bounds.y && mouse_y <= shift_drop_bounds.y + shift_drop_bounds.h;
+
+        let shift_drop_text = if state.ui_state.shift_drop_enabled { "Shift-Drop: ON" } else { "Shift-Drop: OFF" };
+        draw_button(shift_drop_btn_x, shift_drop_btn_y, shift_drop_btn_width, shift_drop_btn_height, shift_drop_text, state.ui_state.shift_drop_enabled, is_shift_drop_hovered, self);
+
         // ===== CONTROLS SECTION =====
-        let controls_y = mute_btn_y + mute_btn_height + 16.0;
+        let controls_y = shift_drop_btn_y + shift_drop_btn_height + 16.0;
         self.draw_text_sharp("Controls", content_x.floor(), (controls_y + 12.0).floor(), 16.0, TEXT_DIM);
 
         let controls_text_y = controls_y + 28.0;

@@ -240,6 +240,15 @@ impl Renderer {
                 draw_rectangle(num_x, num_y, badge_w, badge_h, Color::new(0.0, 0.0, 0.0, 0.5));
                 self.draw_text_sharp(&num_text, num_x + 1.0, num_y + 11.0, 16.0, TEXT_DIM);
             }
+
+            // Shift-drop indicator overlay
+            let shift_held = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
+            if shift_held && state.ui_state.shift_drop_enabled && has_item && is_hovered {
+                // Red-tinted overlay
+                draw_rectangle(x + 2.0, y + 2.0, INV_SLOT_SIZE - 4.0, INV_SLOT_SIZE - 4.0, Color::new(0.8, 0.2, 0.2, 0.35));
+                // Red border highlight
+                draw_rectangle_lines(x + 1.0, y + 1.0, INV_SLOT_SIZE - 2.0, INV_SLOT_SIZE - 2.0, 2.0, Color::new(0.9, 0.3, 0.3, 0.9));
+            }
         }
 
     }
