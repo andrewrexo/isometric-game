@@ -57,6 +57,18 @@ impl EquipmentSlot {
 }
 
 // ============================================================================
+// Weapon Types
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WeaponType {
+    #[default]
+    Melee,
+    Ranged,
+}
+
+// ============================================================================
 // Equipment Stats
 // ============================================================================
 
@@ -84,6 +96,14 @@ pub struct EquipmentStats {
     /// Defence bonus - affects chance to avoid hits
     #[serde(default)]
     pub defence_bonus: i32,
+
+    /// Weapon type - determines animation and attack behavior
+    #[serde(default)]
+    pub weapon_type: WeaponType,
+
+    /// Attack range in tiles (1 = melee adjacent, higher = ranged)
+    #[serde(default = "default_range")]
+    pub range: i32,
 }
 
 // ============================================================================
@@ -124,6 +144,7 @@ pub struct RawItemDefinition {
 }
 
 fn default_true() -> bool { true }
+fn default_range() -> i32 { 1 }
 
 // ============================================================================
 // Resolved Item Definition
