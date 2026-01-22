@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use tracing::{info, warn};
 
-use super::item_def::{ItemDefinition, RawItemDefinition};
+use super::item_def::{ItemDefinition, RawItemDefinition, WeaponType};
 
 /// Registry for all item definitions
 pub struct ItemRegistry {
@@ -128,6 +128,13 @@ impl ItemRegistry {
                     attack_bonus,
                     strength_bonus,
                     defence_bonus,
+                    weapon_type: item.equipment.as_ref().map(|e| {
+                        match e.weapon_type {
+                            WeaponType::Melee => "melee".to_string(),
+                            WeaponType::Ranged => "ranged".to_string(),
+                        }
+                    }),
+                    range: item.equipment.as_ref().map(|e| e.range),
                 }
             })
             .collect();

@@ -357,6 +357,8 @@ pub struct ClientItemDef {
     pub attack_bonus: Option<i32>,
     pub strength_bonus: Option<i32>,
     pub defence_bonus: Option<i32>,
+    pub weapon_type: Option<String>,
+    pub range: Option<i32>,
 }
 
 /// A dialogue choice for branching dialogue
@@ -1137,6 +1139,12 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     }
                     if let Some(def) = i.defence_bonus {
                         imap.push((Value::String("defence_bonus".into()), Value::Integer((def as i64).into())));
+                    }
+                    if let Some(ref wtype) = i.weapon_type {
+                        imap.push((Value::String("weapon_type".into()), Value::String(wtype.clone().into())));
+                    }
+                    if let Some(r) = i.range {
+                        imap.push((Value::String("range".into()), Value::Integer((r as i64).into())));
                     }
                     Value::Map(imap)
                 })
