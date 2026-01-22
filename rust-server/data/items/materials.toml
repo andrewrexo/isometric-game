@@ -108,3 +108,39 @@ description = "Concentrated darkness from a reaper. Dangerous but valuable."
 category = "material"
 max_stack = 99
 base_price = 50
+
+# =============================================================================
+# Fishing & Gathering
+# =============================================================================
+
+[trout]
+display_name = "Trout"
+sprite = "trout"
+description = "A common freshwater fish. Good for cooking."
+category = "material"
+max_stack = 99
+base_price = 8
+
+[shiny_trout]
+display_name = "Shiny Trout"
+sprite = "shiny_trout"
+description = "A rare trout with iridescent scales. Highly prized."
+category = "material"
+max_stack = 99
+base_price = 50
+
+[crab]
+display_name = "Crab"
+sprite = "crab"
+description = "A feisty crustacean. Makes for a tasty meal."
+category = "material"
+max_stack = 99
+base_price = 12
+
+[oyster]
+display_name = "Oyster"
+sprite = "oyster"
+description = "A saltwater shellfish. Might contain a pearl."
+category = "material"
+max_stack = 99
+base_price = 15
