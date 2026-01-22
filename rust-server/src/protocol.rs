@@ -136,6 +136,7 @@ pub enum ServerMessage {
         target_hp: i32,
         target_x: f32,
         target_y: f32,
+        projectile: Option<String>,
     },
     AttackResult {
         success: bool,
@@ -718,6 +719,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             target_hp,
             target_x,
             target_y,
+            projectile,
         } => {
             let mut map = Vec::new();
             map.push((
@@ -743,6 +745,13 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((
                 Value::String("target_y".into()),
                 Value::F64(*target_y as f64),
+            ));
+            map.push((
+                Value::String("projectile".into()),
+                match projectile {
+                    Some(p) => Value::String(p.clone().into()),
+                    None => Value::Nil,
+                },
             ));
             Value::Map(map)
         }

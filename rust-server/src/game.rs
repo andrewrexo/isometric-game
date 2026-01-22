@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::chunk::ChunkCoord;
 use crate::entity::{EntityPrototype, EntityRegistry};
 use crate::data::ItemRegistry;
+use crate::data::item_def::WeaponType;
 use crate::skills::{Skills, SkillType, calculate_hit, calculate_max_hit, roll_damage};
 use crate::item::{self, GroundItem, Inventory, GOLD_ITEM_ID};
 use crate::npc::{Npc, NpcUpdate};
@@ -1207,55 +1208,95 @@ impl GameRoom {
             return;
         }
 
-        // Calculate the tile position in front of the player based on facing direction
-        let (front_x, front_y) = match attacker_dir {
-            Direction::Up => (attacker_x, attacker_y - 1),
-            Direction::Down => (attacker_x, attacker_y + 1),
-            Direction::Left => (attacker_x - 1, attacker_y),
-            Direction::Right => (attacker_x + 1, attacker_y),
-            Direction::UpLeft => (attacker_x - 1, attacker_y - 1),
-            Direction::UpRight => (attacker_x + 1, attacker_y - 1),
-            Direction::DownLeft => (attacker_x - 1, attacker_y + 1),
-            Direction::DownRight => (attacker_x + 1, attacker_y + 1),
+        // Get weapon range and type
+        let (weapon_range, weapon_type) = {
+            let players = self.players.read().await;
+            if let Some(player) = players.get(player_id) {
+                if let Some(ref weapon_id) = player.equipped_weapon {
+                    if let Some(item_def) = self.item_registry.get(weapon_id) {
+                        if let Some(ref equip) = item_def.equipment {
+                            (equip.range, equip.weapon_type)
+                        } else {
+                            (1, WeaponType::Melee)
+                        }
+                    } else {
+                        (1, WeaponType::Melee)
+                    }
+                } else {
+                    (1, WeaponType::Melee) // Unarmed = melee range 1
+                }
+            } else {
+                return;
+            }
         };
 
-        tracing::info!("{} attacks toward ({}, {}) facing {:?}", attacker_name, front_x, front_y, attacker_dir);
-
-        // Find target at the front tile - check NPCs first, then players
+        // Find target based on weapon range
         let mut target_id: Option<String> = None;
         let mut is_npc = false;
+        let mut target_tile_x = attacker_x;
+        let mut target_tile_y = attacker_y;
 
-        // Check NPCs (only attackable ones - not quest givers or merchants)
-        {
-            let npcs = self.npcs.read().await;
-            for (npc_id, npc) in npcs.iter() {
-                if npc.is_alive() && npc.is_attackable() && npc.x == front_x && npc.y == front_y {
-                    target_id = Some(npc_id.clone());
-                    is_npc = true;
-                    tracing::info!("{} found NPC target: {} at ({}, {})", attacker_name, npc.name(), npc.x, npc.y);
-                    break;
+        // Direction vectors for 8 directions
+        let (dir_dx, dir_dy): (i32, i32) = match attacker_dir {
+            Direction::Up => (0, -1),
+            Direction::Down => (0, 1),
+            Direction::Left => (-1, 0),
+            Direction::Right => (1, 0),
+            Direction::UpLeft => (-1, -1),
+            Direction::UpRight => (1, -1),
+            Direction::DownLeft => (-1, 1),
+            Direction::DownRight => (1, 1),
+        };
+
+        // Scan tiles in facing direction up to weapon range
+        for dist in 1..=weapon_range {
+            let check_x = attacker_x + dir_dx * dist;
+            let check_y = attacker_y + dir_dy * dist;
+
+            // For ranged weapons, check line of sight
+            if weapon_range > 1 && !self.world.has_line_of_sight(attacker_x, attacker_y, check_x, check_y).await {
+                tracing::debug!("{} ranged attack blocked by wall at ({}, {})", attacker_name, check_x, check_y);
+                break;
+            }
+
+            // Check NPCs at this tile
+            {
+                let npcs = self.npcs.read().await;
+                for (npc_id, npc) in npcs.iter() {
+                    if npc.is_alive() && npc.is_attackable() && npc.x == check_x && npc.y == check_y {
+                        target_id = Some(npc_id.clone());
+                        is_npc = true;
+                        target_tile_x = check_x;
+                        target_tile_y = check_y;
+                        tracing::info!("{} found NPC target: {} at ({}, {}) range {}", attacker_name, npc.name(), check_x, check_y, dist);
+                        break;
+                    }
                 }
             }
-        }
+            if target_id.is_some() { break; }
 
-        // Check players if no NPC found
-        if target_id.is_none() {
-            let players = self.players.read().await;
-            for (pid, player) in players.iter() {
-                if pid != player_id && player.active && player.hp > 0 && player.x == front_x && player.y == front_y {
-                    target_id = Some(pid.clone());
-                    is_npc = false;
-                    tracing::info!("{} found player target: {} at ({}, {})", attacker_name, player.name, player.x, player.y);
-                    break;
+            // Check players at this tile
+            {
+                let players = self.players.read().await;
+                for (pid, player) in players.iter() {
+                    if pid != player_id && player.active && player.hp > 0 && player.x == check_x && player.y == check_y {
+                        target_id = Some(pid.clone());
+                        is_npc = false;
+                        target_tile_x = check_x;
+                        target_tile_y = check_y;
+                        tracing::info!("{} found player target: {} at ({}, {}) range {}", attacker_name, player.name, check_x, check_y, dist);
+                        break;
+                    }
                 }
             }
+            if target_id.is_some() { break; }
         }
 
         // No valid target found
         let target_id = match target_id {
             Some(id) => id,
             None => {
-                tracing::debug!("{} attack missed - no target at ({}, {})", attacker_name, front_x, front_y);
+                tracing::debug!("{} attack missed - no target in range {} facing {:?}", attacker_name, weapon_range, attacker_dir);
                 return;
             }
         };
@@ -1352,9 +1393,16 @@ impl GameRoom {
             }
         };
 
-        // Use front position as target position for damage event
-        let target_x = front_x as f32;
-        let target_y = front_y as f32;
+        // Use actual target position for damage event (important for ranged projectiles)
+        let target_x = target_tile_x as f32;
+        let target_y = target_tile_y as f32;
+
+        // Determine projectile type for ranged attacks
+        let projectile = if weapon_type == WeaponType::Ranged {
+            Some("arrow".to_string())
+        } else {
+            None
+        };
 
         // Broadcast damage event to all clients
         let damage_msg = ServerMessage::DamageEvent {
@@ -1364,6 +1412,7 @@ impl GameRoom {
             target_hp,
             target_x,
             target_y,
+            projectile,
         };
         self.broadcast(damage_msg).await;
 
@@ -3474,6 +3523,7 @@ impl GameRoom {
                 target_hp,
                 target_x,
                 target_y,
+                projectile: None,
             }).await;
 
             // Handle player death
