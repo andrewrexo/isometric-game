@@ -1296,18 +1296,20 @@ impl Renderer {
                     let is_attack_frame_2 = player.animation.state == AnimationState::Attacking && (player.animation.frame as u32 % 2) == 1;
                     let (hair_offset_x, hair_offset_y) = if is_attack_frame_2 {
                         // Attack frame 2 offsets vary by direction
-                        let y_offset = if is_back { -3.0 } else { 3.0 };
-                        let x_offset = if coords.flip_h {
-                            6.0  // Up and Right directions (flipped)
-                        } else if is_back {
-                            -4.0 // Left direction (back, not flipped)
+                        let y_offset = if is_back { -2.0 } else { 2.0 };
+                        let x_offset = if is_back {
+                            if coords.flip_h { 5.0 } else { -5.0 }  // Up/Left: left 5
                         } else {
-                            -6.0 // Down direction (front, not flipped)
+                            if coords.flip_h { 6.0 } else { -6.0 }  // Down/Right: left 6
                         };
                         (x_offset, y_offset)
                     } else {
-                        // Normal offsets: up 3, left 1 (mirrored when flipped)
-                        let x_offset = if coords.flip_h { 1.0 } else { -1.0 };
+                        // Normal offsets vary by direction
+                        let x_offset = if is_back {
+                            if coords.flip_h { 2.0 } else { -2.0 }  // Back directions: left 2
+                        } else {
+                            if coords.flip_h { 1.0 } else { -1.0 }  // Front directions: left 1
+                        };
                         (x_offset, -3.0)
                     };
 
