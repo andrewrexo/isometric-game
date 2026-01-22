@@ -383,6 +383,8 @@ base_price = 250
 sellable = true
 [long_bow.equipment]
 slot_type = "weapon"
+weapon_type = "ranged"
+range = 8
 attack_level_required = 20
 attack_bonus = 25
 strength_bonus = 18
@@ -398,6 +400,8 @@ base_price = 1500
 sellable = true
 [dark_bow.equipment]
 slot_type = "weapon"
+weapon_type = "ranged"
+range = 10
 attack_level_required = 50
 attack_bonus = 48
 strength_bonus = 55
