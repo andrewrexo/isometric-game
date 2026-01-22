@@ -740,9 +740,33 @@ impl NetworkClient {
                         damage,
                         time: macroquad::time::get_time(),
                         target_id,
-                        source_id,
-                        projectile,
+                        source_id: source_id.clone(),
+                        projectile: projectile.clone(),
                     });
+
+                    // Spawn projectile for ranged attacks
+                    if let Some(ref projectile_type) = projectile {
+                        if let Some(ref source_id) = source_id {
+                            // Get source position
+                            let source_pos = if let Some(player) = state.players.get(source_id) {
+                                Some((player.x, player.y))
+                            } else {
+                                None
+                            };
+
+                            if let Some((src_x, src_y)) = source_pos {
+                                state.projectiles.push(crate::game::Projectile {
+                                    sprite: projectile_type.clone(),
+                                    start_x: src_x,
+                                    start_y: src_y,
+                                    end_x: target_x,
+                                    end_y: target_y,
+                                    start_time: current_time,
+                                    duration: 0.15, // Fast arrow travel
+                                });
+                            }
+                        }
+                    }
                 }
             }
 
