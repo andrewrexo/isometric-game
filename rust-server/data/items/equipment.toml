@@ -217,6 +217,48 @@ attack_bonus = 5
 strength_bonus = 25
 defence_bonus = 60
 
+[sorcerer_robe]
+display_name = "Sorcerer's Robe"
+sprite = "sorcerer_robe"
+description = "Elegant robes imbued with faint magical aura. Favored by spellcasters."
+category = "equipment"
+max_stack = 1
+base_price = 500
+[sorcerer_robe.equipment]
+slot_type = "body"
+defence_level_required = 30
+attack_bonus = 12
+strength_bonus = 0
+defence_bonus = 18
+
+[peasant_garb]
+display_name = "Peasant Garb"
+sprite = "peasant_garb"
+description = "Simple clothing worn by villagers. Offers little protection."
+category = "equipment"
+max_stack = 1
+base_price = 2
+[peasant_garb.equipment]
+slot_type = "body"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 1
+
+[stone_armor]
+display_name = "Stone Armor"
+sprite = "stone_armor"
+description = "Bulky armor built from slabs of stone. Extremely tough but heavy."
+category = "equipment"
+max_stack = 1
+base_price = 850
+[stone_armor.equipment]
+slot_type = "body"
+defence_level_required = 50
+attack_bonus = -2
+strength_bonus = 10
+defence_bonus = 45
+
 
 # =============================================================================
 # WEAPONS (Attack requirement)
