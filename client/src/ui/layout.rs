@@ -51,9 +51,8 @@ pub enum UiElementId {
     ShopSellConfirmButton,
 
     // Menu Buttons
-    MenuButtonCharacter,
     MenuButtonInventory,
-    MenuButtonGear,
+    MenuButtonCharacter,
     MenuButtonSocial,
     MenuButtonSkills,
     MenuButtonSettings,

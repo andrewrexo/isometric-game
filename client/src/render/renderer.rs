@@ -2726,8 +2726,8 @@ impl Renderer {
         // Skills panel (when open)
         self.render_skills_panel(state, hovered, &mut layout);
 
-        // Gear panel (when open)
-        self.render_gear_panel(state, hovered, &mut layout);
+        // Character panel (when open)
+        self.render_character_panel(state, hovered, &mut layout);
 
         // Quick slots (always visible at bottom, above exp bar)
         self.render_quick_slots(state, hovered, &mut layout);

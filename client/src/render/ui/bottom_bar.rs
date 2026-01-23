@@ -89,7 +89,7 @@ impl Renderer {
         // Buttons with their icon frame indices
         let buttons = [
             (UiElementId::MenuButtonInventory, ICON_INVENTORY, state.ui_state.inventory_open),
-            (UiElementId::MenuButtonGear, ICON_CHARACTER, state.ui_state.gear_panel_open),
+            (UiElementId::MenuButtonCharacter, ICON_CHARACTER, state.ui_state.character_panel_open),
             (UiElementId::MenuButtonSkills, ICON_SKILLS, state.ui_state.skills_open),
             (UiElementId::MenuButtonSocial, ICON_SOCIAL, state.ui_state.social_open),
             (UiElementId::MenuButtonSettings, ICON_SETTINGS, state.ui_state.escape_menu_open),

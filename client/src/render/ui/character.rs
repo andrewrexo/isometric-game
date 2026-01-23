@@ -1,4 +1,4 @@
-//! Gear panel rendering - separate equipment slots panel
+//! Character panel rendering - separate equipment slots panel
 
 use macroquad::prelude::*;
 use crate::game::{GameState, DragSource};
@@ -6,19 +6,19 @@ use crate::ui::{UiElementId, UiLayout};
 use super::super::Renderer;
 use super::common::*;
 
-/// Gear panel dimensions
-const GEAR_PANEL_PADDING: f32 = 12.0;
-const GEAR_HEADER_HEIGHT: f32 = 24.0;
-const GEAR_GRID_WIDTH: f32 = 3.0 * EQUIP_SLOT_SIZE + 2.0 * EQUIP_SLOT_SPACING; // 122
-const GEAR_GRID_HEIGHT: f32 = 5.0 * EQUIP_SLOT_SIZE + 4.0 * EQUIP_SLOT_SPACING; // 206
-const GEAR_PANEL_WIDTH: f32 = 240.0; // Unified width to match inventory and other UI panels
-const GEAR_PANEL_HEIGHT: f32 = FRAME_THICKNESS * 2.0 + GEAR_HEADER_HEIGHT + GEAR_PANEL_PADDING + GEAR_GRID_HEIGHT + GEAR_PANEL_PADDING; // ~262
+/// Character panel dimensions
+const CHARACTER_PANEL_PADDING: f32 = 12.0;
+const CHARACTER_HEADER_HEIGHT: f32 = 24.0;
+const CHARACTER_GRID_WIDTH: f32 = 3.0 * EQUIP_SLOT_SIZE + 2.0 * EQUIP_SLOT_SPACING; // 122
+const CHARACTER_GRID_HEIGHT: f32 = 5.0 * EQUIP_SLOT_SIZE + 4.0 * EQUIP_SLOT_SPACING; // 206
+const CHARACTER_PANEL_WIDTH: f32 = 240.0; // Unified width to match inventory and other UI panels
+const CHARACTER_PANEL_HEIGHT: f32 = FRAME_THICKNESS * 2.0 + CHARACTER_HEADER_HEIGHT + CHARACTER_PANEL_PADDING + CHARACTER_GRID_HEIGHT + CHARACTER_PANEL_PADDING; // ~262
 const STATS_SECTION_GAP: f32 = 8.0; // Gap between equipment grid and stats
 
 impl Renderer {
-    /// Render the gear panel when open
-    pub(crate) fn render_gear_panel(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        if !state.ui_state.gear_panel_open {
+    /// Render the character panel when open
+    pub(crate) fn render_character_panel(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
+        if !state.ui_state.character_panel_open {
             return;
         }
 
@@ -26,25 +26,25 @@ impl Renderer {
         let screen_h = screen_height();
 
         // Position panel on right side, above the menu buttons (align with button right edge)
-        let panel_x = screen_w - GEAR_PANEL_WIDTH - 8.0;
+        let panel_x = screen_w - CHARACTER_PANEL_WIDTH - 8.0;
         let button_area_height = MENU_BUTTON_SIZE + EXP_BAR_GAP;
-        let panel_y = screen_h - button_area_height - GEAR_PANEL_HEIGHT - 8.0;
+        let panel_y = screen_h - button_area_height - CHARACTER_PANEL_HEIGHT - 8.0;
 
         // Draw panel frame
-        self.draw_panel_frame(panel_x, panel_y, GEAR_PANEL_WIDTH, GEAR_PANEL_HEIGHT);
-        self.draw_corner_accents(panel_x, panel_y, GEAR_PANEL_WIDTH, GEAR_PANEL_HEIGHT);
+        self.draw_panel_frame(panel_x, panel_y, CHARACTER_PANEL_WIDTH, CHARACTER_PANEL_HEIGHT);
+        self.draw_corner_accents(panel_x, panel_y, CHARACTER_PANEL_WIDTH, CHARACTER_PANEL_HEIGHT);
 
         // Header
         let header_x = panel_x + FRAME_THICKNESS;
         let header_y = panel_y + FRAME_THICKNESS;
-        let header_w = GEAR_PANEL_WIDTH - FRAME_THICKNESS * 2.0;
+        let header_w = CHARACTER_PANEL_WIDTH - FRAME_THICKNESS * 2.0;
 
-        draw_rectangle(header_x, header_y, header_w, GEAR_HEADER_HEIGHT, HEADER_BG);
+        draw_rectangle(header_x, header_y, header_w, CHARACTER_HEADER_HEIGHT, HEADER_BG);
         draw_line(
             header_x + 6.0,
-            header_y + GEAR_HEADER_HEIGHT,
+            header_y + CHARACTER_HEADER_HEIGHT,
             header_x + header_w - 6.0,
-            header_y + GEAR_HEADER_HEIGHT,
+            header_y + CHARACTER_HEADER_HEIGHT,
             1.0,
             HEADER_BORDER,
         );
@@ -56,8 +56,8 @@ impl Renderer {
         self.draw_text_sharp(header_text, text_x, header_y + 17.0, 16.0, TEXT_TITLE);
 
         // Grid area
-        let grid_x = panel_x + FRAME_THICKNESS + GEAR_PANEL_PADDING;
-        let grid_y = header_y + GEAR_HEADER_HEIGHT + GEAR_PANEL_PADDING;
+        let grid_x = panel_x + FRAME_THICKNESS + CHARACTER_PANEL_PADDING;
+        let grid_y = header_y + CHARACTER_HEADER_HEIGHT + CHARACTER_PANEL_PADDING;
 
         let slot_step = EQUIP_SLOT_SIZE + EQUIP_SLOT_SPACING;
 
@@ -124,7 +124,7 @@ impl Renderer {
         }
 
         // Stats section - to the right of equipment grid
-        let stats_x = grid_x + GEAR_GRID_WIDTH + STATS_SECTION_GAP;
+        let stats_x = grid_x + CHARACTER_GRID_WIDTH + STATS_SECTION_GAP;
         let stats_y = grid_y;
 
         // Get player stats
