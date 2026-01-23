@@ -189,6 +189,35 @@ attack_bonus = 100
 strength_bonus = 100
 defence_bonus = 100
 
+[sweater]
+display_name = "Sweater"
+sprite = "sweater"
+description = "A cozy woolen sweater. Not suited for battle, but warm."
+category = "equipment"
+max_stack = 1
+base_price = 10
+[sweater.equipment]
+slot_type = "body"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 2
+
+[hero_armor]
+display_name = "Hero's Armor"
+sprite = "hero_armor"
+description = "Legend says this armor was worn by a hero who saved the realm."
+category = "equipment"
+max_stack = 1
+base_price = 2500
+[hero_armor.equipment]
+slot_type = "body"
+defence_level_required = 70
+attack_bonus = 5
+strength_bonus = 25
+defence_bonus = 60
+
+
 # =============================================================================
 # WEAPONS (Attack requirement)
 # =============================================================================

@@ -10,6 +10,10 @@ pub const WEAPON_SPRITE_HEIGHT: f32 = 84.0;
 pub const BOOT_SPRITE_WIDTH: f32 = 34.0;
 pub const BOOT_SPRITE_HEIGHT: f32 = 47.0;
 
+// Body armor sprite dimensions (single row format, 22 frames per armor)
+pub const BODY_ARMOR_SPRITE_WIDTH: f32 = 34.0;  // Same as player sprite width
+pub const BODY_ARMOR_SPRITE_HEIGHT: f32 = 77.0;
+
 /// Animation states the player can be in
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnimationState {
@@ -620,6 +624,135 @@ pub fn get_boot_offset(state: AnimationState, direction: Direction, anim_frame: 
         AnimationState::ShootingBow => {
             // Same offsets as 2nd attack frame
             if use_back { (-3.0, 1.0) } else { (-4.0, -1.0) }
+        }
+        AnimationState::SittingChair => (0.0, 0.0),
+        AnimationState::SittingGround => (0.0, 0.0),
+    };
+
+    // Invert x offset when flipped
+    let adjusted_state_x = if should_flip_horizontal(direction) {
+        -state_x
+    } else {
+        state_x
+    };
+
+    (base_x + adjusted_state_x, base_y + state_y)
+}
+
+// ============================================================================
+// Body Armor Animation System (single-row sprite format)
+// ============================================================================
+
+/// Result of body armor frame calculation
+#[derive(Debug, Clone, Copy)]
+pub struct BodyArmorFrameResult {
+    /// Frame index (0-based) in the single-row spritesheet
+    pub frame: u32,
+    /// Whether to flip the sprite horizontally
+    pub flip_h: bool,
+}
+
+/// Get the body armor frame index for the current animation state and direction
+///
+/// Body armor sprite sheet layout (0-indexed, 22 frames total):
+/// - 0-1: Standing front/back
+/// - 2-5: Walking front (Down/Right)
+/// - 6-9: Walking back (Up/Left)
+/// - 10-11: Magic front/back
+/// - 12-15: Attack (4 frames)
+/// - 16-17: Sitting in chair front/back
+/// - 18-19: Sitting on ground front/back
+/// - 20-21: Archery front/back
+pub fn get_body_armor_frame(state: AnimationState, direction: Direction, anim_frame: u32) -> BodyArmorFrameResult {
+    let use_back = is_up_or_left_direction(direction);
+    let flip_h = should_flip_horizontal(direction);
+
+    let frame = match state {
+        AnimationState::Idle => {
+            if use_back { 1 } else { 0 }
+        }
+        AnimationState::Walking => {
+            let frame_in_walk = anim_frame % 4;
+            if use_back {
+                6 + frame_in_walk // Frames 6-9
+            } else {
+                2 + frame_in_walk // Frames 2-5
+            }
+        }
+        AnimationState::Attacking => {
+            // Attack frame 1: use idle frame, Attack frame 2: use attack frame
+            let attack_frame = anim_frame % 2;
+            if attack_frame == 0 {
+                // Frame 1: use idle
+                if use_back { 1 } else { 0 }
+            } else {
+                // Frame 2: use attack (13 for front, 15 for back)
+                if use_back { 15 } else { 13 }
+            }
+        }
+        AnimationState::Casting => {
+            // Magic frames 10-11
+            if use_back { 11 } else { 10 }
+        }
+        AnimationState::ShootingBow => {
+            // Archery frames 20-21
+            if use_back { 21 } else { 20 }
+        }
+        AnimationState::SittingChair => {
+            // Sitting chair frames 16-17
+            if use_back { 17 } else { 16 }
+        }
+        AnimationState::SittingGround => {
+            // Sitting ground frames 18-19
+            if use_back { 19 } else { 18 }
+        }
+    };
+
+    BodyArmorFrameResult { frame, flip_h }
+}
+
+/// Get the pixel offset for body armor positioning relative to the player sprite
+///
+/// Body armor covers the torso and should align with the player's body in each animation frame.
+/// These offsets are similar to boots but positioned higher to cover the torso.
+pub fn get_body_armor_offset(state: AnimationState, direction: Direction, anim_frame: u32) -> (f32, f32) {
+    let use_back = is_up_or_left_direction(direction);
+
+    // Base offset: body armor is 34 wide (same as player's 34)
+    // Body armor is 77 tall, player is 78, nearly same height
+    let base_x = 0.0;   // Same width as player, no centering needed
+    let base_y = 0.0;   // Start at top of player sprite
+
+    // Per-state offsets for alignment (similar to boots but for torso)
+    let (state_x, state_y) = match state {
+        AnimationState::Idle => {
+            // Up/Left: right 1px for up (mirrored left for left), up 2px
+            // Down/Right: up 3px (mirrored)
+            if use_back { (-1.0, -2.0) } else { (0.0, -3.0) }
+        }
+        AnimationState::Walking => {
+            // Up/Left: right 1px for up (mirrored left for left), up 3px
+            // Down/Right: up 4px (mirrored)
+            if use_back { (-1.0, -3.0) } else { (0.0, -4.0) }
+        }
+        AnimationState::Attacking => {
+            let attack_frame = anim_frame % 2;
+            if attack_frame == 0 {
+                // Frame 1: right 1px for up (mirrored left for left), up 2px
+                // Down/Right: up 3px (mirrored)
+                if use_back { (-1.0, -2.0) } else { (0.0, -3.0) }
+            } else {
+                // Frame 2:
+                // Up/Left: right 4px, up 2px for up (mirrored for left)
+                // Down/Right: left 2px, up 3px (mirrored for right)
+                if use_back { (-4.0, -2.0) } else { (-2.0, -3.0) }
+            }
+        }
+        AnimationState::Casting => (0.0, 0.0),
+        AnimationState::ShootingBow => {
+            // Up/Left: right 1px for up (mirrored left for left), up 2px
+            // Down/Right: left 4px, up 3px (mirrored for right)
+            if use_back { (-1.0, -2.0) } else { (-4.0, -3.0) }
         }
         AnimationState::SittingChair => (0.0, 0.0),
         AnimationState::SittingGround => (0.0, 0.0),

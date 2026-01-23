@@ -7,7 +7,7 @@ use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
 use super::ui::common::{SlotState, CORNER_ACCENT_SIZE};
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
-use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, get_boot_frame, get_boot_offset, AnimationState};
+use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT, BODY_ARMOR_SPRITE_WIDTH, BODY_ARMOR_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, get_boot_frame, get_boot_offset, get_body_armor_frame, get_body_armor_offset, AnimationState};
 use super::font::BitmapFont;
 
 /// Timing data from a render pass
@@ -186,23 +186,29 @@ impl Renderer {
         }
         log::info!("Loaded {} hair sprite variants", hair_sprites.len());
 
-        // Load equipment sprites from assets/sprites/equipment/ (scan directory)
+        // Load equipment sprites from assets/sprites/equipment/ (scan directory and subfolders)
         let mut equipment_sprites = HashMap::new();
-        if let Ok(entries) = std::fs::read_dir("assets/sprites/equipment") {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "png") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        let item_id = stem.to_string();
-                        let path_str = path.to_string_lossy().to_string();
-                        match load_texture(&path_str).await {
-                            Ok(tex) => {
-                                tex.set_filter(FilterMode::Nearest);
-                                log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
-                                equipment_sprites.insert(item_id, tex);
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to load equipment sprite {}: {}", path_str, e);
+        let mut equipment_dirs = vec![std::path::PathBuf::from("assets/sprites/equipment")];
+        while let Some(dir) = equipment_dirs.pop() {
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        // Add subdirectory to scan
+                        equipment_dirs.push(path);
+                    } else if path.extension().map_or(false, |ext| ext == "png") {
+                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                            let item_id = stem.to_string();
+                            let path_str = path.to_string_lossy().to_string();
+                            match load_texture(&path_str).await {
+                                Ok(tex) => {
+                                    tex.set_filter(FilterMode::Nearest);
+                                    log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
+                                    equipment_sprites.insert(item_id, tex);
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to load equipment sprite {}: {}", path_str, e);
+                                }
                             }
                         }
                     }
@@ -1592,18 +1598,50 @@ impl Renderer {
             // Draw equipment overlay (body armor)
             if let Some(ref body_item_id) = player.equipped_body {
                 if let Some(equip_sprite) = self.equipment_sprites.get(body_item_id) {
-                    draw_texture_ex(
-                        equip_sprite,
-                        draw_x,
-                        draw_y,
-                        tint, // Same tint as player
-                        DrawTextureParams {
-                            source: Some(Rect::new(src_x, src_y, src_w, src_h)),
-                            dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
-                            flip_x: coords.flip_h,
-                            ..Default::default()
-                        },
-                    );
+                    // Check if this is a new-style single-row body armor sprite (width > height * 2)
+                    // Body armor sprites are wider (16 frames) so use a more aggressive ratio check
+                    let is_single_row = equip_sprite.width() > equip_sprite.height() * 2.0;
+
+                    if is_single_row {
+                        // New single-row body armor format
+                        let anim_frame = player.animation.frame as u32;
+                        let armor_frame = get_body_armor_frame(player.animation.state, player.animation.direction, anim_frame);
+                        let (armor_offset_x, armor_offset_y) = get_body_armor_offset(player.animation.state, player.animation.direction, anim_frame);
+
+                        let armor_src_x = armor_frame.frame as f32 * BODY_ARMOR_SPRITE_WIDTH;
+                        let scaled_armor_width = BODY_ARMOR_SPRITE_WIDTH * zoom;
+                        let scaled_armor_height = BODY_ARMOR_SPRITE_HEIGHT * zoom;
+
+                        let armor_draw_x = draw_x + armor_offset_x * zoom;
+                        let armor_draw_y = draw_y + armor_offset_y * zoom;
+
+                        draw_texture_ex(
+                            equip_sprite,
+                            armor_draw_x,
+                            armor_draw_y,
+                            tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(armor_src_x, 0.0, BODY_ARMOR_SPRITE_WIDTH, BODY_ARMOR_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_armor_width, scaled_armor_height)),
+                                flip_x: armor_frame.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    } else {
+                        // Old grid-style body armor format (matches player sprite sheet layout)
+                        draw_texture_ex(
+                            equip_sprite,
+                            draw_x,
+                            draw_y,
+                            tint, // Same tint as player
+                            DrawTextureParams {
+                                source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                                dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
+                                flip_x: coords.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    }
                 }
             }
 
@@ -1885,18 +1923,48 @@ impl Renderer {
             // Draw equipment silhouette (body armor)
             if let Some(ref body_item_id) = player.equipped_body {
                 if let Some(equip_sprite) = self.equipment_sprites.get(body_item_id) {
-                    draw_texture_ex(
-                        equip_sprite,
-                        draw_x,
-                        draw_y,
-                        silhouette_tint,
-                        DrawTextureParams {
-                            source: Some(Rect::new(src_x, src_y, src_w, src_h)),
-                            dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
-                            flip_x: coords.flip_h,
-                            ..Default::default()
-                        },
-                    );
+                    let is_single_row = equip_sprite.width() > equip_sprite.height() * 2.0;
+
+                    if is_single_row {
+                        // New single-row body armor format
+                        let anim_frame = player.animation.frame as u32;
+                        let armor_frame = get_body_armor_frame(player.animation.state, player.animation.direction, anim_frame);
+                        let (armor_offset_x, armor_offset_y) = get_body_armor_offset(player.animation.state, player.animation.direction, anim_frame);
+
+                        let armor_src_x = armor_frame.frame as f32 * BODY_ARMOR_SPRITE_WIDTH;
+                        let scaled_armor_width = BODY_ARMOR_SPRITE_WIDTH * zoom;
+                        let scaled_armor_height = BODY_ARMOR_SPRITE_HEIGHT * zoom;
+
+                        let armor_draw_x = draw_x + armor_offset_x * zoom;
+                        let armor_draw_y = draw_y + armor_offset_y * zoom;
+
+                        draw_texture_ex(
+                            equip_sprite,
+                            armor_draw_x,
+                            armor_draw_y,
+                            silhouette_tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(armor_src_x, 0.0, BODY_ARMOR_SPRITE_WIDTH, BODY_ARMOR_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_armor_width, scaled_armor_height)),
+                                flip_x: armor_frame.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    } else {
+                        // Old grid-style body armor format
+                        draw_texture_ex(
+                            equip_sprite,
+                            draw_x,
+                            draw_y,
+                            silhouette_tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                                dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
+                                flip_x: coords.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    }
                 }
             }
 
