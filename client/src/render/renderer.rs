@@ -7,7 +7,7 @@ use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
 use super::ui::common::{SlotState, CORNER_ACCENT_SIZE};
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
-use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, AnimationState};
+use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, get_boot_frame, get_boot_offset, AnimationState};
 use super::font::BitmapFont;
 
 /// Timing data from a render pass
@@ -999,7 +999,11 @@ impl Renderer {
 
         for projectile in &state.projectiles {
             let (world_x, world_y) = projectile.current_pos(current_time);
-            let (screen_x, screen_y) = world_to_screen(world_x, world_y, &state.camera);
+            let (screen_x, screen_y_raw) = world_to_screen(world_x, world_y, &state.camera);
+
+            // Offset arrow vertically to match player center (not feet)
+            let arrow_y_offset = -40.0 * state.camera.zoom;
+            let screen_y = screen_y_raw + arrow_y_offset;
 
             // Calculate direction in SCREEN space (accounts for isometric transform)
             let (start_screen_x, start_screen_y) = world_to_screen(projectile.start_x, projectile.start_y, &state.camera);
@@ -1008,8 +1012,34 @@ impl Renderer {
             let dy = end_screen_y - start_screen_y;
             let angle = dy.atan2(dx);
 
-            // Snap to nearest 45° (π/4 radians)
-            let snapped_angle = (angle / (std::f32::consts::PI / 4.0)).round() * (std::f32::consts::PI / 4.0);
+            // Snap to isometric angles (2:1 ratio = atan2(1,2) ≈ 26.57°)
+            // 8 isometric directions: 0°, 26.57°, 90°, 153.43°, 180°, -153.43°, -90°, -26.57°
+            let iso_angle = (0.5_f32).atan(); // atan(1/2) ≈ 26.57° ≈ 0.4636 rad
+            let iso_angles: [f32; 8] = [
+                0.0,                                    // UpRight (east)
+                iso_angle,                              // Right (26.57°)
+                std::f32::consts::FRAC_PI_2,           // DownRight (90°)
+                std::f32::consts::PI - iso_angle,      // Down (153.43°)
+                std::f32::consts::PI,                  // DownLeft (180°)
+                -std::f32::consts::PI + iso_angle,     // Left (-153.43°)
+                -std::f32::consts::FRAC_PI_2,          // UpLeft (-90°)
+                -iso_angle,                            // Up (-26.57°)
+            ];
+
+            // Find nearest isometric angle
+            let mut snapped_angle = iso_angles[0];
+            let mut min_diff = f32::MAX;
+            for &iso_ang in &iso_angles {
+                let mut diff = (angle - iso_ang).abs();
+                // Handle wrap-around at ±180°
+                if diff > std::f32::consts::PI {
+                    diff = 2.0 * std::f32::consts::PI - diff;
+                }
+                if diff < min_diff {
+                    min_diff = diff;
+                    snapped_angle = iso_ang;
+                }
+            }
 
             // Direction vector from snapped angle
             let dir_x = snapped_angle.cos();
@@ -1512,6 +1542,7 @@ impl Renderer {
                     // Hair offsets depend on animation state and frame
                     // Attack offsets only apply on 2nd frame (frame index 1)
                     let is_attack_frame_2 = player.animation.state == AnimationState::Attacking && (player.animation.frame as u32 % 2) == 1;
+                    let is_shooting_bow = player.animation.state == AnimationState::ShootingBow;
                     let (hair_offset_x, hair_offset_y) = if is_attack_frame_2 {
                         // Attack frame 2 offsets vary by direction
                         let y_offset = if is_back { -2.0 } else { 2.0 };
@@ -1521,6 +1552,14 @@ impl Renderer {
                             if coords.flip_h { 6.0 } else { -6.0 }  // Down/Right: left 6
                         };
                         (x_offset, y_offset)
+                    } else if is_shooting_bow {
+                        // ShootingBow offsets
+                        let x_offset = if is_back {
+                            if coords.flip_h { 1.0 } else { -1.0 }  // Back directions: left 1
+                        } else {
+                            if coords.flip_h { 2.0 } else { -2.0 }  // Front directions: left 2
+                        };
+                        (x_offset, -3.0)
                     } else {
                         // Normal offsets vary by direction
                         let x_offset = if is_back {
@@ -1571,18 +1610,49 @@ impl Renderer {
             // Draw equipment overlay (boots)
             if let Some(ref feet_item_id) = player.equipped_feet {
                 if let Some(equip_sprite) = self.equipment_sprites.get(feet_item_id) {
-                    draw_texture_ex(
-                        equip_sprite,
-                        draw_x,
-                        draw_y,
-                        tint, // Same tint as player
-                        DrawTextureParams {
-                            source: Some(Rect::new(src_x, src_y, src_w, src_h)),
-                            dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
-                            flip_x: coords.flip_h,
-                            ..Default::default()
-                        },
-                    );
+                    // Check if this is a new-style single-row boot sprite (width > height)
+                    let is_single_row = equip_sprite.width() > equip_sprite.height();
+
+                    if is_single_row {
+                        // New single-row boot format
+                        let anim_frame = player.animation.frame as u32;
+                        let boot_frame = get_boot_frame(player.animation.state, player.animation.direction, anim_frame);
+                        let (boot_offset_x, boot_offset_y) = get_boot_offset(player.animation.state, player.animation.direction, anim_frame);
+
+                        let boot_src_x = boot_frame.frame as f32 * BOOT_SPRITE_WIDTH;
+                        let scaled_boot_width = BOOT_SPRITE_WIDTH * zoom;
+                        let scaled_boot_height = BOOT_SPRITE_HEIGHT * zoom;
+
+                        let boot_draw_x = draw_x + boot_offset_x * zoom;
+                        let boot_draw_y = draw_y + boot_offset_y * zoom;
+
+                        draw_texture_ex(
+                            equip_sprite,
+                            boot_draw_x,
+                            boot_draw_y,
+                            tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(boot_src_x, 0.0, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_boot_width, scaled_boot_height)),
+                                flip_x: boot_frame.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    } else {
+                        // Old grid-style boot format (matches player sprite sheet layout)
+                        draw_texture_ex(
+                            equip_sprite,
+                            draw_x,
+                            draw_y,
+                            tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                                dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
+                                flip_x: coords.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    }
                 }
             }
 
@@ -1788,11 +1858,11 @@ impl Renderer {
                     let scaled_hair_width = HAIR_SPRITE_WIDTH * zoom;
                     let scaled_hair_height = HAIR_SPRITE_HEIGHT * zoom;
 
-                    // Hair offset based on direction
+                    // Hair offset based on direction (silhouette uses normal offsets)
                     let x_offset = if is_back {
-                        if coords.flip_h { 2.0 } else { -2.0 }
+                        if coords.flip_h { 2.0 } else { -2.0 }  // Back directions: left 2
                     } else {
-                        if coords.flip_h { 1.0 } else { -1.0 }
+                        if coords.flip_h { 1.0 } else { -1.0 }  // Front directions: left 1
                     };
                     let hair_draw_x = draw_x + (scaled_sprite_width - scaled_hair_width) / 2.0 + x_offset * zoom;
                     let hair_draw_y = draw_y - 3.0 * zoom;
@@ -1833,18 +1903,48 @@ impl Renderer {
             // Draw equipment silhouette (boots)
             if let Some(ref feet_item_id) = player.equipped_feet {
                 if let Some(equip_sprite) = self.equipment_sprites.get(feet_item_id) {
-                    draw_texture_ex(
-                        equip_sprite,
-                        draw_x,
-                        draw_y,
-                        silhouette_tint,
-                        DrawTextureParams {
-                            source: Some(Rect::new(src_x, src_y, src_w, src_h)),
-                            dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
-                            flip_x: coords.flip_h,
-                            ..Default::default()
-                        },
-                    );
+                    let is_single_row = equip_sprite.width() > equip_sprite.height();
+
+                    if is_single_row {
+                        // New single-row boot format
+                        let anim_frame = player.animation.frame as u32;
+                        let boot_frame = get_boot_frame(player.animation.state, player.animation.direction, anim_frame);
+                        let (boot_offset_x, boot_offset_y) = get_boot_offset(player.animation.state, player.animation.direction, anim_frame);
+
+                        let boot_src_x = boot_frame.frame as f32 * BOOT_SPRITE_WIDTH;
+                        let scaled_boot_width = BOOT_SPRITE_WIDTH * zoom;
+                        let scaled_boot_height = BOOT_SPRITE_HEIGHT * zoom;
+
+                        let boot_draw_x = draw_x + boot_offset_x * zoom;
+                        let boot_draw_y = draw_y + boot_offset_y * zoom;
+
+                        draw_texture_ex(
+                            equip_sprite,
+                            boot_draw_x,
+                            boot_draw_y,
+                            silhouette_tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(boot_src_x, 0.0, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_boot_width, scaled_boot_height)),
+                                flip_x: boot_frame.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    } else {
+                        // Old grid-style boot format
+                        draw_texture_ex(
+                            equip_sprite,
+                            draw_x,
+                            draw_y,
+                            silhouette_tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(src_x, src_y, src_w, src_h)),
+                                dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
+                                flip_x: coords.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    }
                 }
             }
 
