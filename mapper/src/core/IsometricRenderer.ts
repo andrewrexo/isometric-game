@@ -106,6 +106,13 @@ export class IsometricRenderer {
       }
     }
 
+    // Render walls (after map objects, uses same visibility toggle)
+    if (this.options.showMapObjects) {
+      for (const chunk of sortedChunks) {
+        this.renderWalls(chunk, viewport);
+      }
+    }
+
     if (this.options.showEntities) {
       for (const chunk of sortedChunks) {
         this.renderEntities(chunk, viewport);
@@ -248,6 +255,57 @@ export class IsometricRenderer {
         // Center horizontally on the tile, align bottom to tile position
         const drawX = screen.sx - scaledWidth / 2;
         const drawY = screen.sy + TILE_HEIGHT * viewport.zoom - scaledHeight;
+
+        this.ctx.drawImage(
+          objDef.image,
+          0,
+          0,
+          objDef.image.width,
+          objDef.image.height,
+          drawX,
+          drawY,
+          scaledWidth,
+          scaledHeight
+        );
+      }
+    }
+  }
+
+  private renderWalls(chunk: Chunk, viewport: Viewport): void {
+    if (!this.ctx) return;
+
+    // Sort walls by depth (x + y)
+    const sortedWalls = [...chunk.walls].sort((a, b) => {
+      return (a.x + a.y) - (b.x + b.y);
+    });
+
+    for (const wall of sortedWalls) {
+      const worldCoord = chunkLocalToWorld(chunk.coord, { lx: wall.x, ly: wall.y });
+      const screen = worldToScreen(worldCoord, viewport);
+
+      // Get the object definition from objectLoader using the gid
+      const objDef = objectLoader.getObjectByGid(wall.gid);
+
+      if (objDef?.image) {
+        const scaledWidth = objDef.image.width * viewport.zoom;
+        const scaledHeight = objDef.image.height * viewport.zoom;
+
+        // Bottom vertex of tile
+        const bottomVertexX = screen.sx;
+        const bottomVertexY = screen.sy + TILE_HEIGHT * viewport.zoom;
+
+        let drawX: number;
+        let drawY: number;
+
+        if (wall.edge === 'down') {
+          // Bottom-right corner of sprite at bottom vertex
+          drawX = bottomVertexX - scaledWidth;
+          drawY = bottomVertexY - scaledHeight;
+        } else {
+          // Bottom-left corner of sprite at bottom vertex (right edge)
+          drawX = bottomVertexX;
+          drawY = bottomVertexY - scaledHeight;
+        }
 
         this.ctx.drawImage(
           objDef.image,
