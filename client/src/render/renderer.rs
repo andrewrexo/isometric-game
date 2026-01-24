@@ -2268,58 +2268,6 @@ impl Renderer {
                 }
             }
 
-            // Draw equipment silhouette (head slot) - use shader to handle marker colors
-            if let Some(ref head_item_id) = player.equipped_head {
-                if let Some(head_sprite) = self.equipment_sprites.get(head_item_id) {
-                    let anim_frame = player.animation.frame as u32;
-                    let head_frame = get_head_frame(player.animation.direction);
-                    let (head_offset_x, head_offset_y) = get_head_offset(player.animation.state, player.animation.direction, anim_frame);
-
-                    let head_src_x = head_frame.frame as f32 * HEAD_SPRITE_WIDTH;
-                    let scaled_head_width = HEAD_SPRITE_WIDTH * zoom;
-                    let scaled_head_height = HEAD_SPRITE_HEIGHT * zoom;
-
-                    let head_draw_x = draw_x + head_offset_x * zoom;
-                    let head_draw_y = draw_y + head_offset_y * zoom;
-
-                    // Use shader to handle marker colors (discard them for silhouette)
-                    if let Some(ref material) = self.head_hair_material {
-                        // Set up shader with silhouette tint and hair UV out of bounds to discard markers
-                        material.set_uniform("HairUvTransform", [-2.0f32, -2.0f32, 0.0f32, 0.0f32]);
-                        material.set_uniform("Tint", [1.0f32, 1.0f32, 1.0f32, silhouette_tint.a]);
-                        gl_use_material(material);
-
-                        draw_texture_ex(
-                            head_sprite,
-                            head_draw_x,
-                            head_draw_y,
-                            WHITE,
-                            DrawTextureParams {
-                                source: Some(Rect::new(head_src_x, 0.0, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT)),
-                                dest_size: Some(Vec2::new(scaled_head_width, scaled_head_height)),
-                                flip_x: head_frame.flip_h,
-                                ..Default::default()
-                            },
-                        );
-
-                        gl_use_default_material();
-                    } else {
-                        // Fallback without shader
-                        draw_texture_ex(
-                            head_sprite,
-                            head_draw_x,
-                            head_draw_y,
-                            silhouette_tint,
-                            DrawTextureParams {
-                                source: Some(Rect::new(head_src_x, 0.0, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT)),
-                                dest_size: Some(Vec2::new(scaled_head_width, scaled_head_height)),
-                                flip_x: head_frame.flip_h,
-                                ..Default::default()
-                            },
-                        );
-                    }
-                }
-            }
 
             // Draw weapon over-layer (after equipment)
             if let Some((weapon_sprite, ref weapon_frame, offset_x, offset_y)) = weapon_info {
@@ -2349,13 +2297,16 @@ impl Renderer {
         let (screen_x, screen_y) = world_to_screen(npc.x, npc.y, camera);
         let zoom = camera.zoom;
 
-        // Don't render dead NPCs
-        if npc.state == NpcState::Dead {
+        // Don't render if death animation is complete
+        if npc.is_death_animation_complete() {
             return;
         }
 
-        // Selection highlight (draw first, behind NPC)
-        if is_selected {
+        // Get death tint color if dying, otherwise white
+        let tint_color = npc.get_death_color().unwrap_or(WHITE);
+
+        // Selection highlight (draw first, behind NPC) - skip while dying
+        if is_selected && npc.death_timer.is_none() {
             self.render_tile_selection(npc.x, npc.y, camera);
         }
 
@@ -2405,7 +2356,7 @@ impl Renderer {
                 sprite,
                 draw_x,
                 draw_y,
-                WHITE,
+                tint_color,
                 DrawTextureParams {
                     source: Some(Rect::new(src_x, 0.0, frame_width, frame_height)),
                     dest_size: Some(Vec2::new(scaled_width, scaled_height)),
@@ -2417,7 +2368,7 @@ impl Renderer {
             scaled_height
         } else {
             // Fallback: colored ellipse rendering
-            let (base_color, highlight_color) = if npc.is_hostile() {
+            let (mut base_color, mut highlight_color) = if npc.is_hostile() {
                 (
                     Color::from_rgba(80, 180, 80, 255),
                     Color::from_rgba(120, 220, 120, 255),
@@ -2428,6 +2379,16 @@ impl Renderer {
                     Color::from_rgba(140, 160, 240, 255),
                 )
             };
+
+            // Apply death tint to ellipse colors
+            base_color.r *= tint_color.r;
+            base_color.g *= tint_color.g;
+            base_color.b *= tint_color.b;
+            base_color.a *= tint_color.a;
+            highlight_color.r *= tint_color.r;
+            highlight_color.g *= tint_color.g;
+            highlight_color.b *= tint_color.b;
+            highlight_color.a *= tint_color.a;
 
             let wobble = (macroquad::time::get_time() * 4.0 + npc.animation.frame as f64).sin() as f32;
             let radius = (10.0 + wobble * 1.5) * zoom;
@@ -2444,6 +2405,11 @@ impl Renderer {
 
             (height_offset + radius) * 2.0
         };
+
+        // Skip UI elements (name, health bar, icons) while dying
+        if npc.death_timer.is_some() {
+            return;
+        }
 
         // Top of NPC for UI elements
         let top_y = screen_y - sprite_height + 4.0 * zoom;

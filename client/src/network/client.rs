@@ -615,7 +615,18 @@ impl NetworkClient {
                                 }
                                 npc.hp = hp;
                                 npc.max_hp = max_hp;
-                                npc.state = NpcState::from_u8(npc_state);
+                                // Handle state transitions
+                                let new_state = NpcState::from_u8(npc_state);
+                                if new_state != NpcState::Dead {
+                                    // NPC is alive - clear death state if it was dying
+                                    npc.death_timer = None;
+                                    npc.pending_death = false;
+                                    npc.state = new_state;
+                                } else if npc.death_timer.is_none() && !npc.pending_death {
+                                    // Server says dead, start death sequence if not already
+                                    npc.start_death();
+                                }
+                                // If death_timer is Some and new_state is Dead, let animation continue
                                 // Update display name in case it changed
                                 npc.display_name = display_name;
                                 npc.hostile = hostile;
@@ -780,8 +791,7 @@ impl NetworkClient {
                     log::debug!("NPC died: {}", npc_id);
 
                     if let Some(npc) = state.npcs.get_mut(&npc_id) {
-                        npc.state = NpcState::Dead;
-                        npc.hp = 0;
+                        npc.start_death();
                     }
 
                     // Clear selection if we had this NPC targeted

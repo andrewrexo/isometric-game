@@ -859,8 +859,12 @@ pub fn get_head_offset(state: AnimationState, direction: Direction, anim_frame: 
         state_x
     };
 
-    // Left direction: move 5px to the right
-    let left_adjust = if matches!(direction, Direction::Left) { 5.0 } else { 0.0 };
+    // Direction-specific adjustments
+    let direction_adjust = match direction {
+        Direction::Left => 1.0,   // 1px to the right
+        Direction::Up => -2.0,    // 2px to the left
+        _ => 0.0,
+    };
 
-    (base_x + adjusted_state_x + left_adjust, base_y + state_y)
+    (base_x + adjusted_state_x + direction_adjust, base_y + state_y)
 }

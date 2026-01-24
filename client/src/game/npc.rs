@@ -63,6 +63,10 @@ pub struct Npc {
     pub move_speed: f32,
     /// Last time this NPC took damage (for health bar visibility)
     pub last_damage_time: f64,
+    /// Death animation timer - Some(t) means dying, None means alive
+    pub death_timer: Option<f32>,
+    /// NPC will die after reaching target position
+    pub pending_death: bool,
 }
 
 impl Npc {
@@ -88,6 +92,8 @@ impl Npc {
             is_merchant: false,
             move_speed: 2.0, // Default, will be set by server
             last_damage_time: 0.0,
+            death_timer: None,
+            pending_death: false,
         }
     }
 
@@ -106,6 +112,33 @@ impl Npc {
 
     pub fn is_alive(&self) -> bool {
         self.state != NpcState::Dead
+    }
+
+    /// Start the death sequence - NPC will finish moving to target then play death animation
+    pub fn start_death(&mut self) {
+        self.state = NpcState::Dead;
+        self.hp = 0;
+        self.pending_death = true;
+        // death_timer starts when NPC reaches target position (in update())
+    }
+
+    /// Check if death animation is complete (0.5s total)
+    pub fn is_death_animation_complete(&self) -> bool {
+        self.death_timer.map(|t| t >= 0.5).unwrap_or(false)
+    }
+
+    /// Get death animation color tint (fade to red while fading out)
+    pub fn get_death_color(&self) -> Option<macroquad::color::Color> {
+        use macroquad::color::Color;
+
+        self.death_timer.map(|t| {
+            let progress = (t / 0.5).min(1.0);
+            // Fade to red: green/blue go from 1.0 to 0.3
+            let gb = 1.0 - 0.7 * progress;
+            // Fade out: alpha goes from 1.0 to 0.0
+            let alpha = 1.0 - progress;
+            Color::new(1.0, gb, gb, alpha)
+        })
     }
 
     /// Trigger attack animation - called when damage event is received
@@ -138,7 +171,17 @@ impl Npc {
     /// Smooth visual interpolation - constant speed linear movement
     /// Speed is based on NPC's move_speed to match server timing
     pub fn update(&mut self, delta: f32) {
-        if self.state == NpcState::Dead {
+        // Update death animation timer
+        if let Some(ref mut t) = self.death_timer {
+            *t += delta;
+            return; // Don't update position/animation while dying
+        }
+
+        // If pending death but no timer yet, we need to finish moving first
+        let is_pending_death = self.pending_death;
+
+        // Skip normal updates for dead NPCs (unless pending death - they still need to move)
+        if self.state == NpcState::Dead && !is_pending_death {
             return;
         }
 
@@ -153,6 +196,13 @@ impl Npc {
             self.x = self.target_x;
             self.y = self.target_y;
             actually_moving = false;
+
+            // If pending death and we've reached target, start death animation
+            if is_pending_death {
+                self.death_timer = Some(0.0);
+                self.pending_death = false;
+                return;
+            }
         } else {
             // Linear interpolation - constant speed movement
             // Move slightly faster than server speed to ensure we arrive before next update
@@ -172,7 +222,16 @@ impl Npc {
             actually_moving = true;
         }
 
-        // Handle animation states
+        // Handle animation states (skip if pending death)
+        if is_pending_death {
+            // Keep walking animation while moving to death spot
+            if actually_moving {
+                self.animation.set_state(NpcAnimationState::Walking);
+            }
+            self.animation.update(delta);
+            return;
+        }
+
         // Attack animation is triggered by trigger_attack_animation() when damage event received
         if self.animation.state == NpcAnimationState::Attacking {
             // Let attack animation play through
