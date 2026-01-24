@@ -4,12 +4,47 @@
   border-bottom: 1px solid #3d3d5c;
 }
 
+.panel.collapsed {
+  padding: 4px 8px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  margin: -4px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+}
+
+.header:hover {
+  background: #3d3d5c;
+}
+
+.collapsed .header {
+  margin-bottom: -4px;
+}
+
+.arrow {
+  font-size: 10px;
+  color: #888;
+  transition: transform 0.15s ease;
+}
+
+.arrowCollapsed {
+  transform: rotate(-90deg);
+}
+
 .title {
   font-size: 11px;
   font-weight: 600;
   color: #888;
   text-transform: uppercase;
-  margin-bottom: 8px;
 }
 
 .layers {

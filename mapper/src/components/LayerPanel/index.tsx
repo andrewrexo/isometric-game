@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useEditorStore } from '@/state/store';
 import { Layer } from '@/types';
 import styles from './LayerPanel.module.css';
@@ -12,6 +13,7 @@ const layers: { id: Layer; label: string }[] = [
 ];
 
 export function LayerPanel() {
+  const [collapsed, setCollapsed] = useState(false);
   const {
     activeLayer,
     setActiveLayer,
@@ -68,29 +70,34 @@ export function LayerPanel() {
   };
 
   return (
-    <div className={styles.panel}>
-      <div className={styles.title}>Layers</div>
-      <div className={styles.layers}>
-        {layers.map((layer) => (
-          <div
-            key={layer.id}
-            className={`${styles.layer} ${activeLayer === layer.id ? styles.active : ''}`}
-          >
-            <input
-              type="checkbox"
-              className={styles.checkbox}
-              checked={isLayerVisible(layer.id)}
-              onChange={() => toggleVisibility(layer.id)}
-            />
-            <button
-              className={styles.layerButton}
-              onClick={() => setActiveLayer(layer.id)}
+    <div className={`${styles.panel} ${collapsed ? styles.collapsed : ''}`}>
+      <button className={styles.header} onClick={() => setCollapsed(!collapsed)}>
+        <span className={`${styles.arrow} ${collapsed ? styles.arrowCollapsed : ''}`}>&#9662;</span>
+        <span className={styles.title}>Layers</span>
+      </button>
+      {!collapsed && (
+        <div className={styles.layers}>
+          {layers.map((layer) => (
+            <div
+              key={layer.id}
+              className={`${styles.layer} ${activeLayer === layer.id ? styles.active : ''}`}
             >
-              {layer.label}
-            </button>
-          </div>
-        ))}
-      </div>
+              <input
+                type="checkbox"
+                className={styles.checkbox}
+                checked={isLayerVisible(layer.id)}
+                onChange={() => toggleVisibility(layer.id)}
+              />
+              <button
+                className={styles.layerButton}
+                onClick={() => setActiveLayer(layer.id)}
+              >
+                {layer.label}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
