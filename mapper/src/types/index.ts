@@ -131,6 +131,7 @@ export interface Chunk {
   collision: Uint8Array; // Bitset for collision
   entities: EntitySpawn[];
   mapObjects: MapObject[]; // Trees, rocks, decorations
+  walls: Wall[];
   dirty: boolean;
 }
 
@@ -232,6 +233,7 @@ export interface SimplifiedChunk {
   collision: string; // Base64 encoded bitset
   entities: SimplifiedEntitySpawn[];
   mapObjects: SimplifiedMapObject[];
+  walls: SimplifiedWall[];
 }
 
 export interface SimplifiedEntitySpawn {
@@ -250,6 +252,24 @@ export interface SimplifiedMapObject {
   y: number; // Local tile Y
   width: number;
   height: number;
+}
+
+// Wall types (edge-aligned walls)
+export type WallEdge = 'down' | 'right';
+
+export interface Wall {
+  id: string;
+  gid: number;
+  x: number; // Local tile X within chunk
+  y: number; // Local tile Y within chunk
+  edge: WallEdge;
+}
+
+export interface SimplifiedWall {
+  gid: number;
+  x: number;
+  y: number;
+  edge: WallEdge;
 }
 
 // History types
