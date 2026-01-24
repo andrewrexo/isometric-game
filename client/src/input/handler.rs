@@ -52,7 +52,7 @@ pub enum InputCommand {
     Equip { slot_index: u8 },
     Unequip { slot_type: String, target_slot: Option<u8> },
     // Inventory commands
-    DropItem { slot_index: u8, quantity: u32 },
+    DropItem { slot_index: u8, quantity: u32, target_x: Option<i32>, target_y: Option<i32> },
     DropGold { amount: i32 },
     SwapSlots { from_slot: u8, to_slot: u8 },
     // Shop commands
@@ -332,6 +332,8 @@ impl InputHandler {
                                     commands.push(InputCommand::DropItem {
                                         slot_index: *from_idx as u8,
                                         quantity,
+                                        target_x: Some(tile_x),
+                                        target_y: Some(tile_y),
                                     });
                                     audio.play_sfx("item_put");
                                 }
@@ -359,10 +361,12 @@ impl InputHandler {
                             // Check for shift+click to drop (if enabled)
                             let shift_held = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
                             if shift_held && state.ui_state.shift_drop_enabled {
-                                // Drop the entire stack
+                                // Drop the entire stack at player position
                                 commands.push(InputCommand::DropItem {
                                     slot_index: *idx as u8,
                                     quantity: slot.quantity as u32,
+                                    target_x: None,
+                                    target_y: None,
                                 });
                                 audio.play_sfx("item_put");
                                 return commands;
@@ -533,7 +537,7 @@ impl InputHandler {
                                             0 => commands.push(InputCommand::Equip { slot_index: *slot_index as u8 }),
                                             1 => {
                                                 if let Some(slot) = state.inventory.slots.get(*slot_index).and_then(|s| s.as_ref()) {
-                                                    commands.push(InputCommand::DropItem { slot_index: *slot_index as u8, quantity: slot.quantity as u32 });
+                                                    commands.push(InputCommand::DropItem { slot_index: *slot_index as u8, quantity: slot.quantity as u32, target_x: None, target_y: None });
                                                 }
                                             }
                                             _ => {}
@@ -542,7 +546,7 @@ impl InputHandler {
                                         // Options: Drop (0) only
                                         if *option_idx == 0 {
                                             if let Some(slot) = state.inventory.slots.get(*slot_index).and_then(|s| s.as_ref()) {
-                                                commands.push(InputCommand::DropItem { slot_index: *slot_index as u8, quantity: slot.quantity as u32 });
+                                                commands.push(InputCommand::DropItem { slot_index: *slot_index as u8, quantity: slot.quantity as u32, target_x: None, target_y: None });
                                             }
                                         }
                                     }

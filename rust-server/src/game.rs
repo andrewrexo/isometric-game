@@ -3062,7 +3062,8 @@ impl GameRoom {
     }
 
     /// Handle dropping an item from inventory to the ground
-    pub async fn handle_drop_item(&self, player_id: &str, slot_index: u8, quantity: u32) {
+    /// If target_x/target_y provided, drop at that tile (must be adjacent to player)
+    pub async fn handle_drop_item(&self, player_id: &str, slot_index: u8, quantity: u32, target_x: Option<i32>, target_y: Option<i32>) {
         let slot_idx = slot_index as usize;
 
         // Get player position and item info
@@ -3073,19 +3074,35 @@ impl GameRoom {
                 _ => return,
             };
 
+            // Determine drop location
+            let (drop_x, drop_y) = if let (Some(tx), Some(ty)) = (target_x, target_y) {
+                // Validate target is adjacent to player (Chebyshev distance <= 1)
+                let dx = (tx - player.x).abs();
+                let dy = (ty - player.y).abs();
+                if dx <= 1 && dy <= 1 {
+                    (tx, ty)
+                } else {
+                    // Target too far, drop at player position
+                    (player.x, player.y)
+                }
+            } else {
+                // No target specified, drop at player position
+                (player.x, player.y)
+            };
+
             match player.inventory.slots.get(slot_idx) {
                 Some(Some(slot)) => {
                     let qty_to_drop = (quantity as i32).min(slot.quantity);
                     if qty_to_drop <= 0 {
                         return;
                     }
-                    Some((player.x, player.y, slot.item_id.clone(), qty_to_drop))
+                    Some((drop_x, drop_y, slot.item_id.clone(), qty_to_drop))
                 }
                 _ => None,
             }
         };
 
-        let (player_x, player_y, item_id, qty_to_drop) = match drop_info {
+        let (drop_x, drop_y, item_id, qty_to_drop) = match drop_info {
             Some(info) => info,
             None => return,
         };
@@ -3112,14 +3129,14 @@ impl GameRoom {
             .unwrap()
             .as_millis() as u64;
 
-        let drop_x = player_x as f32;
-        let drop_y = player_y as f32;
+        let drop_x_f = drop_x as f32;
+        let drop_y_f = drop_y as f32;
 
         let ground_item = GroundItem::new(
             &uuid::Uuid::new_v4().to_string(),
             &item_id,
-            drop_x,
-            drop_y,
+            drop_x_f,
+            drop_y_f,
             qty_to_drop,
             Some(player_id.to_string()),
             current_time,
@@ -3131,8 +3148,8 @@ impl GameRoom {
         self.broadcast(ServerMessage::ItemDropped {
             id: ground_item.id.clone(),
             item_id: item_id.clone(),
-            x: drop_x,
-            y: drop_y,
+            x: drop_x_f,
+            y: drop_y_f,
             quantity: qty_to_drop,
         }).await;
 

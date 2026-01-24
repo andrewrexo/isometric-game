@@ -62,7 +62,7 @@ pub enum ClientMessage {
     Unequip { slot_type: String, target_slot: Option<u8> },
 
     #[serde(rename = "dropItem")]
-    DropItem { slot_index: u8, quantity: u32 },
+    DropItem { slot_index: u8, quantity: u32, target_x: Option<i32>, target_y: Option<i32> },
 
     #[serde(rename = "dropGold")]
     DropGold { amount: i32 },
@@ -163,9 +163,15 @@ impl ClientMessage {
                 }
                 "unequip"
             }
-            ClientMessage::DropItem { slot_index, quantity } => {
+            ClientMessage::DropItem { slot_index, quantity, target_x, target_y } => {
                 data.insert("slot_index".into(), Value::Integer((*slot_index as i64).into()));
                 data.insert("quantity".into(), Value::Integer((*quantity as i64).into()));
+                if let Some(x) = target_x {
+                    data.insert("target_x".into(), Value::Integer((*x as i64).into()));
+                }
+                if let Some(y) = target_y {
+                    data.insert("target_y".into(), Value::Integer((*y as i64).into()));
+                }
                 "dropItem"
             }
             ClientMessage::DropGold { amount } => {

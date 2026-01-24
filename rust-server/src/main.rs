@@ -1317,8 +1317,8 @@ async fn handle_client_message(
         ClientMessage::Unequip { slot_type } => {
             room.handle_unequip(player_id, &slot_type).await;
         }
-        ClientMessage::DropItem { slot_index, quantity } => {
-            room.handle_drop_item(player_id, slot_index, quantity).await;
+        ClientMessage::DropItem { slot_index, quantity, target_x, target_y } => {
+            room.handle_drop_item(player_id, slot_index, quantity, target_x, target_y).await;
         }
         ClientMessage::DropGold { amount } => {
             room.handle_drop_gold(player_id, amount).await;

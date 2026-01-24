@@ -68,9 +68,9 @@ pub enum ClientMessage {
     #[serde(rename = "unequip")]
     Unequip { slot_type: String },
 
-    /// Drop item from inventory slot
+    /// Drop item from inventory slot (optionally at a target tile)
     #[serde(rename = "dropItem")]
-    DropItem { slot_index: u8, quantity: u32 },
+    DropItem { slot_index: u8, quantity: u32, target_x: Option<i32>, target_y: Option<i32> },
 
     /// Drop gold to the ground
     #[serde(rename = "dropGold")]
@@ -1507,7 +1507,13 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
                 .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("quantity")))
                 .and_then(|(_, v)| v.as_u64().map(|u| u as u32))
                 .unwrap_or(1);
-            Ok(ClientMessage::DropItem { slot_index, quantity })
+            let target_x = msg_data.as_map()
+                .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("target_x")))
+                .and_then(|(_, v)| v.as_i64().map(|i| i as i32));
+            let target_y = msg_data.as_map()
+                .and_then(|map| map.iter().find(|(k, _)| k.as_str() == Some("target_y")))
+                .and_then(|(_, v)| v.as_i64().map(|i| i as i32));
+            Ok(ClientMessage::DropItem { slot_index, quantity, target_x, target_y })
         }
         "dropGold" => {
             let amount = extract_i32(msg_data, "amount").unwrap_or(0);

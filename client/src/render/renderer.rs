@@ -2890,44 +2890,46 @@ impl Renderer {
             }
         }
 
-        // Local player stats panel (top-left) - Name tag + HP bar
+        // Local player stats panel (top-right corner) - Name tag + HP bar
         if let Some(player) = state.get_local_player() {
-            let base_x = 12.0;
+            let margin = 12.0;
             let base_y = 25.0;
             let padding = 6.0;
-            let font_size = 18.0;
+            let font_size = 16.0;
 
-            // ===== NAME TAG (fitted box like player hover name tags) =====
+            // Measure text first to calculate widths
             let name = &player.name;
             let level_text = format!(" Lv.{}", player.skills.total_level());
             let name_w = self.measure_text_sharp(name, font_size).width;
             let level_w = self.measure_text_sharp(&level_text, font_size).width;
             let total_text_w = name_w + level_w;
-            let tag_height = 22.0;
 
-            // Left-align the name tag
-            let tag_x = base_x;
+            // Both bars use same width (at least 120, or text width + padding)
+            let bar_width = (total_text_w + padding * 2.0).max(120.0);
+            let tag_height = 22.0;
+            let bar_height = 18.0;
+
+            // Right-align in corner
+            let bar_x = (screen_width() - bar_width - margin).floor();
             let tag_y = base_y;
 
-            // Draw fitted background (same style as player hover name tags)
+            // ===== NAME TAG =====
             draw_rectangle(
-                tag_x,
+                bar_x,
                 tag_y,
-                total_text_w + padding * 2.0,
+                bar_width,
                 tag_height,
                 Color::from_rgba(0, 0, 0, 180),
             );
 
-            // Draw name + level text
-            let text_x = tag_x + padding;
-            let text_y = (tag_y + 17.0).floor();
+            // Center text in the bar
+            let text_x = bar_x + (bar_width - total_text_w) / 2.0;
+            let text_y = (tag_y + 16.0).floor();
             self.draw_text_sharp(name, text_x, text_y, font_size, TEXT_TITLE);
             self.draw_text_sharp(&level_text, text_x + name_w, text_y, font_size, TEXT_DIM);
 
             // ===== HP BAR (below name tag) =====
-            let bar_width = (total_text_w + padding * 2.0).max(120.0); // Minimum width
-            let bar_height = 18.0;
-            let hp_bar_x = tag_x;
+            let hp_bar_x = bar_x;
             let hp_bar_y = tag_y + tag_height + 4.0;
             let hp_ratio = player.hp as f32 / player.max_hp.max(1) as f32;
 
