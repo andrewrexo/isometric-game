@@ -1,4 +1,4 @@
-import type { Chunk, Viewport, WorldCoord } from '@/types';
+import type { Chunk, Viewport, WorldCoord, MapObject, Wall } from '@/types';
 import {
   TILE_WIDTH,
   TILE_HEIGHT,
@@ -99,17 +99,10 @@ export class IsometricRenderer {
       }
     }
 
-    // Render map objects (trees, rocks, etc.)
+    // Render map objects and walls together (depth sorted)
     if (this.options.showMapObjects) {
       for (const chunk of sortedChunks) {
-        this.renderMapObjects(chunk, viewport);
-      }
-    }
-
-    // Render walls (after map objects, uses same visibility toggle)
-    if (this.options.showMapObjects) {
-      for (const chunk of sortedChunks) {
-        this.renderWalls(chunk, viewport);
+        this.renderMapObjectsAndWalls(chunk, viewport);
       }
     }
 
@@ -230,95 +223,119 @@ export class IsometricRenderer {
     }
   }
 
-  private renderMapObjects(chunk: Chunk, viewport: Viewport): void {
+  private renderMapObjectsAndWalls(chunk: Chunk, viewport: Viewport): void {
     if (!this.ctx) return;
 
-    // Sort objects by y position for proper depth ordering
-    const sortedObjects = [...chunk.mapObjects].sort((a, b) => {
-      // Objects with lower y (further back) should render first
-      return (a.x + a.y) - (b.x + b.y);
-    });
+    // Create unified renderables list for depth sorting
+    type Renderable =
+      | { type: 'object'; obj: MapObject }
+      | { type: 'wall'; wall: Wall };
 
-    for (const obj of sortedObjects) {
-      const worldCoord = chunkLocalToWorld(chunk.coord, { lx: obj.x, ly: obj.y });
-      const screen = worldToScreen(worldCoord, viewport);
+    const renderables: Array<{ depth: number; item: Renderable }> = [];
 
-      // Get the object definition from objectLoader using the gid
-      const objDef = objectLoader.getObjectByGid(obj.gid);
+    // Add objects
+    for (const obj of chunk.mapObjects) {
+      renderables.push({
+        depth: obj.x + obj.y,
+        item: { type: 'object', obj }
+      });
+    }
 
-      if (objDef?.image) {
-        // Calculate draw position - objects are anchored at their base tile
-        // The sprite extends upward from the base position
-        const scaledWidth = obj.width * viewport.zoom;
-        const scaledHeight = obj.height * viewport.zoom;
+    // Add walls
+    for (const wall of chunk.walls) {
+      renderables.push({
+        depth: wall.x + wall.y,
+        item: { type: 'wall', wall }
+      });
+    }
 
-        // Center horizontally on the tile, align bottom to tile position
-        const drawX = screen.sx - scaledWidth / 2;
-        const drawY = screen.sy + TILE_HEIGHT * viewport.zoom - scaledHeight;
+    // Sort by depth (back to front)
+    renderables.sort((a, b) => a.depth - b.depth);
 
-        this.ctx.drawImage(
-          objDef.image,
-          0,
-          0,
-          objDef.image.width,
-          objDef.image.height,
-          drawX,
-          drawY,
-          scaledWidth,
-          scaledHeight
-        );
+    // Render in sorted order
+    for (const { item } of renderables) {
+      if (item.type === 'object') {
+        this.renderMapObject(item.obj, chunk, viewport);
+      } else {
+        this.renderWall(item.wall, chunk, viewport);
       }
     }
   }
 
-  private renderWalls(chunk: Chunk, viewport: Viewport): void {
+  private renderMapObject(obj: MapObject, chunk: Chunk, viewport: Viewport): void {
     if (!this.ctx) return;
 
-    // Sort walls by depth (x + y)
-    const sortedWalls = [...chunk.walls].sort((a, b) => {
-      return (a.x + a.y) - (b.x + b.y);
-    });
+    const worldCoord = chunkLocalToWorld(chunk.coord, { lx: obj.x, ly: obj.y });
+    const screen = worldToScreen(worldCoord, viewport);
 
-    for (const wall of sortedWalls) {
-      const worldCoord = chunkLocalToWorld(chunk.coord, { lx: wall.x, ly: wall.y });
-      const screen = worldToScreen(worldCoord, viewport);
+    // Get the object definition from objectLoader using the gid
+    const objDef = objectLoader.getObjectByGid(obj.gid);
 
-      // Get the object definition from objectLoader using the gid
-      const objDef = objectLoader.getObjectByGid(wall.gid);
+    if (objDef?.image) {
+      // Calculate draw position - objects are anchored at their base tile
+      // The sprite extends upward from the base position
+      const scaledWidth = obj.width * viewport.zoom;
+      const scaledHeight = obj.height * viewport.zoom;
 
-      if (objDef?.image) {
-        const scaledWidth = objDef.image.width * viewport.zoom;
-        const scaledHeight = objDef.image.height * viewport.zoom;
+      // Center horizontally on the tile, align bottom to tile position
+      const drawX = screen.sx - scaledWidth / 2;
+      const drawY = screen.sy + TILE_HEIGHT * viewport.zoom - scaledHeight;
 
-        // Bottom vertex of tile
-        const bottomVertexX = screen.sx;
-        const bottomVertexY = screen.sy + TILE_HEIGHT * viewport.zoom;
+      this.ctx.drawImage(
+        objDef.image,
+        0,
+        0,
+        objDef.image.width,
+        objDef.image.height,
+        drawX,
+        drawY,
+        scaledWidth,
+        scaledHeight
+      );
+    }
+  }
 
-        let drawX: number;
-        let drawY: number;
+  private renderWall(wall: Wall, chunk: Chunk, viewport: Viewport): void {
+    if (!this.ctx) return;
 
-        if (wall.edge === 'down') {
-          // Bottom-right corner of sprite at bottom vertex
-          drawX = bottomVertexX - scaledWidth;
-          drawY = bottomVertexY - scaledHeight;
-        } else {
-          // Bottom-left corner of sprite at bottom vertex (right edge)
-          drawX = bottomVertexX;
-          drawY = bottomVertexY - scaledHeight;
-        }
+    const worldCoord = chunkLocalToWorld(chunk.coord, { lx: wall.x, ly: wall.y });
+    const screen = worldToScreen(worldCoord, viewport);
 
-        this.ctx.drawImage(
-          objDef.image,
-          0,
-          0,
-          objDef.image.width,
-          objDef.image.height,
-          drawX,
-          drawY,
-          scaledWidth,
-          scaledHeight
-        );
+    // Get the object definition from objectLoader using the gid
+    const objDef = objectLoader.getObjectByGid(wall.gid);
+
+    if (objDef?.image) {
+      const scaledWidth = objDef.image.width * viewport.zoom;
+      const scaledHeight = objDef.image.height * viewport.zoom;
+
+      // Bottom vertex of tile
+      const bottomVertexX = screen.sx;
+      const bottomVertexY = screen.sy + TILE_HEIGHT * viewport.zoom;
+
+      let drawX: number;
+      let drawY: number;
+
+      if (wall.edge === 'down') {
+        // Bottom-right corner of sprite at bottom vertex
+        drawX = bottomVertexX - scaledWidth;
+        drawY = bottomVertexY - scaledHeight;
+      } else {
+        // Bottom-left corner of sprite at bottom vertex (right edge)
+        drawX = bottomVertexX;
+        drawY = bottomVertexY - scaledHeight;
       }
+
+      this.ctx.drawImage(
+        objDef.image,
+        0,
+        0,
+        objDef.image.width,
+        objDef.image.height,
+        drawX,
+        drawY,
+        scaledWidth,
+        scaledHeight
+      );
     }
   }
 
