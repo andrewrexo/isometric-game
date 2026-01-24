@@ -4,21 +4,30 @@ import { objectLoader } from '@/core/ObjectLoader';
 import type { ObjectDefinition } from '@/types';
 import styles from './ObjectPalette.module.css';
 
+type Category = 'objects' | 'walls';
+
 export function ObjectPalette() {
   const { selectedObjectId, setSelectedObjectId, setActiveTool } = useEditorStore();
   const [objects, setObjects] = useState<ObjectDefinition[]>([]);
+  const [walls, setWalls] = useState<ObjectDefinition[]>([]);
+  const [category, setCategory] = useState<Category>('objects');
   const [filter, setFilter] = useState('');
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
 
-  // Load objects when component mounts
+  // Load objects and walls when component mounts
   useEffect(() => {
     const loadedObjects = objectLoader.getObjectsWithImages();
+    const loadedWalls = objectLoader.getWallsWithImages();
     setObjects(loadedObjects);
+    setWalls(loadedWalls);
   }, []);
+
+  // Get current items based on category
+  const currentItems = category === 'objects' ? objects : walls;
 
   // Draw object previews
   useEffect(() => {
-    for (const obj of objects) {
+    for (const obj of currentItems) {
       const canvas = canvasRefs.current.get(obj.id);
       if (!canvas || !obj.image) continue;
 
@@ -44,11 +53,11 @@ export function ObjectPalette() {
         drawHeight
       );
     }
-  }, [objects]);
+  }, [currentItems]);
 
   const filteredObjects = filter
-    ? objects.filter((obj) => obj.name.toLowerCase().includes(filter.toLowerCase()))
-    : objects;
+    ? currentItems.filter((obj) => obj.name.toLowerCase().includes(filter.toLowerCase()))
+    : currentItems;
 
   const setCanvasRef = (id: number, el: HTMLCanvasElement | null) => {
     if (el) {
@@ -61,7 +70,21 @@ export function ObjectPalette() {
   return (
     <div className={styles.palette}>
       <div className={styles.header}>
-        <div className={styles.title}>Objects</div>
+        <div className={styles.title}>Objects & Walls</div>
+      </div>
+      <div className={styles.tabs}>
+        <button
+          className={`${styles.tab} ${category === 'objects' ? styles.activeTab : ''}`}
+          onClick={() => setCategory('objects')}
+        >
+          Objects ({objects.length})
+        </button>
+        <button
+          className={`${styles.tab} ${category === 'walls' ? styles.activeTab : ''}`}
+          onClick={() => setCategory('walls')}
+        >
+          Walls ({walls.length})
+        </button>
       </div>
       <input
         type="text"

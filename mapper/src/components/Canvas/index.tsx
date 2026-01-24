@@ -304,10 +304,15 @@ export function Canvas() {
         case Tool.WallRight: {
           // Place or remove wall at position
           if (selectedObjectId) {
-            const objDef = objectLoader.getObject(selectedObjectId);
+            // Check walls first, then objects
+            const wallDef = objectLoader.getWall(selectedObjectId);
+            const objDef = wallDef || objectLoader.getObject(selectedObjectId);
             if (objDef) {
               const edge = activeTool === Tool.WallDown ? 'down' : 'right';
-              const gid = objectLoader.idToGid(selectedObjectId);
+              // Use wall GID if it's a wall, otherwise object GID
+              const gid = wallDef
+                ? objectLoader.wallIdToGid(selectedObjectId)
+                : objectLoader.idToGid(selectedObjectId);
               toggleWall(worldTile, edge, gid);
             }
           }

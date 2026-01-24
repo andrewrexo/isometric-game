@@ -21,6 +21,37 @@
   text-transform: uppercase;
 }
 
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #252538;
+  border-bottom: 1px solid #3d3d5c;
+}
+
+.tab {
+  flex: 1;
+  padding: 6px 8px;
+  background: #3d3d5c;
+  border: 1px solid #4d4d6c;
+  border-radius: 4px;
+  color: #888;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab:hover {
+  background: #4d4d6c;
+  color: #ccc;
+}
+
+.activeTab {
+  background: #5c7cfa;
+  border-color: #748ffc;
+  color: #fff;
+}
+
 .search {
   margin: 8px;
   padding: 6px 8px;

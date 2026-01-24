@@ -97,6 +97,12 @@ function App() {
           await objectLoader.loadObjects(config.objects);
         }
 
+        // Load walls
+        if (config.walls) {
+          setLoading(true, 'Loading walls...');
+          await objectLoader.loadWalls(config.walls);
+        }
+
         // Load entity registry
         setLoading(true, 'Loading entities...');
         try {

@@ -166,6 +166,7 @@ export interface ObjectsConfig {
 export interface MapperConfig {
   tilesets: TilesetConfig[];
   objects?: ObjectsConfig;
+  walls?: ObjectsConfig;
   chunkSize: number;
   mapsPath: string;
   entitiesPath: string;
