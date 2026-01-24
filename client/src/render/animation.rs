@@ -908,8 +908,8 @@ pub struct BackStaticFrameResult {
 /// These items sit on the player's back and are always visible (tip shows from front).
 pub fn get_back_static_frame(direction: Direction) -> BackStaticFrameResult {
     let use_back_view = is_up_or_left_direction(direction);
-    // Flip for Down and Left directions (Right and Up show unflipped on opposite shoulder)
-    let flip_h = matches!(direction, Direction::Down | Direction::Left);
+    // Flip for Down and Up directions (Right and Left show unflipped)
+    let flip_h = matches!(direction, Direction::Down | Direction::Up);
 
     BackStaticFrameResult {
         // When player faces up/left (we see their back), use frame 0
@@ -932,8 +932,8 @@ pub fn get_back_static_offset(state: AnimationState, direction: Direction, anim_
     // Quiver is 50 wide, 63 tall
     // Right/Up show on left side (mirrored), Down/Left show on right side
     let (base_x, base_y) = match direction {
-        Direction::Up => (-14.0, -12.0),    // Left side, adjusted: right 2px, down 3px
-        Direction::Left => (-2.0, -12.0),   // Right side, adjusted: left 2px (mirrored), down 3px
+        Direction::Up => (-6.0, -10.0),     // +2px right, +1px down
+        Direction::Left => (-10.0, -10.0),  // -2px left (mirrored), +1px down
         Direction::Right => (-16.0, -15.0), // Left side for Right
         Direction::Down => (0.0, -15.0),    // Right side for Down
     };
