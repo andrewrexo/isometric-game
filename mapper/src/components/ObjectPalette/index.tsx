@@ -5,13 +5,15 @@ import type { ObjectDefinition } from '@/types';
 import styles from './ObjectPalette.module.css';
 
 type Category = 'objects' | 'walls';
+type WallTool = 'wallDown' | 'wallRight';
 
 export function ObjectPalette() {
-  const { selectedObjectId, setSelectedObjectId, setActiveTool } = useEditorStore();
+  const { selectedObjectId, setSelectedObjectId, setActiveTool, activeTool } = useEditorStore();
   const [objects, setObjects] = useState<ObjectDefinition[]>([]);
   const [walls, setWalls] = useState<ObjectDefinition[]>([]);
   const [category, setCategory] = useState<Category>('objects');
   const [filter, setFilter] = useState('');
+  const [lastWallTool, setLastWallTool] = useState<WallTool>('wallDown');
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
 
   // Load objects and walls when component mounts
@@ -21,6 +23,13 @@ export function ObjectPalette() {
     setObjects(loadedObjects);
     setWalls(loadedWalls);
   }, []);
+
+  // Track when wall tools are used so we remember the last one
+  useEffect(() => {
+    if (activeTool === 'wallDown' || activeTool === 'wallRight') {
+      setLastWallTool(activeTool as WallTool);
+    }
+  }, [activeTool]);
 
   // Get current items based on category
   const currentItems = category === 'objects' ? objects : walls;
@@ -103,7 +112,8 @@ export function ObjectPalette() {
             className={`${styles.item} ${selectedObjectId === obj.id ? styles.selected : ''}`}
             onClick={() => {
               setSelectedObjectId(obj.id);
-              setActiveTool('object');
+              // Use wall tool when selecting from walls tab, object tool otherwise
+              setActiveTool(category === 'walls' ? lastWallTool : 'object');
             }}
             title={`${obj.name} (${obj.width}x${obj.height})`}
           >
