@@ -4,7 +4,7 @@ use macroquad::material::{load_material, gl_use_material, gl_use_default_materia
 use macroquad::miniquad::UniformDesc;
 use macroquad::miniquad::ShaderSource;
 use std::collections::HashMap;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction, DragSource};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction, DragSource, Wall, WallEdge};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
@@ -723,6 +723,13 @@ impl Renderer {
                 Renderable::ChunkObject(obj) => {
                     self.render_map_object(obj, &state.camera);
                 }
+            }
+        }
+
+        // Render walls from loaded chunks
+        for chunk in state.chunk_manager.chunks().values() {
+            for wall in &chunk.walls {
+                self.render_wall(wall, &state.camera);
             }
         }
 
@@ -2887,6 +2894,53 @@ impl Renderer {
                 placeholder_height,
                 2.0,
                 Color::from_rgba(50, 100, 50, 255),
+            );
+        }
+    }
+
+    /// Render a wall on a tile edge
+    fn render_wall(&self, wall: &Wall, camera: &Camera) {
+        let zoom = camera.zoom;
+
+        // Get the tile's center screen position (add 0.5 to get center)
+        let (tile_center_x, tile_center_y) = world_to_screen(
+            wall.tile_x as f32 + 0.5,
+            wall.tile_y as f32 + 0.5,
+            camera
+        );
+
+        // Bottom vertex is at center + half tile height (scaled by zoom)
+        let bottom_vertex_x = tile_center_x;
+        let bottom_vertex_y = tile_center_y + (TILE_HEIGHT / 2.0) * zoom;
+
+        // Try to get the sprite for this gid
+        if let Some(texture) = self.get_object_sprite(wall.gid) {
+            let tex_width = texture.width();
+            let tex_height = texture.height();
+
+            let scaled_width = (tex_width * zoom).round();
+            let scaled_height = (tex_height * zoom).round();
+
+            let (draw_x, draw_y) = match wall.edge {
+                WallEdge::Down => {
+                    // Bottom-right corner of sprite at bottom vertex
+                    (bottom_vertex_x - scaled_width, bottom_vertex_y - scaled_height)
+                }
+                WallEdge::Right => {
+                    // Bottom-left corner of sprite at bottom vertex
+                    (bottom_vertex_x, bottom_vertex_y - scaled_height)
+                }
+            };
+
+            draw_texture_ex(
+                texture,
+                draw_x.round(),
+                draw_y.round(),
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(Vec2::new(scaled_width, scaled_height)),
+                    ..Default::default()
+                },
             );
         }
     }
