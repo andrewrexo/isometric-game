@@ -39,6 +39,11 @@ const OBJECTS_FIRSTGID: u32 = 1249;
 /// Offset to convert local tile id to sprite filename number
 const OBJECTS_ID_OFFSET: u32 = 87;
 
+/// Walls tileset firstgid (walls use gid = firstGid + fileId, where firstGid=1)
+const WALLS_FIRSTGID: u32 = 1;
+/// Offset to convert wall gid to sprite filename (file IDs start at 101)
+const WALLS_ID_OFFSET: u32 = 101;
+
 // ============================================================================
 // Inventory UI Color Palette - Medieval Fantasy Theme
 // ============================================================================
@@ -118,6 +123,8 @@ pub struct Renderer {
     pub(crate) item_sprites: HashMap<String, Texture2D>,
     /// Map object sprites by filename number (e.g., "101" -> Texture2D)
     object_sprites: HashMap<String, Texture2D>,
+    /// Wall sprites by filename number (e.g., "101" -> Texture2D)
+    wall_sprites: HashMap<String, Texture2D>,
     /// NPC sprites by entity type (e.g., "pig" -> Texture2D)
     npc_sprites: HashMap<String, Texture2D>,
     /// Multi-size pixel font for sharp text rendering at various sizes
@@ -299,7 +306,8 @@ impl Renderer {
         }
         log::info!("Loaded {} object sprite variants", object_sprites.len());
 
-        // Load wall sprites from assets/sprites/walls/ (scan directory, same HashMap as objects)
+        // Load wall sprites from assets/sprites/walls/ (separate HashMap)
+        let mut wall_sprites = HashMap::new();
         if let Ok(entries) = std::fs::read_dir("assets/sprites/walls") {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -311,7 +319,7 @@ impl Renderer {
                             Ok(tex) => {
                                 tex.set_filter(FilterMode::Nearest);
                                 log::debug!("Loaded wall sprite: {} ({}x{})", sprite_key, tex.width(), tex.height());
-                                object_sprites.insert(sprite_key, tex);
+                                wall_sprites.insert(sprite_key, tex);
                             }
                             Err(e) => {
                                 log::warn!("Failed to load wall sprite {}: {}", path_str, e);
@@ -321,7 +329,7 @@ impl Renderer {
                 }
             }
         }
-        log::info!("Total object+wall sprites: {}", object_sprites.len());
+        log::info!("Loaded {} wall sprites", wall_sprites.len());
 
         // Load NPC sprites from assets/sprites/enemies/ (scan directory)
         let mut npc_sprites = HashMap::new();
@@ -481,6 +489,7 @@ impl Renderer {
             weapon_sprites,
             item_sprites,
             object_sprites,
+            wall_sprites,
             npc_sprites,
             font,
             quest_complete_texture,
@@ -511,6 +520,20 @@ impl Renderer {
         let sprite_number = local_id + OBJECTS_ID_OFFSET;
         let key = sprite_number.to_string();
         self.object_sprites.get(&key)
+    }
+
+    /// Get the sprite texture for a wall by its gid
+    /// Wall gid = WALLS_FIRSTGID + file_id, where file_id starts at 101
+    fn get_wall_sprite(&self, gid: u32) -> Option<&Texture2D> {
+        if gid < WALLS_FIRSTGID {
+            return None;
+        }
+        // gid = firstGid + fileId, so fileId = gid - firstGid
+        // But mapper does: gid = firstGid + fileId where fileId is the actual filename (101, 102, etc)
+        // So for gid=102 with firstGid=1: fileId = 102 - 1 = 101
+        let file_id = gid - WALLS_FIRSTGID;
+        let key = file_id.to_string();
+        self.wall_sprites.get(&key)
     }
 
     /// Draw text with pixel font for sharp rendering
@@ -2939,8 +2962,8 @@ impl Renderer {
         let bottom_vertex_x = tile_center_x;
         let bottom_vertex_y = tile_center_y + (TILE_HEIGHT / 2.0) * zoom;
 
-        // Try to get the sprite for this gid
-        if let Some(texture) = self.get_object_sprite(wall.gid) {
+        // Try to get the wall sprite for this gid
+        if let Some(texture) = self.get_wall_sprite(wall.gid) {
             let tex_width = texture.width();
             let tex_height = texture.height();
 
