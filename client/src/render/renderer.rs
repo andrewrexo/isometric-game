@@ -10,7 +10,7 @@ use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
 use super::ui::common::{SlotState, CORNER_ACCENT_SIZE};
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
-use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT, BODY_ARMOR_SPRITE_WIDTH, BODY_ARMOR_SPRITE_HEIGHT, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, get_boot_frame, get_boot_offset, get_body_armor_frame, get_body_armor_offset, get_head_frame, get_head_offset, AnimationState};
+use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT, BODY_ARMOR_SPRITE_WIDTH, BODY_ARMOR_SPRITE_HEIGHT, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT, BACK_STATIC_SPRITE_WIDTH, BACK_STATIC_SPRITE_HEIGHT, OFFHAND_SPRITE_WIDTH, OFFHAND_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, get_boot_frame, get_boot_offset, get_body_armor_frame, get_body_armor_offset, get_head_frame, get_head_offset, get_back_static_frame, get_back_static_offset, get_offhand_frame, get_offhand_offset, AnimationState};
 use super::font::BitmapFont;
 use super::shaders;
 
@@ -1619,6 +1619,38 @@ impl Renderer {
                 );
             }
 
+            // Draw back static items BEHIND player (for down/right directions - tip peeks out)
+            if let Some(ref back_item_id) = player.equipped_back {
+                if let Some(equip_sprite) = self.equipment_sprites.get(back_item_id) {
+                    let is_offhand = equip_sprite.width() > equip_sprite.height() * 8.0;
+                    if !is_offhand {
+                        let anim_frame = player.animation.frame as u32;
+                        let back_frame = get_back_static_frame(player.animation.direction);
+                        if back_frame.render_behind {
+                            let (back_offset_x, back_offset_y) = get_back_static_offset(player.animation.state, player.animation.direction, anim_frame);
+                            let back_src_x = back_frame.frame as f32 * BACK_STATIC_SPRITE_WIDTH;
+                            let scaled_back_width = BACK_STATIC_SPRITE_WIDTH * zoom;
+                            let scaled_back_height = BACK_STATIC_SPRITE_HEIGHT * zoom;
+                            let back_draw_x = draw_x + back_offset_x * zoom;
+                            let back_draw_y = draw_y + back_offset_y * zoom;
+
+                            draw_texture_ex(
+                                equip_sprite,
+                                back_draw_x,
+                                back_draw_y,
+                                tint,
+                                DrawTextureParams {
+                                    source: Some(Rect::new(back_src_x, 0.0, BACK_STATIC_SPRITE_WIDTH, BACK_STATIC_SPRITE_HEIGHT)),
+                                    dest_size: Some(Vec2::new(scaled_back_width, scaled_back_height)),
+                                    flip_x: back_frame.flip_h,
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+
             // Draw player sprite
             draw_texture_ex(
                 sprite,
@@ -2013,6 +2045,73 @@ impl Renderer {
                                 ..Default::default()
                             },
                         );
+                    }
+                }
+            }
+
+            // Draw back slot equipment (quiver, shield, etc.)
+            if let Some(ref back_item_id) = player.equipped_back {
+                if let Some(equip_sprite) = self.equipment_sprites.get(back_item_id) {
+                    // Detect sprite type by dimensions:
+                    // - 16-frame offhand (shield): width > height * 8 (very wide strip)
+                    // - 2-frame static back (quiver): width < height * 4 (narrow strip)
+                    let is_offhand = equip_sprite.width() > equip_sprite.height() * 8.0;
+
+                    if is_offhand {
+                        // 16-frame offhand item (shield)
+                        let anim_frame = player.animation.frame as u32;
+                        let offhand_frame = get_offhand_frame(player.animation.state, player.animation.direction, anim_frame);
+                        let (offhand_offset_x, offhand_offset_y) = get_offhand_offset(player.animation.state, player.animation.direction, anim_frame);
+
+                        let offhand_src_x = offhand_frame.frame as f32 * OFFHAND_SPRITE_WIDTH;
+                        let scaled_offhand_width = OFFHAND_SPRITE_WIDTH * zoom;
+                        let scaled_offhand_height = OFFHAND_SPRITE_HEIGHT * zoom;
+
+                        let offhand_draw_x = draw_x + offhand_offset_x * zoom;
+                        let offhand_draw_y = draw_y + offhand_offset_y * zoom;
+
+                        draw_texture_ex(
+                            equip_sprite,
+                            offhand_draw_x,
+                            offhand_draw_y,
+                            tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(offhand_src_x, 0.0, OFFHAND_SPRITE_WIDTH, OFFHAND_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_offhand_width, scaled_offhand_height)),
+                                flip_x: offhand_frame.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    } else {
+                        // 2-frame static back item (quiver, cape)
+                        let anim_frame = player.animation.frame as u32;
+                        let back_frame = get_back_static_frame(player.animation.direction);
+
+                        // Only render here if visible and NOT rendering behind player
+                        // (behind rendering happens before player sprite)
+                        if back_frame.visible && !back_frame.render_behind {
+                            let (back_offset_x, back_offset_y) = get_back_static_offset(player.animation.state, player.animation.direction, anim_frame);
+
+                            let back_src_x = back_frame.frame as f32 * BACK_STATIC_SPRITE_WIDTH;
+                            let scaled_back_width = BACK_STATIC_SPRITE_WIDTH * zoom;
+                            let scaled_back_height = BACK_STATIC_SPRITE_HEIGHT * zoom;
+
+                            let back_draw_x = draw_x + back_offset_x * zoom;
+                            let back_draw_y = draw_y + back_offset_y * zoom;
+
+                            draw_texture_ex(
+                                equip_sprite,
+                                back_draw_x,
+                                back_draw_y,
+                                tint,
+                                DrawTextureParams {
+                                    source: Some(Rect::new(back_src_x, 0.0, BACK_STATIC_SPRITE_WIDTH, BACK_STATIC_SPRITE_HEIGHT)),
+                                    dest_size: Some(Vec2::new(scaled_back_width, scaled_back_height)),
+                                    flip_x: back_frame.flip_h,
+                                    ..Default::default()
+                                },
+                            );
+                        }
                     }
                 }
             }

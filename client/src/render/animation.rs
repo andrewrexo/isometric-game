@@ -868,3 +868,239 @@ pub fn get_head_offset(state: AnimationState, direction: Direction, anim_frame: 
 
     (base_x + adjusted_state_x + direction_adjust, base_y + state_y)
 }
+
+// ============================================================================
+// Back Slot Equipment Animation System
+// ============================================================================
+// Back slot items come in two varieties:
+// 1. Static back items (quiver, cape) - 2 frames: front/back view, minimal animation
+// 2. Offhand items (shields) - 16 frames: full animation like boots
+
+// Static back item sprite dimensions (2 frames: front, back)
+// normal_quiver.png: 100x63 total, 2 frames = 50x63 each
+pub const BACK_STATIC_SPRITE_WIDTH: f32 = 50.0;
+pub const BACK_STATIC_SPRITE_HEIGHT: f32 = 63.0;
+
+// Offhand item sprite dimensions (16 frames in single row)
+// royal_protector.png: 616x38 total, 16 frames = ~38.5x38 each
+pub const OFFHAND_SPRITE_WIDTH: f32 = 38.5;
+pub const OFFHAND_SPRITE_HEIGHT: f32 = 38.0;
+
+/// Result of back static frame calculation (quiver, cape, etc.)
+#[derive(Debug, Clone, Copy)]
+pub struct BackStaticFrameResult {
+    /// Frame index (0 = front, 1 = back)
+    pub frame: u32,
+    /// Whether to flip the sprite horizontally
+    pub flip_h: bool,
+    /// Whether item should be rendered
+    pub visible: bool,
+    /// Whether to render behind the player sprite (true for down/right directions)
+    pub render_behind: bool,
+}
+
+/// Get the back static item frame for the current direction
+///
+/// Back static sprite sheet layout (0-indexed, 2 frames total):
+/// - 0: View when player faces Up/Left (we see their back - full quiver visible)
+/// - 1: View when player faces Down/Right (tip peeks out behind player)
+///
+/// These items sit on the player's back and are always visible (tip shows from front).
+pub fn get_back_static_frame(direction: Direction) -> BackStaticFrameResult {
+    let use_back_view = is_up_or_left_direction(direction);
+    // Flip for Down and Left directions (Right and Up show unflipped on opposite shoulder)
+    let flip_h = matches!(direction, Direction::Down | Direction::Left);
+
+    BackStaticFrameResult {
+        // When player faces up/left (we see their back), use frame 0
+        // When player faces down/right, use frame 1 (tip peeking out)
+        frame: if use_back_view { 0 } else { 1 },
+        flip_h,
+        // Always visible - tip shows even from front
+        visible: true,
+        // Render behind player when facing down/right (tip peeks from behind)
+        render_behind: !use_back_view,
+    }
+}
+
+/// Get the pixel offset for back static item positioning relative to the player sprite
+///
+/// Back items sit on the player's back/shoulder area. These offsets align the item
+/// with the player's back position in each animation frame.
+pub fn get_back_static_offset(state: AnimationState, direction: Direction, anim_frame: u32) -> (f32, f32) {
+    // Base offset: position varies by direction
+    // Quiver is 50 wide, 63 tall
+    // Right/Up show on left side (mirrored), Down/Left show on right side
+    let (base_x, base_y) = match direction {
+        Direction::Up => (-14.0, -12.0),    // Left side, adjusted: right 2px, down 3px
+        Direction::Left => (-2.0, -12.0),   // Right side, adjusted: left 2px (mirrored), down 3px
+        Direction::Right => (-16.0, -15.0), // Left side for Right
+        Direction::Down => (0.0, -15.0),    // Right side for Down
+    };
+
+    // Per-state offsets (static for idle/walking, only moves for attacks)
+    let (state_x, state_y) = match state {
+        AnimationState::Idle | AnimationState::Walking => (0.0, 0.0),
+        AnimationState::Attacking => {
+            // Shift during attack swing
+            let attack_frame = anim_frame % 2;
+            if attack_frame == 1 {
+                (-2.0, 1.0)  // Shift with body during swing
+            } else {
+                (0.0, 0.0)
+            }
+        }
+        AnimationState::Casting => (0.0, 0.0),
+        AnimationState::ShootingBow => {
+            // Direction-specific shift when drawing bow
+            match direction {
+                Direction::Up => (-1.0, 0.0),    // Left 1px
+                Direction::Left => (1.0, 0.0),   // Right 1px (mirrored)
+                _ => (-1.0, 0.0),                // Default shift
+            }
+        }
+        AnimationState::SittingChair | AnimationState::SittingGround => (0.0, 0.0),
+    };
+
+    // Invert x offset when flipped (skip for ShootingBow which handles direction itself)
+    let adjusted_state_x = if state == AnimationState::ShootingBow {
+        state_x  // Already direction-specific
+    } else if should_flip_horizontal(direction) {
+        -state_x
+    } else {
+        state_x
+    };
+
+    (base_x + adjusted_state_x, base_y + state_y)
+}
+
+/// Result of offhand frame calculation (shields, etc.)
+#[derive(Debug, Clone, Copy)]
+pub struct OffhandFrameResult {
+    /// Frame index (0-based) in the single-row spritesheet
+    pub frame: u32,
+    /// Whether to flip the sprite horizontally
+    pub flip_h: bool,
+}
+
+/// Get the offhand item frame index for the current animation state and direction
+///
+/// Offhand sprite sheet layout (0-indexed, 16 frames total):
+/// - 0: Standing front (Down/Right)
+/// - 1: Standing back (Up/Left)
+/// - 2-5: Walking front (Down/Right)
+/// - 6-9: Walking back (Up/Left)
+/// - 10: Attack front
+/// - 11: Attack back
+/// - 12: Sit chair front
+/// - 13: Sit chair back
+/// - 14: Sit ground front
+/// - 15: Sit ground back
+pub fn get_offhand_frame(state: AnimationState, direction: Direction, anim_frame: u32) -> OffhandFrameResult {
+    let use_back = is_up_or_left_direction(direction);
+    let flip_h = should_flip_horizontal(direction);
+
+    let frame = match state {
+        AnimationState::Idle => {
+            if use_back { 1 } else { 0 }
+        }
+        AnimationState::Walking => {
+            let frame_in_walk = anim_frame % 4;
+            if use_back {
+                6 + frame_in_walk // Frames 6-9
+            } else {
+                2 + frame_in_walk // Frames 2-5
+            }
+        }
+        AnimationState::Attacking => {
+            // Only use attack frame for 2nd attack frame, use idle for 1st
+            let attack_frame = anim_frame % 2;
+            if attack_frame == 0 {
+                if use_back { 1 } else { 0 }
+            } else {
+                if use_back { 11 } else { 10 }
+            }
+        }
+        AnimationState::Casting => {
+            // Use standing frame for casting
+            if use_back { 1 } else { 0 }
+        }
+        AnimationState::ShootingBow => {
+            // Use attack frames for shooting
+            if use_back { 11 } else { 10 }
+        }
+        AnimationState::SittingChair => {
+            if use_back { 13 } else { 12 }
+        }
+        AnimationState::SittingGround => {
+            if use_back { 15 } else { 14 }
+        }
+    };
+
+    OffhandFrameResult { frame, flip_h }
+}
+
+/// Get the pixel offset for offhand item positioning relative to the player sprite
+///
+/// Offhand items (shields) are held on the off-hand side. These offsets align the item
+/// with the player's off-hand position in each animation frame.
+pub fn get_offhand_offset(state: AnimationState, direction: Direction, anim_frame: u32) -> (f32, f32) {
+    let use_back = is_up_or_left_direction(direction);
+
+    // Base offset: position on off-hand side
+    // Offhand is ~38 wide, player is 34, center it: (34 - 38) / 2 = -2
+    let base_x = -2.0;  // Slight offset to off-hand side
+    let base_y = 20.0;  // Position at arm/torso level (shield is 38 tall)
+
+    // Per-state offsets
+    let (state_x, state_y) = match state {
+        AnimationState::Idle => {
+            if use_back { (-1.0, 0.0) } else { (0.0, 0.0) }
+        }
+        AnimationState::Walking => {
+            let walk_frame = anim_frame % 4;
+            if use_back {
+                match walk_frame {
+                    0 => (0.0, 0.0),
+                    1 => (0.0, -1.0),
+                    2 => (0.0, 0.0),
+                    3 => (0.0, -1.0),
+                    _ => (0.0, 0.0),
+                }
+            } else {
+                match walk_frame {
+                    0 => (0.0, 1.0),
+                    1 => (0.0, 0.0),
+                    2 => (0.0, 1.0),
+                    3 => (0.0, 0.0),
+                    _ => (0.0, 1.0),
+                }
+            }
+        }
+        AnimationState::Attacking => {
+            let attack_frame = anim_frame % 2;
+            if attack_frame == 0 {
+                if use_back { (-1.0, 0.0) } else { (0.0, 0.0) }
+            } else {
+                // Shield moves during attack
+                if use_back { (-3.0, 1.0) } else { (-4.0, -1.0) }
+            }
+        }
+        AnimationState::Casting => (0.0, 0.0),
+        AnimationState::ShootingBow => {
+            // Shield on back/side during bow shooting
+            if use_back { (-3.0, 1.0) } else { (-4.0, -1.0) }
+        }
+        AnimationState::SittingChair => (0.0, 0.0),
+        AnimationState::SittingGround => (0.0, 0.0),
+    };
+
+    // Invert x offset when flipped
+    let adjusted_state_x = if should_flip_horizontal(direction) {
+        -state_x
+    } else {
+        state_x
+    };
+
+    (base_x + adjusted_state_x, base_y + state_y)
+}

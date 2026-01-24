@@ -756,21 +756,6 @@ defence_bonus = 10
 # HEAD (Defence requirement)
 # =============================================================================
 
-[wizard_hat]
-display_name = "Wizard Hat"
-sprite = "wizard_hat"
-description = "A pointy purple hat favored by magic users."
-category = "equipment"
-max_stack = 1
-base_price = 50
-sellable = true
-[wizard_hat.equipment]
-slot_type = "head"
-defence_level_required = 1
-attack_bonus = 0
-strength_bonus = 0
-defence_bonus = 2
-
 [hood_black]
 display_name = "Black Hood"
 sprite = "hood_black"
@@ -815,3 +800,37 @@ defence_level_required = 40
 attack_bonus = 5
 strength_bonus = 8
 defence_bonus = 15
+
+# =============================================================================
+# BACK (Defence requirement - quivers, capes, shields)
+# =============================================================================
+
+[normal_quiver]
+display_name = "Quiver"
+sprite = "normal_quiver"
+description = "A leather quiver for holding arrows. Essential for any archer."
+category = "equipment"
+max_stack = 1
+base_price = 50
+sellable = true
+[normal_quiver.equipment]
+slot_type = "back"
+defence_level_required = 1
+attack_bonus = 2
+strength_bonus = 0
+defence_bonus = 0
+
+[royal_protector]
+display_name = "Royal Protector"
+sprite = "royal_protector"
+description = "An ornate shield bearing the royal crest. Provides excellent protection."
+category = "equipment"
+max_stack = 1
+base_price = 450
+sellable = true
+[royal_protector.equipment]
+slot_type = "back"
+defence_level_required = 30
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 25
