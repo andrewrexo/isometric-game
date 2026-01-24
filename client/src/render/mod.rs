@@ -1,6 +1,7 @@
 pub mod isometric;
 pub mod animation;
 pub mod font;
+pub mod shaders;
 mod renderer;
 mod ui;
 

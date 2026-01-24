@@ -14,6 +14,10 @@ pub const BOOT_SPRITE_HEIGHT: f32 = 47.0;
 pub const BODY_ARMOR_SPRITE_WIDTH: f32 = 34.0;  // Same as player sprite width
 pub const BODY_ARMOR_SPRITE_HEIGHT: f32 = 77.0;
 
+// Head equipment sprite dimensions (single row format, 2 frames: front/back)
+pub const HEAD_SPRITE_WIDTH: f32 = 30.0;
+pub const HEAD_SPRITE_HEIGHT: f32 = 34.0;
+
 /// Animation states the player can be in
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnimationState {
@@ -753,6 +757,82 @@ pub fn get_body_armor_offset(state: AnimationState, direction: Direction, anim_f
             // Up/Left: right 1px for up (mirrored left for left), up 2px
             // Down/Right: left 4px, up 3px (mirrored for right)
             if use_back { (-1.0, -2.0) } else { (-4.0, -3.0) }
+        }
+        AnimationState::SittingChair => (0.0, 0.0),
+        AnimationState::SittingGround => (0.0, 0.0),
+    };
+
+    // Invert x offset when flipped
+    let adjusted_state_x = if should_flip_horizontal(direction) {
+        -state_x
+    } else {
+        state_x
+    };
+
+    (base_x + adjusted_state_x, base_y + state_y)
+}
+
+// ============================================================================
+// Head Equipment Animation System (simple 2-frame format: front/back)
+// ============================================================================
+
+/// Result of head frame calculation
+#[derive(Debug, Clone, Copy)]
+pub struct HeadFrameResult {
+    /// Frame index (0 = front, 1 = back)
+    pub frame: u32,
+    /// Whether to flip the sprite horizontally
+    pub flip_h: bool,
+}
+
+/// Get the head equipment frame index for the current direction
+///
+/// Head sprite sheet layout (0-indexed, 2 frames total):
+/// - 0: Front-facing (Down, Right directions)
+/// - 1: Back-facing (Up, Left directions)
+pub fn get_head_frame(direction: Direction) -> HeadFrameResult {
+    let use_back = is_up_or_left_direction(direction);
+    let flip_h = should_flip_horizontal(direction);
+
+    HeadFrameResult {
+        frame: if use_back { 1 } else { 0 },
+        flip_h,
+    }
+}
+
+/// Get the pixel offset for head equipment positioning relative to the player sprite
+///
+/// Head equipment is positioned at the top of the player sprite and follows the same
+/// offset patterns as hair during animations.
+pub fn get_head_offset(state: AnimationState, direction: Direction, anim_frame: u32) -> (f32, f32) {
+    let use_back = is_up_or_left_direction(direction);
+
+    // Base offset: head is 30 wide, player is 34, center it
+    // Head starts at top of player
+    let base_x = 2.0;  // (34 - 30) / 2 = 2
+    let base_y = -3.0; // Align with top of head, same as hair
+
+    // Per-state offsets (mirroring hair offsets)
+    let (state_x, state_y) = match state {
+        AnimationState::Idle => {
+            if use_back { (-2.0, 0.0) } else { (-1.0, 0.0) }
+        }
+        AnimationState::Walking => {
+            if use_back { (-2.0, 0.0) } else { (-1.0, 0.0) }
+        }
+        AnimationState::Attacking => {
+            let attack_frame = anim_frame % 2;
+            if attack_frame == 0 {
+                // Frame 1: same as idle
+                if use_back { (-2.0, 0.0) } else { (-1.0, 0.0) }
+            } else {
+                // Frame 2: more dramatic shift (same as hair attack offsets)
+                if use_back { (-5.0, -2.0) } else { (-6.0, 2.0) }
+            }
+        }
+        AnimationState::Casting => (0.0, 0.0),
+        AnimationState::ShootingBow => {
+            if use_back { (-1.0, -3.0) } else { (-2.0, -3.0) }
         }
         AnimationState::SittingChair => (0.0, 0.0),
         AnimationState::SittingGround => (0.0, 0.0),

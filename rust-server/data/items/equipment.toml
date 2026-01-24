@@ -751,3 +751,67 @@ defence_level_required = 70
 attack_bonus = 0
 strength_bonus = 18
 defence_bonus = 10
+
+# =============================================================================
+# HEAD (Defence requirement)
+# =============================================================================
+
+[wizard_hat]
+display_name = "Wizard Hat"
+sprite = "wizard_hat"
+description = "A pointy purple hat favored by magic users."
+category = "equipment"
+max_stack = 1
+base_price = 50
+sellable = true
+[wizard_hat.equipment]
+slot_type = "head"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 2
+
+[hood_black]
+display_name = "Black Hood"
+sprite = "hood_black"
+description = "A dark hood that conceals the wearer's face."
+category = "equipment"
+max_stack = 1
+base_price = 35
+sellable = true
+[hood_black.equipment]
+slot_type = "head"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 1
+
+[hood_brown]
+display_name = "Brown Hood"
+sprite = "hood_brown"
+description = "A simple brown hood worn by travelers."
+category = "equipment"
+max_stack = 1
+base_price = 25
+sellable = true
+[hood_brown.equipment]
+slot_type = "head"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 1
+
+[helmet_of_darkness]
+display_name = "Helmet of Darkness"
+sprite = "helmet_of_darkness"
+description = "A fearsome horned helmet imbued with dark power."
+category = "equipment"
+max_stack = 1
+base_price = 500
+sellable = true
+[helmet_of_darkness.equipment]
+slot_type = "head"
+defence_level_required = 40
+attack_bonus = 5
+strength_bonus = 8
+defence_bonus = 15

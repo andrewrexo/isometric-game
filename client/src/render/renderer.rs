@@ -1,5 +1,7 @@
 use macroquad::prelude::*;
 use macroquad::models::{Mesh, Vertex, draw_mesh};
+use macroquad::material::{load_material, gl_use_material, gl_use_default_material, Material, MaterialParams};
+use macroquad::miniquad::ShaderSource;
 use std::collections::HashMap;
 use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction};
 use crate::game::npc::{Npc, NpcState};
@@ -7,8 +9,9 @@ use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
 use super::ui::common::{SlotState, CORNER_ACCENT_SIZE};
 use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
-use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT, BODY_ARMOR_SPRITE_WIDTH, BODY_ARMOR_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, get_boot_frame, get_boot_offset, get_body_armor_frame, get_body_armor_offset, AnimationState};
+use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT, BODY_ARMOR_SPRITE_WIDTH, BODY_ARMOR_SPRITE_HEIGHT, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, get_boot_frame, get_boot_offset, get_body_armor_frame, get_body_armor_offset, get_head_frame, get_head_offset, AnimationState};
 use super::font::BitmapFont;
+use super::shaders;
 
 /// Timing data from a render pass
 #[derive(Default, Clone)]
@@ -132,6 +135,8 @@ pub struct Renderer {
     pub(crate) chat_small_icon: Option<Texture2D>,
     /// Small coin icon for merchant name tags
     pub(crate) coin_small_icon: Option<Texture2D>,
+    /// Material for head+hair composite rendering (shader-based)
+    head_hair_material: Option<Material>,
 }
 
 impl Renderer {
@@ -200,14 +205,52 @@ impl Renderer {
                         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                             let item_id = stem.to_string();
                             let path_str = path.to_string_lossy().to_string();
-                            match load_texture(&path_str).await {
-                                Ok(tex) => {
-                                    tex.set_filter(FilterMode::Nearest);
-                                    log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
-                                    equipment_sprites.insert(item_id, tex);
+
+                            // Check if this is a head sprite (needs pixel processing)
+                            let is_head_sprite = path_str.contains("/head/") || path_str.contains("\\head\\");
+
+                            if is_head_sprite {
+                                // Head sprites need (8,0,0) pixels converted to transparent
+                                match load_image(&path_str).await {
+                                    Ok(mut img) => {
+                                        // Process pixels: convert (8,0,0) marker to transparent
+                                        let width = img.width() as u32;
+                                        let height = img.height() as u32;
+                                        for y in 0..height {
+                                            for x in 0..width {
+                                                let pixel = img.get_pixel(x, y);
+                                                // Check for (8,0,0) marker (with small tolerance)
+                                                // 8/255 ≈ 0.031
+                                                if pixel.r > 0.02 && pixel.r < 0.05
+                                                    && pixel.g < 0.01
+                                                    && pixel.b < 0.01
+                                                    && pixel.a > 0.5
+                                                {
+                                                    // Convert to transparent
+                                                    img.set_pixel(x, y, Color::new(0.0, 0.0, 0.0, 0.0));
+                                                }
+                                            }
+                                        }
+                                        let tex = Texture2D::from_image(&img);
+                                        tex.set_filter(FilterMode::Nearest);
+                                        log::info!("Loaded head sprite: {} ({}x{}, processed hair mask)", item_id, tex.width(), tex.height());
+                                        equipment_sprites.insert(item_id, tex);
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to load head sprite {}: {}", path_str, e);
+                                    }
                                 }
-                                Err(e) => {
-                                    log::warn!("Failed to load equipment sprite {}: {}", path_str, e);
+                            } else {
+                                // Regular equipment sprite
+                                match load_texture(&path_str).await {
+                                    Ok(tex) => {
+                                        tex.set_filter(FilterMode::Nearest);
+                                        log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
+                                        equipment_sprites.insert(item_id, tex);
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to load equipment sprite {}: {}", path_str, e);
+                                    }
                                 }
                             }
                         }
@@ -415,6 +458,27 @@ impl Renderer {
             }
         };
 
+        // Load head+hair composite shader material
+        let head_hair_material = match load_material(
+            ShaderSource::Glsl {
+                vertex: shaders::HEAD_HAIR_VERTEX,
+                fragment: shaders::HEAD_HAIR_FRAGMENT,
+            },
+            MaterialParams {
+                textures: vec!["HairTexture".to_string()],
+                ..Default::default()
+            },
+        ) {
+            Ok(mat) => {
+                log::info!("Loaded head+hair composite shader");
+                Some(mat)
+            }
+            Err(e) => {
+                log::warn!("Failed to load head+hair shader: {}. Head equipment will render without hair masking.", e);
+                None
+            }
+        };
+
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),
             local_player_color: Color::from_rgba(100, 255, 150, 255),
@@ -434,6 +498,7 @@ impl Renderer {
             ui_icons,
             chat_small_icon,
             coin_small_icon,
+            head_hair_material,
         }
     }
 
@@ -1527,10 +1592,14 @@ impl Renderer {
                 },
             );
 
-            // Draw hair (after base sprite, before equipment)
+            // Draw hair and head equipment (after base sprite, before body armor)
             // Hair sprites are 28x54, smaller than player sprites (34x78)
             const HAIR_SPRITE_WIDTH: f32 = 28.0;
             const HAIR_SPRITE_HEIGHT: f32 = 54.0;
+
+            // Always draw hair first - head equipment will be drawn on top
+            // Head sprites have (8,0,0) pixels converted to transparent at load time,
+            // so hair shows through those areas
             if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
                 if let Some(hair_tex) = self.hair_sprites.get(&style) {
                     // Determine front vs back frame based on animation direction (not player.direction)
@@ -1589,6 +1658,35 @@ impl Renderer {
                             source: Some(Rect::new(hair_src_x, 0.0, HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)),
                             dest_size: Some(Vec2::new(scaled_hair_width, scaled_hair_height)),
                             flip_x: coords.flip_h,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+
+            // Draw head equipment (helmets, hoods, hats)
+            if let Some(ref head_item_id) = player.equipped_head {
+                if let Some(head_sprite) = self.equipment_sprites.get(head_item_id) {
+                    let anim_frame = player.animation.frame as u32;
+                    let head_frame = get_head_frame(player.animation.direction);
+                    let (head_offset_x, head_offset_y) = get_head_offset(player.animation.state, player.animation.direction, anim_frame);
+
+                    let head_src_x = head_frame.frame as f32 * HEAD_SPRITE_WIDTH;
+                    let scaled_head_width = HEAD_SPRITE_WIDTH * zoom;
+                    let scaled_head_height = HEAD_SPRITE_HEIGHT * zoom;
+
+                    let head_draw_x = draw_x + head_offset_x * zoom;
+                    let head_draw_y = draw_y + head_offset_y * zoom;
+
+                    draw_texture_ex(
+                        head_sprite,
+                        head_draw_x,
+                        head_draw_y,
+                        tint,
+                        DrawTextureParams {
+                            source: Some(Rect::new(head_src_x, 0.0, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT)),
+                            dest_size: Some(Vec2::new(scaled_head_width, scaled_head_height)),
+                            flip_x: head_frame.flip_h,
                             ..Default::default()
                         },
                     );
