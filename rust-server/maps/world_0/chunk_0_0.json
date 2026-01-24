@@ -3277,5 +3277,9 @@
       "width": 195,
       "height": 255
     }
+  ],
+  "walls": [
+    { "gid": 101, "x": 10, "y": 10, "edge": "down" },
+    { "gid": 101, "x": 10, "y": 10, "edge": "right" }
   ]
 }
