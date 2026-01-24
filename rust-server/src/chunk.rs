@@ -38,6 +38,26 @@ pub struct MapObject {
     pub height: u32,
 }
 
+/// Wall edge direction
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WallEdge {
+    Down,
+    Right,
+}
+
+/// Wall placed on a tile edge
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Wall {
+    /// Global tile ID for wall sprite
+    pub gid: u32,
+    /// World tile X coordinate
+    pub tile_x: i32,
+    /// World tile Y coordinate
+    pub tile_y: i32,
+    /// Which edge of the tile this wall is on
+    pub edge: WallEdge,
+}
+
 /// Chunk coordinates in the world grid
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChunkCoord {
@@ -154,6 +174,8 @@ pub struct Chunk {
     pub player_spawns: Vec<(u32, u32)>,
     /// Map objects (trees, rocks, decorations) from object layer
     pub objects: Vec<MapObject>,
+    /// Walls placed on tile edges
+    pub walls: Vec<Wall>,
 }
 
 impl Chunk {
@@ -169,6 +191,7 @@ impl Chunk {
             entity_spawns: Vec::new(),
             player_spawns: Vec::new(),
             objects: Vec::new(),
+            walls: Vec::new(),
         }
     }
 
