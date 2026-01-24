@@ -9,6 +9,7 @@ import type {
   SimplifiedChunk,
   SimplifiedEntitySpawn,
   SimplifiedMapObject,
+  SimplifiedWall,
 } from '@/types';
 import { chunkKey, CHUNK_SIZE } from './coords';
 import { BitSet } from './BitSet';
@@ -62,6 +63,7 @@ export class ChunkManager {
       collision: new Uint8Array(Math.ceil(tileSize / 8)),
       entities: [],
       mapObjects: [],
+      walls: [],
       dirty: false,
     };
 
@@ -215,6 +217,13 @@ export class ChunkManager {
         width: o.width,
         height: o.height,
       })),
+      walls: (data.walls || []).map((w, i) => ({
+        id: `wall_${i}`,
+        gid: w.gid,
+        x: w.x,
+        y: w.y,
+        edge: w.edge,
+      })),
       dirty: false,
     };
 
@@ -360,6 +369,13 @@ export class ChunkManager {
       height: o.height,
     }));
 
+    const walls: SimplifiedWall[] = chunk.walls.map((w) => ({
+      gid: w.gid,
+      x: w.x,
+      y: w.y,
+      edge: w.edge,
+    }));
+
     return {
       version: 2,
       coord: chunk.coord,
@@ -372,6 +388,7 @@ export class ChunkManager {
       collision: collisionBitset.toBase64(),
       entities,
       mapObjects,
+      walls,
     };
   }
 
@@ -404,6 +421,7 @@ export class ChunkManager {
       collision: new Uint8Array(Math.ceil(tileSize / 8)),
       entities: [],
       mapObjects: [],
+      walls: [],
       dirty: true,
     };
 

@@ -124,6 +124,7 @@ class StorageManager {
             collision: new Uint8Array(stored.collision),
             entities: stored.entities,
             mapObjects: stored.mapObjects || [],
+            walls: stored.walls || [],
             dirty: stored.dirty,
           };
           chunks.set(stored.key, chunk);
@@ -180,6 +181,7 @@ class StorageManager {
       collision: new Uint8Array(stored.collision as number[]),
       entities: stored.entities as Chunk['entities'],
       mapObjects: (stored.mapObjects as Chunk['mapObjects']) || [],
+      walls: (stored.walls as Chunk['walls']) || [],
       dirty: false,
     };
   }
