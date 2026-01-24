@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
-use crate::chunk::{world_to_local, Chunk, ChunkCoord, ChunkLayer, ChunkLayerType, EntitySpawn, MapObject, CHUNK_SIZE};
+use crate::chunk::{world_to_local, Chunk, ChunkCoord, ChunkLayer, ChunkLayerType, EntitySpawn, MapObject, Wall, WallEdge, CHUNK_SIZE};
 
 /// World manager that handles loading and caching chunks
 pub struct World {
@@ -211,6 +211,30 @@ impl World {
                     width,
                     height,
                 });
+            }
+        }
+
+        // Parse walls
+        if let Some(walls_array) = value["walls"].as_array() {
+            for wall_value in walls_array {
+                if let (Some(gid), Some(x), Some(y), Some(edge_str)) = (
+                    wall_value["gid"].as_u64(),
+                    wall_value["x"].as_i64(),
+                    wall_value["y"].as_i64(),
+                    wall_value["edge"].as_str(),
+                ) {
+                    let edge = match edge_str {
+                        "down" => WallEdge::Down,
+                        "right" => WallEdge::Right,
+                        _ => continue,
+                    };
+                    chunk.walls.push(Wall {
+                        gid: gid as u32,
+                        tile_x: coord.x * CHUNK_SIZE as i32 + x as i32,
+                        tile_y: coord.y * CHUNK_SIZE as i32 + y as i32,
+                        edge,
+                    });
+                }
             }
         }
 
