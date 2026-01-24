@@ -237,6 +237,7 @@ pub enum ServerMessage {
         layers: Vec<ChunkLayerData>,
         collision: Vec<u8>, // Packed collision bits
         objects: Vec<ChunkObjectData>, // Map objects (trees, rocks, etc.)
+        walls: Vec<ChunkWallData>,  // Edge-aligned walls
     },
     ChunkNotFound {
         chunk_x: i32,
@@ -328,6 +329,15 @@ pub struct ChunkObjectData {
     pub tile_y: i32,   // World tile Y coordinate
     pub width: u32,    // Sprite width in pixels
     pub height: u32,   // Sprite height in pixels
+}
+
+/// Wall data for chunk transmission
+#[derive(Debug, Clone, Serialize)]
+pub struct ChunkWallData {
+    pub gid: u32,
+    pub tile_x: i32,
+    pub tile_y: i32,
+    pub edge: String, // "down" or "right"
 }
 
 /// Entity definition for client-side registry
@@ -1014,6 +1024,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             layers,
             collision,
             objects,
+            walls,
         } => {
             let mut map = Vec::new();
             map.push((
@@ -1084,6 +1095,32 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                 })
                 .collect();
             map.push((Value::String("objects".into()), Value::Array(object_values)));
+
+            // Encode walls
+            let wall_values: Vec<Value> = walls
+                .iter()
+                .map(|w| {
+                    let mut wmap = Vec::new();
+                    wmap.push((
+                        Value::String("gid".into()),
+                        Value::Integer((w.gid as i64).into()),
+                    ));
+                    wmap.push((
+                        Value::String("tileX".into()),
+                        Value::Integer((w.tile_x as i64).into()),
+                    ));
+                    wmap.push((
+                        Value::String("tileY".into()),
+                        Value::Integer((w.tile_y as i64).into()),
+                    ));
+                    wmap.push((
+                        Value::String("edge".into()),
+                        Value::String(w.edge.clone().into()),
+                    ));
+                    Value::Map(wmap)
+                })
+                .collect();
+            map.push((Value::String("walls".into()), Value::Array(wall_values)));
 
             Value::Map(map)
         }

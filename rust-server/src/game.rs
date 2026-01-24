@@ -3680,6 +3680,7 @@ impl GameRoom {
                 layers,
                 collision,
                 objects,
+                walls: vec![],  // TODO: populate from chunk.walls in Task 4
             })
         } else {
             Some(ServerMessage::ChunkNotFound { chunk_x, chunk_y })
