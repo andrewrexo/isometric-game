@@ -810,32 +810,46 @@ pub fn get_head_offset(state: AnimationState, direction: Direction, anim_frame: 
     // Base offset: head is 30 wide, player is 34, center it
     // Head starts at top of player
     let base_x = 2.0;  // (34 - 30) / 2 = 2
-    let base_y = -3.0; // Align with top of head, same as hair
+    let base_y = -7.0; // Align with top of head, moved up 4px from hair
 
     // Per-state offsets (mirroring hair offsets)
+    // Note: Up/Left directions get -1 X adjustment across all states
     let (state_x, state_y) = match state {
         AnimationState::Idle => {
-            if use_back { (-2.0, 0.0) } else { (-1.0, 0.0) }
+            if use_back { (-3.0, 0.0) } else { (-1.0, 0.0) }
         }
         AnimationState::Walking => {
-            if use_back { (-2.0, 0.0) } else { (-1.0, 0.0) }
+            if use_back { (-3.0, 0.0) } else { (-1.0, 0.0) }
         }
         AnimationState::Attacking => {
             let attack_frame = anim_frame % 2;
             if attack_frame == 0 {
                 // Frame 1: same as idle
-                if use_back { (-2.0, 0.0) } else { (-1.0, 0.0) }
+                if use_back { (-3.0, 0.0) } else { (-1.0, 0.0) }
             } else {
-                // Frame 2: more dramatic shift (same as hair attack offsets)
-                if use_back { (-5.0, -2.0) } else { (-6.0, 2.0) }
+                // Frame 2: more dramatic shift
+                // Up/Left: down 2px from previous, Down/Right: down 1px from previous
+                if use_back { (-6.0, 0.0) } else { (-6.0, 3.0) }
             }
         }
-        AnimationState::Casting => (0.0, 0.0),
-        AnimationState::ShootingBow => {
-            if use_back { (-1.0, -3.0) } else { (-2.0, -3.0) }
+        AnimationState::Casting => {
+            if use_back { (-1.0, 0.0) } else { (0.0, 0.0) }
         }
-        AnimationState::SittingChair => (0.0, 0.0),
-        AnimationState::SittingGround => (0.0, 0.0),
+        AnimationState::ShootingBow => {
+            if use_back {
+                // Up/Left: adjusted positioning (mirrored for Left)
+                (-2.0, 0.0)
+            } else {
+                // Down/Right: move left 1px
+                (-2.0, 0.0)
+            }
+        }
+        AnimationState::SittingChair => {
+            if use_back { (-1.0, 0.0) } else { (0.0, 0.0) }
+        }
+        AnimationState::SittingGround => {
+            if use_back { (-1.0, 0.0) } else { (0.0, 0.0) }
+        }
     };
 
     // Invert x offset when flipped
@@ -845,5 +859,8 @@ pub fn get_head_offset(state: AnimationState, direction: Direction, anim_frame: 
         state_x
     };
 
-    (base_x + adjusted_state_x, base_y + state_y)
+    // Left direction: move 5px to the right
+    let left_adjust = if matches!(direction, Direction::Left) { 5.0 } else { 0.0 };
+
+    (base_x + adjusted_state_x + left_adjust, base_y + state_y)
 }

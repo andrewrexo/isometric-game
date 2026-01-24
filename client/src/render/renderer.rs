@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 use macroquad::models::{Mesh, Vertex, draw_mesh};
 use macroquad::material::{load_material, gl_use_material, gl_use_default_material, Material, MaterialParams};
+use macroquad::miniquad::UniformDesc;
 use macroquad::miniquad::ShaderSource;
 use std::collections::HashMap;
 use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction};
@@ -206,51 +207,14 @@ impl Renderer {
                             let item_id = stem.to_string();
                             let path_str = path.to_string_lossy().to_string();
 
-                            // Check if this is a head sprite (needs pixel processing)
-                            let is_head_sprite = path_str.contains("/head/") || path_str.contains("\\head\\");
-
-                            if is_head_sprite {
-                                // Head sprites need (8,0,0) pixels converted to transparent
-                                match load_image(&path_str).await {
-                                    Ok(mut img) => {
-                                        // Process pixels: convert (8,0,0) marker to transparent
-                                        let width = img.width() as u32;
-                                        let height = img.height() as u32;
-                                        for y in 0..height {
-                                            for x in 0..width {
-                                                let pixel = img.get_pixel(x, y);
-                                                // Check for (8,0,0) marker (with small tolerance)
-                                                // 8/255 ≈ 0.031
-                                                if pixel.r > 0.02 && pixel.r < 0.05
-                                                    && pixel.g < 0.01
-                                                    && pixel.b < 0.01
-                                                    && pixel.a > 0.5
-                                                {
-                                                    // Convert to transparent
-                                                    img.set_pixel(x, y, Color::new(0.0, 0.0, 0.0, 0.0));
-                                                }
-                                            }
-                                        }
-                                        let tex = Texture2D::from_image(&img);
-                                        tex.set_filter(FilterMode::Nearest);
-                                        log::info!("Loaded head sprite: {} ({}x{}, processed hair mask)", item_id, tex.width(), tex.height());
-                                        equipment_sprites.insert(item_id, tex);
-                                    }
-                                    Err(e) => {
-                                        log::warn!("Failed to load head sprite {}: {}", path_str, e);
-                                    }
+                            match load_texture(&path_str).await {
+                                Ok(tex) => {
+                                    tex.set_filter(FilterMode::Nearest);
+                                    log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
+                                    equipment_sprites.insert(item_id, tex);
                                 }
-                            } else {
-                                // Regular equipment sprite
-                                match load_texture(&path_str).await {
-                                    Ok(tex) => {
-                                        tex.set_filter(FilterMode::Nearest);
-                                        log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
-                                        equipment_sprites.insert(item_id, tex);
-                                    }
-                                    Err(e) => {
-                                        log::warn!("Failed to load equipment sprite {}: {}", path_str, e);
-                                    }
+                                Err(e) => {
+                                    log::warn!("Failed to load equipment sprite {}: {}", path_str, e);
                                 }
                             }
                         }
@@ -466,6 +430,10 @@ impl Renderer {
             },
             MaterialParams {
                 textures: vec!["HairTexture".to_string()],
+                uniforms: vec![
+                    UniformDesc::new("HairUvTransform", UniformType::Float4),
+                    UniformDesc::new("Tint", UniformType::Float4),
+                ],
                 ..Default::default()
             },
         ) {
@@ -1597,89 +1565,220 @@ impl Renderer {
             const HAIR_SPRITE_WIDTH: f32 = 28.0;
             const HAIR_SPRITE_HEIGHT: f32 = 54.0;
 
-            // Always draw hair first - head equipment will be drawn on top
-            // Head sprites have (8,0,0) pixels converted to transparent at load time,
-            // so hair shows through those areas
-            if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
-                if let Some(hair_tex) = self.hair_sprites.get(&style) {
-                    // Determine front vs back frame based on animation direction (not player.direction)
-                    // This keeps hair in sync with player sprite which also uses animation.direction
-                    let is_back = matches!(player.animation.direction, Direction::Up | Direction::Left);
-                    let frame_index = color * 2 + if is_back { 1 } else { 0 };
+            // Check if player has head equipment that we can render with shader
+            let head_sprite = player.equipped_head.as_ref()
+                .and_then(|head_item_id| self.equipment_sprites.get(head_item_id));
 
-                    // Calculate source rect for hair sprite
-                    let hair_src_x = frame_index as f32 * HAIR_SPRITE_WIDTH;
+            let has_shader = self.head_hair_material.is_some();
 
-                    // Scale hair to match zoom
-                    let scaled_hair_width = HAIR_SPRITE_WIDTH * zoom;
-                    let scaled_hair_height = HAIR_SPRITE_HEIGHT * zoom;
+            if let Some(head_sprite) = head_sprite {
+                // Player has head equipment - use shader compositing if available
+                if has_shader {
+                    if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
+                        if let Some(hair_tex) = self.hair_sprites.get(&style) {
+                            // Calculate hair frame info
+                            let is_back = matches!(player.animation.direction, Direction::Up | Direction::Left);
+                            let frame_index = color * 2 + if is_back { 1 } else { 0 };
+                            let hair_src_x = frame_index as f32 * HAIR_SPRITE_WIDTH;
 
-                    // Hair offsets depend on animation state and frame
-                    // Attack offsets only apply on 2nd frame (frame index 1)
-                    let is_attack_frame_2 = player.animation.state == AnimationState::Attacking && (player.animation.frame as u32 % 2) == 1;
-                    let is_shooting_bow = player.animation.state == AnimationState::ShootingBow;
-                    let (hair_offset_x, hair_offset_y) = if is_attack_frame_2 {
-                        // Attack frame 2 offsets vary by direction
-                        let y_offset = if is_back { -2.0 } else { 2.0 };
-                        let x_offset = if is_back {
-                            if coords.flip_h { 5.0 } else { -5.0 }  // Up/Left: left 5
-                        } else {
-                            if coords.flip_h { 6.0 } else { -6.0 }  // Down/Right: left 6
-                        };
-                        (x_offset, y_offset)
-                    } else if is_shooting_bow {
-                        // ShootingBow offsets
-                        let x_offset = if is_back {
-                            if coords.flip_h { 1.0 } else { -1.0 }  // Back directions: left 1
-                        } else {
-                            if coords.flip_h { 2.0 } else { -2.0 }  // Front directions: left 2
-                        };
-                        (x_offset, -3.0)
+                            // Calculate hair offsets
+                            let is_attack_frame_2 = player.animation.state == AnimationState::Attacking && (player.animation.frame as u32 % 2) == 1;
+                            let is_shooting_bow = player.animation.state == AnimationState::ShootingBow;
+                            let (hair_offset_x, hair_offset_y) = if is_attack_frame_2 {
+                                let y_offset = if is_back { -2.0 } else { 2.0 };
+                                let x_offset = if is_back {
+                                    if coords.flip_h { 5.0 } else { -5.0 }
+                                } else {
+                                    if coords.flip_h { 6.0 } else { -6.0 }
+                                };
+                                (x_offset, y_offset)
+                            } else if is_shooting_bow {
+                                let x_offset = if is_back {
+                                    if coords.flip_h { 1.0 } else { -1.0 }
+                                } else {
+                                    if coords.flip_h { 2.0 } else { -2.0 }
+                                };
+                                (x_offset, -3.0)
+                            } else {
+                                let x_offset = if is_back {
+                                    if coords.flip_h { 2.0 } else { -2.0 }
+                                } else {
+                                    if coords.flip_h { 1.0 } else { -1.0 }
+                                };
+                                (x_offset, -3.0)
+                            };
+
+                            // Calculate head frame info
+                            let anim_frame = player.animation.frame as u32;
+                            let head_frame = get_head_frame(player.animation.direction);
+                            let (head_offset_x, head_offset_y) = get_head_offset(player.animation.state, player.animation.direction, anim_frame);
+                            let head_src_x = head_frame.frame as f32 * HEAD_SPRITE_WIDTH;
+
+                            // Calculate pixel offset from head origin to hair origin (in unscaled pixels)
+                            // Hair is centered: hair_x = (SPRITE_WIDTH - HAIR_SPRITE_WIDTH) / 2 + hair_offset_x = 3 + hair_offset_x
+                            // Head uses head_offset_x directly
+                            let hair_base_x = (SPRITE_WIDTH - HAIR_SPRITE_WIDTH) / 2.0 + hair_offset_x;
+                            let hair_base_y = hair_offset_y;
+                            let delta_x = hair_base_x - head_offset_x;
+                            let delta_y = hair_base_y - head_offset_y;
+
+                            // Compute UV transform for shader
+                            // The shader needs to transform head UV to hair UV
+                            // head UV is in full-texture coords, so we need to account for source rects
+                            let head_tex_w = head_sprite.width();
+                            let head_tex_h = head_sprite.height();
+                            let hair_tex_w = hair_tex.width();
+                            let hair_tex_h = hair_tex.height();
+
+                            // Head source rect in normalized UV
+                            let head_uv_x = head_src_x / head_tex_w;
+                            let head_uv_w = HEAD_SPRITE_WIDTH / head_tex_w;
+                            let head_uv_h = HEAD_SPRITE_HEIGHT / head_tex_h;
+
+                            // Hair source rect in normalized UV
+                            let hair_uv_x = hair_src_x / hair_tex_w;
+                            let hair_uv_w = HAIR_SPRITE_WIDTH / hair_tex_w;
+                            let hair_uv_h = HAIR_SPRITE_HEIGHT / hair_tex_h;
+
+                            // The transform: given head UV (u, v) in full texture coords
+                            // 1. Normalize to head frame: local = (u - head_uv_x) / head_uv_w, (v - 0) / head_uv_h
+                            // 2. To pixels: pixel = local * (HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT)
+                            // 3. Offset: hair_pixel = pixel - (delta_x, delta_y)
+                            // 4. To hair local: hair_local = hair_pixel / (HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)
+                            // 5. To hair UV: hair_uv = hair_uv_x + hair_local.x * hair_uv_w, hair_local.y * hair_uv_h
+
+                            // Combining: hair_uv.x = hair_uv_x + ((u - head_uv_x) / head_uv_w * HEAD_SPRITE_WIDTH - delta_x) / HAIR_SPRITE_WIDTH * hair_uv_w
+                            // Simplify: hair_uv.x = hair_uv_x + (u - head_uv_x) * (HEAD_SPRITE_WIDTH / head_uv_w / HAIR_SPRITE_WIDTH) * hair_uv_w - delta_x / HAIR_SPRITE_WIDTH * hair_uv_w
+                            // Since head_uv_w = HEAD_SPRITE_WIDTH / head_tex_w, so HEAD_SPRITE_WIDTH / head_uv_w = head_tex_w
+                            // hair_uv.x = hair_uv_x + (u - head_uv_x) * head_tex_w / HAIR_SPRITE_WIDTH * hair_uv_w - delta_x * hair_uv_w / HAIR_SPRITE_WIDTH
+                            // Let scale_x = head_tex_w * hair_uv_w / HAIR_SPRITE_WIDTH
+                            // Let offset_x = hair_uv_x - head_uv_x * scale_x - delta_x * hair_uv_w / HAIR_SPRITE_WIDTH
+                            // Then: hair_uv.x = offset_x + u * scale_x
+
+                            let scale_x = head_tex_w * hair_uv_w / HAIR_SPRITE_WIDTH;
+                            let scale_y = head_tex_h * hair_uv_h / HAIR_SPRITE_HEIGHT;
+                            let offset_x = hair_uv_x - head_uv_x * scale_x - delta_x * hair_uv_w / HAIR_SPRITE_WIDTH;
+                            let offset_y = -delta_y * hair_uv_h / HAIR_SPRITE_HEIGHT;
+
+                            // Set up shader
+                            let material = self.head_hair_material.as_ref().unwrap();
+                            material.set_texture("HairTexture", hair_tex.clone());
+                            material.set_uniform("HairUvTransform", [offset_x, offset_y, scale_x, scale_y]);
+                            material.set_uniform("Tint", [1.0f32, 1.0f32, 1.0f32, 1.0f32]);
+                            gl_use_material(material);
+
+                            // Draw head with shader active
+                            let scaled_head_width = HEAD_SPRITE_WIDTH * zoom;
+                            let scaled_head_height = HEAD_SPRITE_HEIGHT * zoom;
+                            let head_draw_x = draw_x + head_offset_x * zoom;
+                            let head_draw_y = draw_y + head_offset_y * zoom;
+
+                            draw_texture_ex(
+                                &head_sprite,
+                                head_draw_x,
+                                head_draw_y,
+                                tint,
+                                DrawTextureParams {
+                                    source: Some(Rect::new(head_src_x, 0.0, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT)),
+                                    dest_size: Some(Vec2::new(scaled_head_width, scaled_head_height)),
+                                    flip_x: head_frame.flip_h,
+                                    ..Default::default()
+                                },
+                            );
+
+                            gl_use_default_material();
+                        }
                     } else {
-                        // Normal offsets vary by direction
-                        let x_offset = if is_back {
-                            if coords.flip_h { 2.0 } else { -2.0 }  // Back directions: left 2
-                        } else {
-                            if coords.flip_h { 1.0 } else { -1.0 }  // Front directions: left 1
-                        };
-                        (x_offset, -3.0)
-                    };
+                        // No hair, just draw head normally
+                        let anim_frame = player.animation.frame as u32;
+                        let head_frame = get_head_frame(player.animation.direction);
+                        let (head_offset_x, head_offset_y) = get_head_offset(player.animation.state, player.animation.direction, anim_frame);
+                        let head_src_x = head_frame.frame as f32 * HEAD_SPRITE_WIDTH;
+                        let scaled_head_width = HEAD_SPRITE_WIDTH * zoom;
+                        let scaled_head_height = HEAD_SPRITE_HEIGHT * zoom;
+                        let head_draw_x = draw_x + head_offset_x * zoom;
+                        let head_draw_y = draw_y + head_offset_y * zoom;
 
-                    // Center hair horizontally on player, apply offsets
-                    let hair_draw_x = draw_x + (scaled_sprite_width - scaled_hair_width) / 2.0 + hair_offset_x * zoom;
-                    let hair_draw_y = draw_y + hair_offset_y * zoom;
+                        draw_texture_ex(
+                            &head_sprite,
+                            head_draw_x,
+                            head_draw_y,
+                            tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(head_src_x, 0.0, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_head_width, scaled_head_height)),
+                                flip_x: head_frame.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    }
+                } else {
+                    // No shader available, draw hair then head (hair will show through transparent areas)
+                    // Draw hair first
+                    if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
+                        if let Some(hair_tex) = self.hair_sprites.get(&style) {
+                            let is_back = matches!(player.animation.direction, Direction::Up | Direction::Left);
+                            let frame_index = color * 2 + if is_back { 1 } else { 0 };
+                            let hair_src_x = frame_index as f32 * HAIR_SPRITE_WIDTH;
+                            let scaled_hair_width = HAIR_SPRITE_WIDTH * zoom;
+                            let scaled_hair_height = HAIR_SPRITE_HEIGHT * zoom;
 
-                    draw_texture_ex(
-                        hair_tex,
-                        hair_draw_x,
-                        hair_draw_y,
-                        tint,
-                        DrawTextureParams {
-                            source: Some(Rect::new(hair_src_x, 0.0, HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)),
-                            dest_size: Some(Vec2::new(scaled_hair_width, scaled_hair_height)),
-                            flip_x: coords.flip_h,
-                            ..Default::default()
-                        },
-                    );
-                }
-            }
+                            let is_attack_frame_2 = player.animation.state == AnimationState::Attacking && (player.animation.frame as u32 % 2) == 1;
+                            let is_shooting_bow = player.animation.state == AnimationState::ShootingBow;
+                            let (hair_offset_x, hair_offset_y) = if is_attack_frame_2 {
+                                let y_offset = if is_back { -2.0 } else { 2.0 };
+                                let x_offset = if is_back {
+                                    if coords.flip_h { 5.0 } else { -5.0 }
+                                } else {
+                                    if coords.flip_h { 6.0 } else { -6.0 }
+                                };
+                                (x_offset, y_offset)
+                            } else if is_shooting_bow {
+                                let x_offset = if is_back {
+                                    if coords.flip_h { 1.0 } else { -1.0 }
+                                } else {
+                                    if coords.flip_h { 2.0 } else { -2.0 }
+                                };
+                                (x_offset, -3.0)
+                            } else {
+                                let x_offset = if is_back {
+                                    if coords.flip_h { 2.0 } else { -2.0 }
+                                } else {
+                                    if coords.flip_h { 1.0 } else { -1.0 }
+                                };
+                                (x_offset, -3.0)
+                            };
 
-            // Draw head equipment (helmets, hoods, hats)
-            if let Some(ref head_item_id) = player.equipped_head {
-                if let Some(head_sprite) = self.equipment_sprites.get(head_item_id) {
+                            let hair_draw_x = draw_x + (scaled_sprite_width - scaled_hair_width) / 2.0 + hair_offset_x * zoom;
+                            let hair_draw_y = draw_y + hair_offset_y * zoom;
+
+                            draw_texture_ex(
+                                hair_tex,
+                                hair_draw_x,
+                                hair_draw_y,
+                                tint,
+                                DrawTextureParams {
+                                    source: Some(Rect::new(hair_src_x, 0.0, HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)),
+                                    dest_size: Some(Vec2::new(scaled_hair_width, scaled_hair_height)),
+                                    flip_x: coords.flip_h,
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                    }
+
+                    // Then draw head on top
                     let anim_frame = player.animation.frame as u32;
                     let head_frame = get_head_frame(player.animation.direction);
                     let (head_offset_x, head_offset_y) = get_head_offset(player.animation.state, player.animation.direction, anim_frame);
-
                     let head_src_x = head_frame.frame as f32 * HEAD_SPRITE_WIDTH;
                     let scaled_head_width = HEAD_SPRITE_WIDTH * zoom;
                     let scaled_head_height = HEAD_SPRITE_HEIGHT * zoom;
-
                     let head_draw_x = draw_x + head_offset_x * zoom;
                     let head_draw_y = draw_y + head_offset_y * zoom;
 
                     draw_texture_ex(
-                        head_sprite,
+                        &head_sprite,
                         head_draw_x,
                         head_draw_y,
                         tint,
@@ -1690,6 +1789,59 @@ impl Renderer {
                             ..Default::default()
                         },
                     );
+                }
+            } else {
+                // No head equipment - draw hair normally
+                if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
+                    if let Some(hair_tex) = self.hair_sprites.get(&style) {
+                        let is_back = matches!(player.animation.direction, Direction::Up | Direction::Left);
+                        let frame_index = color * 2 + if is_back { 1 } else { 0 };
+                        let hair_src_x = frame_index as f32 * HAIR_SPRITE_WIDTH;
+                        let scaled_hair_width = HAIR_SPRITE_WIDTH * zoom;
+                        let scaled_hair_height = HAIR_SPRITE_HEIGHT * zoom;
+
+                        let is_attack_frame_2 = player.animation.state == AnimationState::Attacking && (player.animation.frame as u32 % 2) == 1;
+                        let is_shooting_bow = player.animation.state == AnimationState::ShootingBow;
+                        let (hair_offset_x, hair_offset_y) = if is_attack_frame_2 {
+                            let y_offset = if is_back { -2.0 } else { 2.0 };
+                            let x_offset = if is_back {
+                                if coords.flip_h { 5.0 } else { -5.0 }
+                            } else {
+                                if coords.flip_h { 6.0 } else { -6.0 }
+                            };
+                            (x_offset, y_offset)
+                        } else if is_shooting_bow {
+                            let x_offset = if is_back {
+                                if coords.flip_h { 1.0 } else { -1.0 }
+                            } else {
+                                if coords.flip_h { 2.0 } else { -2.0 }
+                            };
+                            (x_offset, -3.0)
+                        } else {
+                            let x_offset = if is_back {
+                                if coords.flip_h { 2.0 } else { -2.0 }
+                            } else {
+                                if coords.flip_h { 1.0 } else { -1.0 }
+                            };
+                            (x_offset, -3.0)
+                        };
+
+                        let hair_draw_x = draw_x + (scaled_sprite_width - scaled_hair_width) / 2.0 + hair_offset_x * zoom;
+                        let hair_draw_y = draw_y + hair_offset_y * zoom;
+
+                        draw_texture_ex(
+                            hair_tex,
+                            hair_draw_x,
+                            hair_draw_y,
+                            tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(hair_src_x, 0.0, HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_hair_width, scaled_hair_height)),
+                                flip_x: coords.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    }
                 }
             }
 
@@ -1966,8 +2118,8 @@ impl Renderer {
                 );
             }
 
-            // Draw player base sprite (skip if body armor equipped to avoid transparency stacking)
-            if player.equipped_body.is_none() {
+            // Draw player base sprite (skip if body armor or head slot equipped to avoid transparency stacking)
+            if player.equipped_body.is_none() && player.equipped_head.is_none() {
                 draw_texture_ex(
                     sprite,
                     draw_x,
@@ -1982,39 +2134,41 @@ impl Renderer {
                 );
             }
 
-            // Draw hair silhouette
+            // Draw hair silhouette (skip if head slot is equipped - helmet covers hair)
             const HAIR_SPRITE_WIDTH: f32 = 28.0;
             const HAIR_SPRITE_HEIGHT: f32 = 54.0;
-            if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
-                if let Some(hair_tex) = self.hair_sprites.get(&style) {
-                    let is_back = matches!(player.animation.direction, Direction::Up | Direction::Left);
-                    let frame_index = color * 2 + if is_back { 1 } else { 0 };
-                    let hair_src_x = frame_index as f32 * HAIR_SPRITE_WIDTH;
+            if player.equipped_head.is_none() {
+                if let (Some(style), Some(color)) = (player.hair_style, player.hair_color) {
+                    if let Some(hair_tex) = self.hair_sprites.get(&style) {
+                        let is_back = matches!(player.animation.direction, Direction::Up | Direction::Left);
+                        let frame_index = color * 2 + if is_back { 1 } else { 0 };
+                        let hair_src_x = frame_index as f32 * HAIR_SPRITE_WIDTH;
 
-                    let scaled_hair_width = HAIR_SPRITE_WIDTH * zoom;
-                    let scaled_hair_height = HAIR_SPRITE_HEIGHT * zoom;
+                        let scaled_hair_width = HAIR_SPRITE_WIDTH * zoom;
+                        let scaled_hair_height = HAIR_SPRITE_HEIGHT * zoom;
 
-                    // Hair offset based on direction (silhouette uses normal offsets)
-                    let x_offset = if is_back {
-                        if coords.flip_h { 2.0 } else { -2.0 }  // Back directions: left 2
-                    } else {
-                        if coords.flip_h { 1.0 } else { -1.0 }  // Front directions: left 1
-                    };
-                    let hair_draw_x = draw_x + (scaled_sprite_width - scaled_hair_width) / 2.0 + x_offset * zoom;
-                    let hair_draw_y = draw_y - 3.0 * zoom;
+                        // Hair offset based on direction (silhouette uses normal offsets)
+                        let x_offset = if is_back {
+                            if coords.flip_h { 2.0 } else { -2.0 }  // Back directions: left 2
+                        } else {
+                            if coords.flip_h { 1.0 } else { -1.0 }  // Front directions: left 1
+                        };
+                        let hair_draw_x = draw_x + (scaled_sprite_width - scaled_hair_width) / 2.0 + x_offset * zoom;
+                        let hair_draw_y = draw_y - 3.0 * zoom;
 
-                    draw_texture_ex(
-                        hair_tex,
-                        hair_draw_x,
-                        hair_draw_y,
-                        silhouette_tint,
-                        DrawTextureParams {
-                            source: Some(Rect::new(hair_src_x, 0.0, HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)),
-                            dest_size: Some(Vec2::new(scaled_hair_width, scaled_hair_height)),
-                            flip_x: coords.flip_h,
-                            ..Default::default()
-                        },
-                    );
+                        draw_texture_ex(
+                            hair_tex,
+                            hair_draw_x,
+                            hair_draw_y,
+                            silhouette_tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(hair_src_x, 0.0, HAIR_SPRITE_WIDTH, HAIR_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_hair_width, scaled_hair_height)),
+                                flip_x: coords.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    }
                 }
             }
 
@@ -2107,6 +2261,59 @@ impl Renderer {
                                 source: Some(Rect::new(src_x, src_y, src_w, src_h)),
                                 dest_size: Some(Vec2::new(scaled_sprite_width, scaled_sprite_height)),
                                 flip_x: coords.flip_h,
+                                ..Default::default()
+                            },
+                        );
+                    }
+                }
+            }
+
+            // Draw equipment silhouette (head slot) - use shader to handle marker colors
+            if let Some(ref head_item_id) = player.equipped_head {
+                if let Some(head_sprite) = self.equipment_sprites.get(head_item_id) {
+                    let anim_frame = player.animation.frame as u32;
+                    let head_frame = get_head_frame(player.animation.direction);
+                    let (head_offset_x, head_offset_y) = get_head_offset(player.animation.state, player.animation.direction, anim_frame);
+
+                    let head_src_x = head_frame.frame as f32 * HEAD_SPRITE_WIDTH;
+                    let scaled_head_width = HEAD_SPRITE_WIDTH * zoom;
+                    let scaled_head_height = HEAD_SPRITE_HEIGHT * zoom;
+
+                    let head_draw_x = draw_x + head_offset_x * zoom;
+                    let head_draw_y = draw_y + head_offset_y * zoom;
+
+                    // Use shader to handle marker colors (discard them for silhouette)
+                    if let Some(ref material) = self.head_hair_material {
+                        // Set up shader with silhouette tint and hair UV out of bounds to discard markers
+                        material.set_uniform("HairUvTransform", [-2.0f32, -2.0f32, 0.0f32, 0.0f32]);
+                        material.set_uniform("Tint", [1.0f32, 1.0f32, 1.0f32, silhouette_tint.a]);
+                        gl_use_material(material);
+
+                        draw_texture_ex(
+                            head_sprite,
+                            head_draw_x,
+                            head_draw_y,
+                            WHITE,
+                            DrawTextureParams {
+                                source: Some(Rect::new(head_src_x, 0.0, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_head_width, scaled_head_height)),
+                                flip_x: head_frame.flip_h,
+                                ..Default::default()
+                            },
+                        );
+
+                        gl_use_default_material();
+                    } else {
+                        // Fallback without shader
+                        draw_texture_ex(
+                            head_sprite,
+                            head_draw_x,
+                            head_draw_y,
+                            silhouette_tint,
+                            DrawTextureParams {
+                                source: Some(Rect::new(head_src_x, 0.0, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT)),
+                                dest_size: Some(Vec2::new(scaled_head_width, scaled_head_height)),
+                                flip_x: head_frame.flip_h,
                                 ..Default::default()
                             },
                         );
