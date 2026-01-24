@@ -954,9 +954,10 @@ pub fn get_back_static_offset(state: AnimationState, direction: Direction, anim_
         AnimationState::ShootingBow => {
             // Direction-specific shift when drawing bow
             match direction {
-                Direction::Up => (-1.0, 0.0),    // Left 1px
-                Direction::Left => (1.0, 0.0),   // Right 1px (mirrored)
-                _ => (-1.0, 0.0),                // Default shift
+                Direction::Up => (-1.0, 0.0),     // Left 1px
+                Direction::Left => (1.0, 0.0),   // Right 1px (mirrored from Up)
+                Direction::Down => (-1.0, 0.0),  // Left 1px
+                Direction::Right => (1.0, 0.0),  // Right 1px (mirrored from Down)
             }
         }
         AnimationState::SittingChair | AnimationState::SittingGround => (0.0, 0.0),

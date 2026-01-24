@@ -801,6 +801,22 @@ attack_bonus = 5
 strength_bonus = 8
 defence_bonus = 15
 
+[shades]
+display_name = "Shades"
+sprite = "shades"
+description = "Cool-looking sunglasses that don't offer anything other than style."
+category = "equipment"
+max_stack = 1
+base_price = 60
+sellable = true
+[shades.equipment]
+slot_type = "head"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 1
+
+
 # =============================================================================
 # BACK (Defence requirement - quivers, capes, shields)
 # =============================================================================
