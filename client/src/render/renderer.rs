@@ -299,6 +299,30 @@ impl Renderer {
         }
         log::info!("Loaded {} object sprite variants", object_sprites.len());
 
+        // Load wall sprites from assets/sprites/walls/ (scan directory, same HashMap as objects)
+        if let Ok(entries) = std::fs::read_dir("assets/sprites/walls") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "png") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        let sprite_key = stem.to_string();
+                        let path_str = path.to_string_lossy().to_string();
+                        match load_texture(&path_str).await {
+                            Ok(tex) => {
+                                tex.set_filter(FilterMode::Nearest);
+                                log::debug!("Loaded wall sprite: {} ({}x{})", sprite_key, tex.width(), tex.height());
+                                object_sprites.insert(sprite_key, tex);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load wall sprite {}: {}", path_str, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        log::info!("Total object+wall sprites: {}", object_sprites.len());
+
         // Load NPC sprites from assets/sprites/enemies/ (scan directory)
         let mut npc_sprites = HashMap::new();
         if let Ok(entries) = std::fs::read_dir("assets/sprites/enemies") {
