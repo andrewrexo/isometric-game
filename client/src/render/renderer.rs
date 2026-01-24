@@ -2951,16 +2951,16 @@ impl Renderer {
     fn render_wall(&self, wall: &Wall, camera: &Camera) {
         let zoom = camera.zoom;
 
-        // Get the tile's center screen position (add 0.5 to get center)
-        let (tile_center_x, tile_center_y) = world_to_screen(
-            wall.tile_x as f32 + 0.5,
-            wall.tile_y as f32 + 0.5,
+        // Get the tile's top vertex screen position (same as mapper)
+        let (screen_x, screen_y) = world_to_screen(
+            wall.tile_x as f32,
+            wall.tile_y as f32,
             camera
         );
 
-        // Bottom vertex is at center + half tile height (scaled by zoom)
-        let bottom_vertex_x = tile_center_x;
-        let bottom_vertex_y = tile_center_y + (TILE_HEIGHT / 2.0) * zoom;
+        // Bottom vertex is at top + full tile height (scaled by zoom)
+        let bottom_vertex_x = screen_x;
+        let bottom_vertex_y = screen_y + TILE_HEIGHT * zoom;
 
         // Try to get the wall sprite for this gid
         if let Some(texture) = self.get_wall_sprite(wall.gid) {
