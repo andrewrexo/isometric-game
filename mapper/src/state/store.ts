@@ -9,6 +9,8 @@ import type {
   Tileset,
   Selection,
   MapObject,
+  Wall,
+  WallEdge,
 } from '@/types';
 import { Tool, Layer } from '@/types';
 import { chunkKey, worldToChunk, worldToLocal, localToIndex } from '@/core/coords';
@@ -127,6 +129,9 @@ interface EditorActions {
   addMapObject: (world: WorldCoord, objectId: number, width: number, height: number) => MapObject;
   removeMapObject: (chunkCoord: ChunkCoord, objectSpawnId: string) => void;
   updateMapObject: (chunkCoord: ChunkCoord, objectSpawnId: string, updates: Partial<MapObject>) => void;
+
+  // Wall actions
+  toggleWall: (world: WorldCoord, edge: WallEdge, gid: number) => void;
 
   // Asset actions
   setTilesets: (tilesets: Tileset[]) => void;
@@ -782,6 +787,82 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       mapObjects: c.mapObjects.map((o, i) => (i === objectIndex ? newObject : o)),
       dirty: true,
     }));
+  },
+
+  // Wall actions
+  toggleWall: (world, edge, gid) => {
+    const chunkCoord = worldToChunk(world);
+    const chunk = get().getOrCreateChunk(chunkCoord);
+    const local = worldToLocal(world);
+
+    // Check if wall already exists at this position
+    const existingIdx = chunk.walls.findIndex(
+      (w) => w.x === local.lx && w.y === local.ly && w.edge === edge
+    );
+
+    if (existingIdx >= 0) {
+      // Remove existing wall (toggle off)
+      const removedWall = chunk.walls[existingIdx];
+
+      history.push({
+        type: 'removeWall',
+        description: `Remove wall at ${world.wx},${world.wy} (${edge})`,
+        undo: () => {
+          get().updateChunk(chunkCoord, (c) => ({
+            ...c,
+            walls: [...c.walls, removedWall],
+            dirty: true,
+          }));
+        },
+        redo: () => {
+          get().updateChunk(chunkCoord, (c) => ({
+            ...c,
+            walls: c.walls.filter((w) => w.id !== removedWall.id),
+            dirty: true,
+          }));
+        },
+      });
+
+      get().updateChunk(chunkCoord, (c) => ({
+        ...c,
+        walls: c.walls.filter((_, i) => i !== existingIdx),
+        dirty: true,
+      }));
+    } else {
+      // Add new wall
+      const newWall: Wall = {
+        id: `wall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        gid,
+        x: local.lx,
+        y: local.ly,
+        edge,
+      };
+
+      history.push({
+        type: 'addWall',
+        description: `Add wall at ${world.wx},${world.wy} (${edge})`,
+        undo: () => {
+          get().updateChunk(chunkCoord, (c) => ({
+            ...c,
+            walls: c.walls.filter((w) => w.id !== newWall.id),
+            dirty: true,
+          }));
+        },
+        redo: () => {
+          get().updateChunk(chunkCoord, (c) => ({
+            ...c,
+            walls: [...c.walls, newWall],
+            dirty: true,
+          }));
+        },
+      });
+
+      get().updateChunk(chunkCoord, (c) => ({
+        ...c,
+        walls: [...c.walls, newWall],
+        dirty: true,
+      }));
+    }
   },
 
   // Asset actions

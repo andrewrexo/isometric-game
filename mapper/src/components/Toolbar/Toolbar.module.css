@@ -58,3 +58,15 @@
 .tool.active .shortcut {
   color: rgba(255, 255, 255, 0.7);
 }
+
+.separator {
+  width: 1px;
+  background: #4d4d6c;
+  margin: 0 4px;
+  align-self: stretch;
+}
+
+.wallGroup {
+  display: flex;
+  gap: 4px;
+}

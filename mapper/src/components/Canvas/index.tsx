@@ -47,6 +47,7 @@ export function Canvas() {
     setSelectedEntitySpawn,
     findMapObjectAtWorld,
     setSelectedMapObject,
+    toggleWall,
   } = useEditorStore();
 
   // Setup canvas and renderer
@@ -299,6 +300,19 @@ export function Canvas() {
           }
           break;
         }
+        case Tool.WallDown:
+        case Tool.WallRight: {
+          // Place or remove wall at position
+          if (selectedObjectId) {
+            const objDef = objectLoader.getObject(selectedObjectId);
+            if (objDef) {
+              const edge = activeTool === Tool.WallDown ? 'down' : 'right';
+              const gid = objectLoader.idToGid(selectedObjectId);
+              toggleWall(worldTile, edge, gid);
+            }
+          }
+          break;
+        }
       }
     },
     [
@@ -322,6 +336,7 @@ export function Canvas() {
       setSelectedEntitySpawn,
       findMapObjectAtWorld,
       setSelectedMapObject,
+      toggleWall,
     ]
   );
 

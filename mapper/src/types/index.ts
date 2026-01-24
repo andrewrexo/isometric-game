@@ -64,6 +64,8 @@ export const Tool = {
   Object: 'object',
   Eyedropper: 'eyedropper',
   MagicWand: 'magicWand',
+  WallDown: 'wallDown',
+  WallRight: 'wallRight',
 } as const;
 export type Tool = typeof Tool[keyof typeof Tool];
 
