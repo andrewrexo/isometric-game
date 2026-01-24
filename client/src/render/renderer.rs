@@ -9,7 +9,7 @@ use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
 use super::ui::common::{SlotState, CORNER_ACCENT_SIZE};
-use super::isometric::{world_to_screen, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
+use super::isometric::{world_to_screen, world_to_screen_exact, TILE_WIDTH, TILE_HEIGHT, calculate_depth};
 use super::animation::{SPRITE_WIDTH, SPRITE_HEIGHT, WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT, BOOT_SPRITE_WIDTH, BOOT_SPRITE_HEIGHT, BODY_ARMOR_SPRITE_WIDTH, BODY_ARMOR_SPRITE_HEIGHT, HEAD_SPRITE_WIDTH, HEAD_SPRITE_HEIGHT, BACK_STATIC_SPRITE_WIDTH, BACK_STATIC_SPRITE_HEIGHT, OFFHAND_SPRITE_WIDTH, OFFHAND_SPRITE_HEIGHT, NpcAnimation, get_weapon_frame, get_weapon_offset, get_boot_frame, get_boot_offset, get_body_armor_frame, get_body_armor_offset, get_head_frame, get_head_offset, get_back_static_frame, get_back_static_offset, get_offhand_frame, get_offhand_offset, AnimationState};
 use super::font::BitmapFont;
 use super::shaders;
@@ -2952,7 +2952,8 @@ impl Renderer {
         let zoom = camera.zoom;
 
         // Get the tile's top vertex screen position (same as mapper)
-        let (screen_x, screen_y) = world_to_screen(
+        // Use exact coordinates to avoid rounding errors
+        let (screen_x, screen_y) = world_to_screen_exact(
             wall.tile_x as f32,
             wall.tile_y as f32,
             camera
