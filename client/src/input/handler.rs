@@ -302,9 +302,45 @@ impl InputHandler {
                             }
                         }
                         _ => {
-                            // Dropped on non-inventory element, cancel drag
+                            // Dropped on non-inventory UI element, cancel drag
                         }
                     }
+                } else {
+                    // No UI element under cursor - check for world tile drop
+                    if let DragSource::Inventory(from_idx) = &drag.source {
+                        // Convert mouse position to world tile
+                        let (world_x, world_y) = screen_to_world(mx, my, &state.camera);
+                        let tile_x = world_x.round() as i32;
+                        let tile_y = world_y.round() as i32;
+
+                        // Get player position
+                        if let Some(player) = state.get_local_player() {
+                            let player_x = player.x.round() as i32;
+                            let player_y = player.y.round() as i32;
+
+                            // Check Chebyshev distance (must be exactly 1 - adjacent/diagonal)
+                            let dx = (tile_x - player_x).abs();
+                            let dy = (tile_y - player_y).abs();
+                            let is_adjacent = dx <= 1 && dy <= 1 && (dx > 0 || dy > 0);
+
+                            if is_adjacent {
+                                // Check for Ctrl/Cmd modifier for single item drop
+                                let ctrl_held = is_key_down(KeyCode::LeftControl)
+                                    || is_key_down(KeyCode::RightControl)
+                                    || is_key_down(KeyCode::LeftSuper)
+                                    || is_key_down(KeyCode::RightSuper);
+
+                                let quantity = if ctrl_held { 1 } else { drag.quantity as u32 };
+
+                                commands.push(InputCommand::DropItem {
+                                    slot_index: *from_idx as u8,
+                                    quantity,
+                                });
+                                audio.play_sfx("item_put");
+                            }
+                        }
+                    }
+                    // Equipment drag to world is not supported - just cancel
                 }
                 // Drag ended (either completed swap or cancelled)
                 return commands;

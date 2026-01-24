@@ -4,7 +4,7 @@ use macroquad::material::{load_material, gl_use_material, gl_use_default_materia
 use macroquad::miniquad::UniformDesc;
 use macroquad::miniquad::ShaderSource;
 use std::collections::HashMap;
-use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction};
+use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction, DragSource};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
 use crate::ui::UiLayout;
@@ -610,6 +610,31 @@ impl Renderer {
         // 1.5. Render hovered tile border if hovering over a tile
         if let Some((tile_x, tile_y)) = state.hovered_tile {
             self.render_tile_hover(tile_x, tile_y, &state.camera);
+        }
+
+        // 1.6. Render drop zone highlights when dragging from inventory
+        if let Some(ref drag) = state.ui_state.drag_state {
+            if matches!(drag.source, DragSource::Inventory(_)) {
+                if let Some(player) = state.get_local_player() {
+                    let player_x = player.x.round() as i32;
+                    let player_y = player.y.round() as i32;
+
+                    // Render the 8 adjacent tiles as drop zones
+                    for dy in -1..=1 {
+                        for dx in -1..=1 {
+                            if dx == 0 && dy == 0 {
+                                continue; // Skip player's tile
+                            }
+                            let tile_x = player_x + dx;
+                            let tile_y = player_y + dy;
+
+                            // Check if this tile is currently hovered
+                            let is_hovered = state.hovered_tile == Some((tile_x, tile_y));
+                            self.render_drop_zone(tile_x, tile_y, &state.camera, is_hovered);
+                        }
+                    }
+                }
+            }
         }
         timings.ground_ms = (get_time() - t0) * 1000.0;
 
@@ -1475,6 +1500,54 @@ impl Renderer {
         // Left corner
         draw_line(left.0, left.1, left.0 + (bottom.0 - left.0) * t, left.1 + (bottom.1 - left.1) * t, line_width, color);
         draw_line(left.0, left.1, left.0 + (top.0 - left.0) * t, left.1 + (top.1 - left.1) * t, line_width, color);
+    }
+
+    /// Draw a green drop zone indicator for a tile (when dragging items)
+    pub(crate) fn render_drop_zone(&self, tile_x: i32, tile_y: i32, camera: &Camera, is_hovered: bool) {
+        // Get the center of the tile in screen space
+        let (center_x, center_y) = world_to_screen(tile_x as f32 + 0.5, tile_y as f32 + 0.5, camera);
+        let center_y = center_y - TILE_HEIGHT * camera.zoom / 2.0;
+
+        // Tile dimensions (half-sizes for diamond corners), scaled by zoom
+        let half_w = TILE_WIDTH * camera.zoom / 2.0;
+        let half_h = TILE_HEIGHT * camera.zoom / 2.0;
+
+        // Diamond corners (isometric tile shape)
+        let top = (center_x, center_y - half_h);
+        let right = (center_x + half_w, center_y);
+        let bottom = (center_x, center_y + half_h);
+        let left = (center_x - half_w, center_y);
+
+        // Green color - brighter when hovered
+        let color = if is_hovered {
+            Color::from_rgba(100, 255, 100, 120)
+        } else {
+            Color::from_rgba(100, 200, 100, 60)
+        };
+
+        // Draw filled diamond shape
+        draw_triangle(
+            Vec2::new(top.0, top.1),
+            Vec2::new(right.0, right.1),
+            Vec2::new(bottom.0, bottom.1),
+            color,
+        );
+        draw_triangle(
+            Vec2::new(top.0, top.1),
+            Vec2::new(bottom.0, bottom.1),
+            Vec2::new(left.0, left.1),
+            color,
+        );
+
+        // Draw border if hovered
+        if is_hovered {
+            let border_color = Color::from_rgba(150, 255, 150, 200);
+            let line_width = 1.0 * camera.zoom;
+            draw_line(top.0, top.1, right.0, right.1, line_width, border_color);
+            draw_line(right.0, right.1, bottom.0, bottom.1, line_width, border_color);
+            draw_line(bottom.0, bottom.1, left.0, left.1, line_width, border_color);
+            draw_line(left.0, left.1, top.0, top.1, line_width, border_color);
+        }
     }
 
     fn render_player(&self, player: &Player, is_local: bool, is_selected: bool, is_hovered: bool, camera: &Camera) {

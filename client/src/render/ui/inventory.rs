@@ -300,31 +300,33 @@ impl Renderer {
 
     pub(crate) fn render_dragged_item(&self, drag: &DragState, state: &GameState) {
         let (mx, my) = mouse_position();
-        let slot_size = INV_SLOT_SIZE;
-        let x = mx - slot_size / 2.0;
-        let y = my - slot_size / 2.0;
 
-        // Drop shadow
-        draw_rectangle(x + 3.0, y + 3.0, slot_size, slot_size, Color::new(0.0, 0.0, 0.0, 0.4));
+        // Get the item texture to determine its size
+        if let Some(texture) = self.item_sprites.get(&drag.item_id) {
+            let icon_width = texture.width();
+            let icon_height = texture.height();
 
-        // Outer border (gold glow effect)
-        draw_rectangle(x - 2.0, y - 2.0, slot_size + 4.0, slot_size + 4.0, SLOT_SELECTED_BORDER);
+            // Center the item on cursor
+            let x = mx - icon_width / 2.0;
+            let y = my - icon_height / 2.0;
 
-        // Background
-        draw_rectangle(x, y, slot_size, slot_size, SLOT_HOVER_BG);
-
-        // Inner bevel effect
-        draw_line(x + 1.0, y + 1.0, x + slot_size - 1.0, y + 1.0, 2.0, SLOT_INNER_SHADOW);
-        draw_line(x + 1.0, y + 1.0, x + 1.0, y + slot_size - 1.0, 2.0, SLOT_INNER_SHADOW);
-
-        // Draw the item icon centered on cursor
-        self.draw_item_icon(&drag.item_id, x, y, slot_size, slot_size, state, false);
-
-        // Draw quantity if > 1 (with shadow)
-        if drag.quantity > 1 {
-            let qty_text = drag.quantity.to_string();
-            self.draw_text_sharp(&qty_text, x + 3.0, y + slot_size - 2.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.8));
-            self.draw_text_sharp(&qty_text, x + 2.0, y + slot_size - 3.0, 16.0, TEXT_NORMAL);
+            // Draw just the item sprite, semi-transparent (70% opacity)
+            draw_texture_ex(
+                texture,
+                x,
+                y,
+                Color::new(1.0, 1.0, 1.0, 0.7),
+                DrawTextureParams::default(),
+            );
+        } else {
+            // Fallback for items without textures - draw colored placeholder
+            let item_def = state.item_registry.get_or_placeholder(&drag.item_id);
+            let mut color = item_def.category_color();
+            color.a = 0.7; // Semi-transparent
+            let icon_size = 32.0;
+            let x = mx - icon_size / 2.0;
+            let y = my - icon_size / 2.0;
+            draw_rectangle(x, y, icon_size, icon_size, color);
         }
     }
 }
