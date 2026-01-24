@@ -647,6 +647,7 @@ impl Renderer {
             Item(&'a GroundItem),
             Tile { x: u32, y: u32, tile_id: u32 },
             ChunkObject(&'a MapObject),
+            ChunkWall(&'a Wall),
         }
 
         // Pre-allocate with estimated capacity to reduce allocations
@@ -695,6 +696,11 @@ impl Renderer {
                 let depth = calculate_depth(obj.tile_x as f32, obj.tile_y as f32, 1);
                 renderables.push((depth, Renderable::ChunkObject(obj)));
             }
+            // Add walls from chunks
+            for wall in &chunk.walls {
+                let depth = calculate_depth(wall.tile_x as f32, wall.tile_y as f32, 1);
+                renderables.push((depth, Renderable::ChunkWall(wall)));
+            }
         }
 
         // Sort by depth (painter's algorithm)
@@ -723,13 +729,9 @@ impl Renderer {
                 Renderable::ChunkObject(obj) => {
                     self.render_map_object(obj, &state.camera);
                 }
-            }
-        }
-
-        // Render walls from loaded chunks
-        for chunk in state.chunk_manager.chunks().values() {
-            for wall in &chunk.walls {
-                self.render_wall(wall, &state.camera);
+                Renderable::ChunkWall(wall) => {
+                    self.render_wall(wall, &state.camera);
+                }
             }
         }
 
