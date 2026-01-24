@@ -51,6 +51,26 @@ pub struct MapObject {
     pub height: u32,
 }
 
+/// Wall edge direction
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WallEdge {
+    Down,
+    Right,
+}
+
+/// Wall placed on a tile edge
+#[derive(Debug, Clone)]
+pub struct Wall {
+    /// Global tile ID for wall sprite
+    pub gid: u32,
+    /// World tile X coordinate
+    pub tile_x: i32,
+    /// World tile Y coordinate
+    pub tile_y: i32,
+    /// Which edge of the tile this wall is on
+    pub edge: WallEdge,
+}
+
 /// Layer types matching server
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChunkLayerType {
@@ -102,6 +122,8 @@ pub struct Chunk {
     pub collision: Vec<bool>,
     /// Map objects (trees, rocks, decorations) from object layer
     pub objects: Vec<MapObject>,
+    /// Walls placed on tile edges
+    pub walls: Vec<Wall>,
 }
 
 impl Chunk {
@@ -115,6 +137,7 @@ impl Chunk {
             ],
             collision: vec![false; (CHUNK_SIZE * CHUNK_SIZE) as usize],
             objects: Vec::new(),
+            walls: Vec::new(),
         }
     }
 
@@ -212,6 +235,7 @@ impl ChunkManager {
         layers: Vec<(u8, Vec<u32>)>,
         collision: &[u8],
         objects: Vec<MapObject>,
+        walls: Vec<Wall>,
     ) {
         let coord = ChunkCoord::new(chunk_x, chunk_y);
         let mut chunk = Chunk::new(coord);
@@ -232,6 +256,9 @@ impl ChunkManager {
 
         // Load map objects
         chunk.objects = objects;
+
+        // Load walls
+        chunk.walls = walls;
 
         // Remove from pending
         self.pending_requests.remove(&coord);

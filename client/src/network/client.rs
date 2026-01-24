@@ -1112,7 +1112,8 @@ impl NetworkClient {
                     log::debug!("Received chunk data: ({}, {}) with {} layers, {} collision bytes, {} objects",
                         chunk_x, chunk_y, layers.len(), collision.len(), objects.len());
 
-                    state.chunk_manager.load_chunk(chunk_x, chunk_y, layers, &collision, objects);
+                    // TODO: Parse walls from server message (Task 6)
+                    state.chunk_manager.load_chunk(chunk_x, chunk_y, layers, &collision, objects, Vec::new());
                 }
             }
 
