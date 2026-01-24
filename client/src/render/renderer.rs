@@ -2959,9 +2959,10 @@ impl Renderer {
             camera
         );
 
-        // Bottom vertex is at top + full tile height (scaled by zoom)
+        // Tiles are centered on their world_to_screen position, so
+        // bottom vertex is at center + half tile height (not full height)
         let bottom_vertex_x = screen_x;
-        let bottom_vertex_y = screen_y + TILE_HEIGHT * zoom;
+        let bottom_vertex_y = screen_y + (TILE_HEIGHT / 2.0) * zoom;
 
         // Try to get the wall sprite for this gid
         if let Some(texture) = self.get_wall_sprite(wall.gid) {
