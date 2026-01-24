@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType, Wall, WallEdge};
 use crate::game::npc::{Npc, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -1109,11 +1109,26 @@ impl NetworkClient {
                         }
                     }
 
-                    log::debug!("Received chunk data: ({}, {}) with {} layers, {} collision bytes, {} objects",
-                        chunk_x, chunk_y, layers.len(), collision.len(), objects.len());
+                    // Parse walls from server message
+                    let mut walls: Vec<Wall> = Vec::new();
+                    if let Some(walls_arr) = extract_array(value, "walls") {
+                        for w in walls_arr {
+                            let gid = w["gid"].as_u64().unwrap_or(0) as u32;
+                            let tile_x = w["tileX"].as_i64().unwrap_or(0) as i32;
+                            let tile_y = w["tileY"].as_i64().unwrap_or(0) as i32;
+                            let edge_str = w["edge"].as_str().unwrap_or("down");
+                            let edge = match edge_str {
+                                "right" => WallEdge::Right,
+                                _ => WallEdge::Down,
+                            };
+                            walls.push(Wall { gid, tile_x, tile_y, edge });
+                        }
+                    }
 
-                    // TODO: Parse walls from server message (Task 6)
-                    state.chunk_manager.load_chunk(chunk_x, chunk_y, layers, &collision, objects, Vec::new());
+                    log::debug!("Received chunk data: ({}, {}) with {} layers, {} collision bytes, {} objects, {} walls",
+                        chunk_x, chunk_y, layers.len(), collision.len(), objects.len(), walls.len());
+
+                    state.chunk_manager.load_chunk(chunk_x, chunk_y, layers, &collision, objects, walls);
                 }
             }
 
