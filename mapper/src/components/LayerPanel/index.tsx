@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useEditorStore } from '@/state/store';
 import { Layer } from '@/types';
 import styles from './LayerPanel.module.css';
@@ -13,8 +12,9 @@ const layers: { id: Layer; label: string }[] = [
 ];
 
 export function LayerPanel() {
-  const [collapsed, setCollapsed] = useState(false);
   const {
+    layerPanelCollapsed: collapsed,
+    setLayerPanelCollapsed: setCollapsed,
     activeLayer,
     setActiveLayer,
     visibleLayers,

@@ -105,6 +105,7 @@ function App() {
     setConnected,
     isLoading,
     loadingMessage,
+    layerPanelCollapsed,
   } = useEditorStore();
 
   // Initialize app
@@ -301,7 +302,13 @@ function App() {
             className="palette-resize-handle"
             onMouseDown={startPaletteResize}
           />
-          <div style={{ height: objectPaletteHeight, flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{
+            height: layerPanelCollapsed ? undefined : objectPaletteHeight,
+            flex: layerPanelCollapsed ? 1 : undefined,
+            flexShrink: 0,
+            overflow: 'hidden',
+            minHeight: 100,
+          }}>
             <ObjectPalette />
           </div>
           <LayerPanel />

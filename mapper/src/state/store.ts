@@ -82,6 +82,9 @@ interface EditorState {
 
   // Connection state
   isConnected: boolean;
+
+  // Panel state
+  layerPanelCollapsed: boolean;
 }
 
 interface EditorActions {
@@ -155,6 +158,9 @@ interface EditorActions {
   // Connection actions
   setConnected: (isConnected: boolean) => void;
 
+  // Panel actions
+  setLayerPanelCollapsed: (collapsed: boolean) => void;
+
   // Utility
   getChunk: (coord: ChunkCoord) => Chunk | undefined;
   getOrCreateChunk: (coord: ChunkCoord) => Chunk;
@@ -203,6 +209,8 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   loadingMessage: '',
 
   isConnected: false,
+
+  layerPanelCollapsed: false,
 
   // World actions
   setChunks: (chunks, skipAutoSave = false) => {
@@ -893,6 +901,9 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
 
   // Connection actions
   setConnected: (isConnected) => set({ isConnected }),
+
+  // Panel actions
+  setLayerPanelCollapsed: (collapsed) => set({ layerPanelCollapsed: collapsed }),
 
   // Utility
   getChunk: (coord) => get().chunks.get(chunkKey(coord)),
