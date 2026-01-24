@@ -163,8 +163,9 @@ impl Renderer {
             return;
         }
 
-        let tracker_x = 10.0;
-        let tracker_y = if state.debug_mode { 163.0 } else { 33.0 };
+        let tracker_x = 12.0;
+        // Position below player stats (ends ~69) or below debug info (ends ~490)
+        let tracker_y = if state.debug_mode { 500.0 } else { 75.0 };
         let line_height = 18.0;
 
         let mut y = tracker_y;

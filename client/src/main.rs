@@ -520,32 +520,34 @@ fn run_game_frame(
     game_state.frame_timings.chunk_count = game_state.chunk_manager.chunks().len();
 
     // 5. Debug info (render after game state update to show current frame data)
+    // Positioned below player stats panel (which ends around y=69)
     if game_state.debug_mode {
+        let debug_y = 80.0; // Start below player stats
         let fps_cap_str = match game_state.frame_timings.fps_cap {
             Some(cap) => format!(" (cap: {})", cap),
             None => " (uncapped)".to_string(),
         };
-        renderer.draw_text_sharp(&format!("FPS: {}{} [F4]", get_fps(), fps_cap_str), 10.0, 20.0, 16.0, WHITE);
-        renderer.draw_text_sharp(&format!("Players: {}", game_state.players.len()), 10.0, 40.0, 16.0, WHITE);
-        renderer.draw_text_sharp(&format!("Connected: {}", network.is_connected()), 10.0, 60.0, 16.0, WHITE);
+        renderer.draw_text_sharp(&format!("FPS: {}{} [F4]", get_fps(), fps_cap_str), 10.0, debug_y, 16.0, WHITE);
+        renderer.draw_text_sharp(&format!("Players: {}", game_state.players.len()), 10.0, debug_y + 20.0, 16.0, WHITE);
+        renderer.draw_text_sharp(&format!("Connected: {}", network.is_connected()), 10.0, debug_y + 40.0, 16.0, WHITE);
 
         // Show position and chunk info
         if let Some(player) = game_state.get_local_player() {
             let chunk_x = (player.x / 32.0).floor() as i32;
             let chunk_y = (player.y / 32.0).floor() as i32;
-            renderer.draw_text_sharp(&format!("Pos: ({:.1}, {:.1})", player.x, player.y), 10.0, 80.0, 16.0, YELLOW);
-            renderer.draw_text_sharp(&format!("Chunk: ({}, {})", chunk_x, chunk_y), 10.0, 100.0, 16.0, YELLOW);
-            renderer.draw_text_sharp(&format!("NPCs: {}", game_state.npcs.len()), 10.0, 120.0, 16.0, WHITE);
+            renderer.draw_text_sharp(&format!("Pos: ({:.1}, {:.1})", player.x, player.y), 10.0, debug_y + 60.0, 16.0, YELLOW);
+            renderer.draw_text_sharp(&format!("Chunk: ({}, {})", chunk_x, chunk_y), 10.0, debug_y + 80.0, 16.0, YELLOW);
+            renderer.draw_text_sharp(&format!("NPCs: {}", game_state.npcs.len()), 10.0, debug_y + 100.0, 16.0, WHITE);
             // Appearance debug info
-            renderer.draw_text_sharp(&format!("Appearance: {} {} (F5/F6 to cycle)", player.gender, player.skin), 10.0, 140.0, 16.0, Color::from_rgba(150, 200, 255, 255));
+            renderer.draw_text_sharp(&format!("Appearance: {} {} (F5/F6 to cycle)", player.gender, player.skin), 10.0, debug_y + 120.0, 16.0, Color::from_rgba(150, 200, 255, 255));
         }
 
         // Frame timing breakdown
         let t = &game_state.frame_timings;
         let timing_color = Color::from_rgba(100, 255, 150, 255);
         let spike_color = Color::from_rgba(255, 100, 100, 255);
-        renderer.draw_text_sharp("--- Frame Timing (ms) ---", 10.0, 170.0, 16.0, timing_color);
-        renderer.draw_text_sharp(&format!("Network:  {:.2}", t.network_ms), 10.0, 190.0, 16.0, timing_color);
+        renderer.draw_text_sharp("--- Frame Timing (ms) ---", 10.0, debug_y + 150.0, 16.0, timing_color);
+        renderer.draw_text_sharp(&format!("Network:  {:.2}", t.network_ms), 10.0, debug_y + 170.0, 16.0, timing_color);
 
         // Render breakdown with spike highlighting (>0.5ms highlighted)
         let ground_color = if t.render_ground_ms > 0.5 { spike_color } else { timing_color };
@@ -554,28 +556,28 @@ fn run_game_frame(
         let effects_color = if t.render_effects_ms > 0.5 { spike_color } else { timing_color };
         let ui_color = if t.render_ui_ms > 0.5 { spike_color } else { timing_color };
 
-        renderer.draw_text_sharp(&format!("Render:   {:.2} (total)", t.render_total_ms), 10.0, 210.0, 16.0, timing_color);
-        renderer.draw_text_sharp(&format!("  Ground:   {:.2}", t.render_ground_ms), 10.0, 230.0, 16.0, ground_color);
-        renderer.draw_text_sharp(&format!("  Entities: {:.2}", t.render_entities_ms), 10.0, 250.0, 16.0, entities_color);
-        renderer.draw_text_sharp(&format!("  Overhead: {:.2}", t.render_overhead_ms), 10.0, 270.0, 16.0, overhead_color);
-        renderer.draw_text_sharp(&format!("  Effects:  {:.2}", t.render_effects_ms), 10.0, 290.0, 16.0, effects_color);
-        renderer.draw_text_sharp(&format!("  UI:       {:.2}", t.render_ui_ms), 10.0, 310.0, 16.0, ui_color);
+        renderer.draw_text_sharp(&format!("Render:   {:.2} (total)", t.render_total_ms), 10.0, debug_y + 190.0, 16.0, timing_color);
+        renderer.draw_text_sharp(&format!("  Ground:   {:.2}", t.render_ground_ms), 10.0, debug_y + 210.0, 16.0, ground_color);
+        renderer.draw_text_sharp(&format!("  Entities: {:.2}", t.render_entities_ms), 10.0, debug_y + 230.0, 16.0, entities_color);
+        renderer.draw_text_sharp(&format!("  Overhead: {:.2}", t.render_overhead_ms), 10.0, debug_y + 250.0, 16.0, overhead_color);
+        renderer.draw_text_sharp(&format!("  Effects:  {:.2}", t.render_effects_ms), 10.0, debug_y + 270.0, 16.0, effects_color);
+        renderer.draw_text_sharp(&format!("  UI:       {:.2}", t.render_ui_ms), 10.0, debug_y + 290.0, 16.0, ui_color);
 
-        renderer.draw_text_sharp(&format!("Update:   {:.2}", t.update_ms), 10.0, 330.0, 16.0, timing_color);
-        renderer.draw_text_sharp(&format!("Total:    {:.2}", t.total_ms), 10.0, 350.0, 16.0, timing_color);
-        renderer.draw_text_sharp(&format!("Entities: {} | Chunks: {}", t.entity_count, t.chunk_count), 10.0, 370.0, 16.0, timing_color);
+        renderer.draw_text_sharp(&format!("Update:   {:.2}", t.update_ms), 10.0, debug_y + 310.0, 16.0, timing_color);
+        renderer.draw_text_sharp(&format!("Total:    {:.2}", t.total_ms), 10.0, debug_y + 330.0, 16.0, timing_color);
+        renderer.draw_text_sharp(&format!("Entities: {} | Chunks: {}", t.entity_count, t.chunk_count), 10.0, debug_y + 350.0, 16.0, timing_color);
 
         // Delta variance (key indicator of frame pacing issues)
         let delta_variance = t.delta_max_ms - t.delta_min_ms;
         let variance_color = if delta_variance > 5.0 { spike_color } else { timing_color };
         renderer.draw_text_sharp(&format!("Delta: {:.1}ms (range: {:.1}-{:.1}, var: {:.1})",
-            t.delta_ms, t.delta_min_ms, t.delta_max_ms, delta_variance), 10.0, 390.0, 16.0, variance_color);
+            t.delta_ms, t.delta_min_ms, t.delta_max_ms, delta_variance), 10.0, debug_y + 370.0, 16.0, variance_color);
 
         // next_frame() timing (helps diagnose where variance comes from)
         let nf_variance = t.next_frame_max_ms - t.next_frame_min_ms;
         let nf_color = if nf_variance > 5.0 { spike_color } else { timing_color };
         renderer.draw_text_sharp(&format!("next_frame(): {:.1}ms (range: {:.1}-{:.1}, var: {:.1})",
-            t.next_frame_ms, t.next_frame_min_ms, t.next_frame_max_ms, nf_variance), 10.0, 410.0, 16.0, nf_color);
+            t.next_frame_ms, t.next_frame_min_ms, t.next_frame_max_ms, nf_variance), 10.0, debug_y + 390.0, 16.0, nf_color);
 
         // Delta smoothing setting
         let smooth_str = if t.delta_smoothing > 0.0 {
@@ -584,6 +586,6 @@ fn run_game_frame(
             "off".to_string()
         };
         renderer.draw_text_sharp(&format!("Smoothing: {} [F7] (smoothed: {:.1}ms)",
-            smooth_str, t.smoothed_delta * 1000.0), 10.0, 430.0, 16.0, timing_color);
+            smooth_str, t.smoothed_delta * 1000.0), 10.0, debug_y + 410.0, 16.0, timing_color);
     }
 }

@@ -2890,34 +2890,45 @@ impl Renderer {
             }
         }
 
-        // Local player stats panel (top-right) - Name, HP bar
+        // Local player stats panel (top-left) - Name tag + HP bar
         if let Some(player) = state.get_local_player() {
-            let panel_width = 160.0;
-            let panel_height = 44.0;
-            let panel_x = (screen_width() - panel_width - 12.0).floor();
-            let panel_y = 25.0;
+            let base_x = 12.0;
+            let base_y = 25.0;
+            let padding = 6.0;
+            let font_size = 18.0;
 
-            // ===== PANEL BACKGROUND (same style as menu buttons, no hover) =====
-            let border_alpha = Color::new(SLOT_BORDER.r, SLOT_BORDER.g, SLOT_BORDER.b, 0.9);
-            draw_rectangle(panel_x - 1.0, panel_y - 1.0, panel_width + 2.0, panel_height + 2.0, border_alpha);
-            let bg_alpha = Color::new(SLOT_BG_EMPTY.r, SLOT_BG_EMPTY.g, SLOT_BG_EMPTY.b, 0.85);
-            draw_rectangle(panel_x, panel_y, panel_width, panel_height, bg_alpha);
-
-            let padding = 8.0;
-            let bar_width = panel_width - padding * 2.0;
-            let bar_height = 16.0;
-
-            // ===== PLAYER NAME + LEVEL =====
-            let name_y = panel_y + 6.0;
+            // ===== NAME TAG (fitted box like player hover name tags) =====
             let name = &player.name;
             let level_text = format!(" Lv.{}", player.skills.total_level());
-            self.draw_text_sharp(name, panel_x + padding, (name_y + 12.0).floor(), 16.0, TEXT_TITLE);
-            let name_w = self.measure_text_sharp(name, 16.0).width;
-            self.draw_text_sharp(&level_text, panel_x + padding + name_w, (name_y + 12.0).floor(), 16.0, TEXT_DIM);
+            let name_w = self.measure_text_sharp(name, font_size).width;
+            let level_w = self.measure_text_sharp(&level_text, font_size).width;
+            let total_text_w = name_w + level_w;
+            let tag_height = 22.0;
 
-            // ===== HP BAR =====
-            let hp_bar_x = panel_x + padding - 2.0;
-            let hp_bar_y = name_y + 18.0;
+            // Left-align the name tag
+            let tag_x = base_x;
+            let tag_y = base_y;
+
+            // Draw fitted background (same style as player hover name tags)
+            draw_rectangle(
+                tag_x,
+                tag_y,
+                total_text_w + padding * 2.0,
+                tag_height,
+                Color::from_rgba(0, 0, 0, 180),
+            );
+
+            // Draw name + level text
+            let text_x = tag_x + padding;
+            let text_y = (tag_y + 17.0).floor();
+            self.draw_text_sharp(name, text_x, text_y, font_size, TEXT_TITLE);
+            self.draw_text_sharp(&level_text, text_x + name_w, text_y, font_size, TEXT_DIM);
+
+            // ===== HP BAR (below name tag) =====
+            let bar_width = (total_text_w + padding * 2.0).max(120.0); // Minimum width
+            let bar_height = 18.0;
+            let hp_bar_x = tag_x;
+            let hp_bar_y = tag_y + tag_height + 4.0;
             let hp_ratio = player.hp as f32 / player.max_hp.max(1) as f32;
 
             draw_rectangle(hp_bar_x, hp_bar_y, bar_width, bar_height, SLOT_INNER_SHADOW);
@@ -2937,8 +2948,8 @@ impl Renderer {
             }
 
             let hp_text = format!("{}/{}", player.hp, player.max_hp);
-            let hp_text_w = self.measure_text_sharp(&hp_text, 16.0).width;
-            self.draw_text_sharp(&hp_text, (hp_bar_x + (bar_width - hp_text_w) / 2.0).floor(), (hp_bar_y + 13.0).floor(), 16.0, TEXT_NORMAL);
+            let hp_text_w = self.measure_text_sharp(&hp_text, font_size).width;
+            self.draw_text_sharp(&hp_text, (hp_bar_x + (bar_width - hp_text_w) / 2.0).floor(), (hp_bar_y + 14.0).floor(), font_size, TEXT_NORMAL);
         }
 
         // Note: Interactive UI (inventory, crafting, dialogue, quick slots) is rendered
