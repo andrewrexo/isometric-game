@@ -58,6 +58,19 @@ body {
   background: #5c7cfa;
 }
 
+/* Palette vertical resize handle */
+.palette-resize-handle {
+  height: 6px;
+  background: #3d3d5c;
+  cursor: row-resize;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.palette-resize-handle:hover {
+  background: #5c7cfa;
+}
+
 /* Loading screen */
 .loading {
   width: 100%;

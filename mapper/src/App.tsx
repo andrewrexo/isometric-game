@@ -19,38 +19,59 @@ import './App.css';
 function App() {
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(250);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(250);
+  const [tilePaletteHeight, setTilePaletteHeight] = useState(200);
+  const [objectPaletteHeight, setObjectPaletteHeight] = useState(300);
   const [isResizing, setIsResizing] = useState<'left' | 'right' | null>(null);
+  const [isResizingPalette, setIsResizingPalette] = useState(false);
   const resizeStartX = useRef(0);
+  const resizeStartY = useRef(0);
   const resizeStartWidth = useRef(0);
+  const resizeStartTileHeight = useRef(0);
+  const resizeStartObjectHeight = useRef(0);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return;
+    if (isResizing) {
+      const delta = e.clientX - resizeStartX.current;
+      const newWidth = isResizing === 'left'
+        ? resizeStartWidth.current + delta
+        : resizeStartWidth.current - delta;
 
-    const delta = e.clientX - resizeStartX.current;
-    const newWidth = isResizing === 'left'
-      ? resizeStartWidth.current + delta
-      : resizeStartWidth.current - delta;
+      const clampedWidth = Math.max(180, Math.min(500, newWidth));
 
-    const clampedWidth = Math.max(180, Math.min(500, newWidth));
+      if (isResizing === 'left') {
+        setLeftSidebarWidth(clampedWidth);
+      } else {
+        setRightSidebarWidth(clampedWidth);
+      }
+    } else if (isResizingPalette) {
+      const delta = e.clientY - resizeStartY.current;
+      const newTileHeight = resizeStartTileHeight.current + delta;
+      const newObjectHeight = resizeStartObjectHeight.current - delta;
 
-    if (isResizing === 'left') {
-      setLeftSidebarWidth(clampedWidth);
-    } else {
-      setRightSidebarWidth(clampedWidth);
+      // Clamp both heights (minimum 100px each)
+      if (newTileHeight >= 100 && newObjectHeight >= 100) {
+        setTilePaletteHeight(newTileHeight);
+        setObjectPaletteHeight(newObjectHeight);
+      }
     }
-  }, [isResizing]);
+  }, [isResizing, isResizingPalette]);
 
   const handleMouseUp = useCallback(() => {
     setIsResizing(null);
+    setIsResizingPalette(false);
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
   }, []);
 
   useEffect(() => {
-    if (isResizing) {
+    if (isResizing || isResizingPalette) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
+      if (isResizing) {
+        document.body.style.cursor = 'col-resize';
+      } else {
+        document.body.style.cursor = 'row-resize';
+      }
       document.body.style.userSelect = 'none';
 
       return () => {
@@ -58,12 +79,21 @@ function App() {
         document.removeEventListener('mouseup', handleMouseUp);
       };
     }
-  }, [isResizing, handleMouseMove, handleMouseUp]);
+  }, [isResizing, isResizingPalette, handleMouseMove, handleMouseUp]);
 
   const startResize = (side: 'left' | 'right', e: React.MouseEvent) => {
     setIsResizing(side);
     resizeStartX.current = e.clientX;
     resizeStartWidth.current = side === 'left' ? leftSidebarWidth : rightSidebarWidth;
+  };
+
+  const startPaletteResize = (e: React.MouseEvent) => {
+    setIsResizingPalette(true);
+    resizeStartY.current = e.clientY;
+    resizeStartTileHeight.current = tilePaletteHeight;
+    resizeStartObjectHeight.current = objectPaletteHeight;
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
   };
 
   const {
@@ -264,8 +294,16 @@ function App() {
       <div className="main">
         <div className="sidebar left" style={{ width: leftSidebarWidth }}>
           <Toolbar />
-          <TilePalette />
-          <ObjectPalette />
+          <div style={{ height: tilePaletteHeight, flexShrink: 0, overflow: 'hidden' }}>
+            <TilePalette />
+          </div>
+          <div
+            className="palette-resize-handle"
+            onMouseDown={startPaletteResize}
+          />
+          <div style={{ height: objectPaletteHeight, flexShrink: 0, overflow: 'hidden' }}>
+            <ObjectPalette />
+          </div>
           <LayerPanel />
         </div>
         <div
