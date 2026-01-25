@@ -15,3 +15,4 @@ pub mod bottom_bar;
 pub mod skills;
 pub mod gold_drop_dialog;
 pub mod area_banner;
+pub mod xp_globes;
