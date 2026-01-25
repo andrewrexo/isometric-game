@@ -142,6 +142,16 @@ pub fn extract_i32(value: &rmpv::Value, key: &str) -> Option<i32> {
         })
 }
 
+pub fn extract_u32(value: &rmpv::Value, key: &str) -> Option<u32> {
+    value.as_map()
+        .and_then(|map| {
+            map.iter()
+                .find(|(k, _)| k.as_str() == Some(key))
+                .and_then(|(_, v)| v.as_u64().map(|u| u as u32)
+                    .or_else(|| v.as_i64().map(|i| i as u32)))
+        })
+}
+
 pub fn extract_u64(value: &rmpv::Value, key: &str) -> Option<u64> {
     value.as_map()
         .and_then(|map| {

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType, Wall, WallEdge, Portal};
 use crate::game::npc::{Npc, NpcState};
 use super::messages::ClientMessage;
-use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
+use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u32, extract_u64, extract_array, extract_u8, extract_bool};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1619,6 +1619,69 @@ impl NetworkClient {
 
                     log::info!("Map transition to {} ({}) at ({}, {})", map_id, map_type, spawn_x, spawn_y);
                     state.start_transition(map_type, map_id, spawn_x, spawn_y, instance_id);
+                }
+            }
+
+            "interiorData" => {
+                if let Some(value) = data {
+                    let map_id = extract_string(value, "mapId").unwrap_or_default();
+                    let instance_id = extract_string(value, "instanceId").unwrap_or_default();
+                    let width = extract_u32(value, "width").unwrap_or(32);
+                    let height = extract_u32(value, "height").unwrap_or(32);
+                    let spawn_x = extract_f32(value, "spawnX").unwrap_or(0.0);
+                    let spawn_y = extract_f32(value, "spawnY").unwrap_or(0.0);
+
+                    log::info!("Received interior data: {} ({}x{}) instance {}", map_id, width, height, instance_id);
+
+                    // Parse layers
+                    let mut layers: Vec<(u8, Vec<u32>)> = Vec::new();
+                    if let Some(layers_arr) = extract_array(value, "layers") {
+                        for layer_data in layers_arr {
+                            let layer_type = extract_u8(layer_data, "layerType").unwrap_or(0);
+                            let tiles: Vec<u32> = extract_array(layer_data, "tiles")
+                                .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+                                .unwrap_or_default();
+                            layers.push((layer_type, tiles));
+                        }
+                    }
+
+                    // Parse collision
+                    let collision: Vec<u8> = extract_array(value, "collision")
+                        .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect())
+                        .unwrap_or_default();
+
+                    // Parse portals
+                    let mut portals: Vec<Portal> = Vec::new();
+                    if let Some(portals_arr) = extract_array(value, "portals") {
+                        for p in portals_arr {
+                            portals.push(Portal {
+                                id: extract_string(p, "id").unwrap_or_default(),
+                                x: extract_i32(p, "x").unwrap_or(0),
+                                y: extract_i32(p, "y").unwrap_or(0),
+                                width: extract_i32(p, "width").unwrap_or(1),
+                                height: extract_i32(p, "height").unwrap_or(1),
+                                target_map: extract_string(p, "targetMap").unwrap_or_default(),
+                                target_spawn: extract_string(p, "targetSpawn").unwrap_or_default(),
+                            });
+                        }
+                    }
+
+                    // Load the interior
+                    state.chunk_manager.load_interior(width, height, layers, &collision, portals);
+                    state.current_interior = Some(map_id);
+
+                    // Update player position to spawn point
+                    if let Some(local_id) = &state.local_player_id {
+                        if let Some(player) = state.players.get_mut(local_id) {
+                            player.x = spawn_x;
+                            player.y = spawn_y;
+                        }
+                    }
+
+                    // Complete the transition (fade in)
+                    if state.map_transition.state == crate::game::state::TransitionState::Loading {
+                        state.map_transition.state = crate::game::state::TransitionState::FadingIn;
+                    }
                 }
             }
 

@@ -185,6 +185,17 @@ impl Chunk {
         }
         collision
     }
+
+    /// Unpack collision data for interiors with custom size
+    pub fn unpack_collision_sized(packed: &[u8], tile_count: usize) -> Vec<bool> {
+        let mut collision = vec![false; tile_count];
+        for (i, blocked) in collision.iter_mut().enumerate() {
+            if i / 8 < packed.len() {
+                *blocked = (packed[i / 8] >> (i % 8)) & 1 == 1;
+            }
+        }
+        collision
+    }
 }
 
 /// Chunk manager handles loading and caching chunks
@@ -354,5 +365,45 @@ impl ChunkManager {
             tile_x >= p.x && tile_x < p.x + p.width &&
             tile_y >= p.y && tile_y < p.y + p.height
         })
+    }
+
+    /// Load an interior as a single chunk at (0,0)
+    pub fn load_interior(&mut self, width: u32, height: u32, layers: Vec<(u8, Vec<u32>)>, collision: &[u8], portals: Vec<Portal>) {
+        // Clear existing chunks
+        self.chunks.clear();
+        self.pending_requests.clear();
+
+        // Create interior chunk at (0,0)
+        let coord = ChunkCoord { x: 0, y: 0 };
+
+        let chunk_layers: Vec<ChunkLayer> = layers.into_iter().map(|(layer_type, tiles)| {
+            ChunkLayer {
+                layer_type: ChunkLayerType::from_u8(layer_type),
+                tiles,
+            }
+        }).collect();
+
+        let collision_data = Chunk::unpack_collision_sized(collision, (width * height) as usize);
+
+        let chunk = Chunk {
+            coord,
+            layers: chunk_layers,
+            collision: collision_data,
+            objects: Vec::new(),
+            walls: Vec::new(),
+            portals,
+        };
+
+        let portal_count = chunk.portals.len();
+        self.chunks.insert(coord, chunk);
+        self.current_chunk = coord;
+
+        log::info!("Loaded interior map: {}x{} with {} portals", width, height, portal_count);
+    }
+
+    /// Clear interior and prepare for overworld
+    pub fn clear_interior(&mut self) {
+        self.chunks.clear();
+        self.pending_requests.clear();
     }
 }

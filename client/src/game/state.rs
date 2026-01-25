@@ -575,6 +575,9 @@ pub struct GameState {
 
     // Map transition state
     pub map_transition: MapTransition,
+
+    /// Current interior map ID if in an interior (None = overworld)
+    pub current_interior: Option<String>,
 }
 
 impl GameState {
@@ -613,6 +616,7 @@ impl GameState {
             auto_path: None,
             frame_timings: FrameTimings::default(),
             map_transition: MapTransition::default(),
+            current_interior: None,
         }
     }
 
