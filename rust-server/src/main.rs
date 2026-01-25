@@ -30,6 +30,7 @@ mod data;
 mod db;
 mod entity;
 mod game;
+mod interior;
 mod item;
 mod npc;
 mod protocol;
