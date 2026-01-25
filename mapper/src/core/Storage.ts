@@ -125,6 +125,7 @@ class StorageManager {
             entities: stored.entities,
             mapObjects: stored.mapObjects || [],
             walls: stored.walls || [],
+            portals: stored.portals || [],
             dirty: stored.dirty,
           };
           chunks.set(stored.key, chunk);
@@ -182,6 +183,7 @@ class StorageManager {
       entities: stored.entities as Chunk['entities'],
       mapObjects: (stored.mapObjects as Chunk['mapObjects']) || [],
       walls: (stored.walls as Chunk['walls']) || [],
+      portals: (stored.portals as Chunk['portals']) || [],
       dirty: false,
     };
   }

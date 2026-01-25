@@ -10,6 +10,7 @@ import type {
   SimplifiedEntitySpawn,
   SimplifiedMapObject,
   SimplifiedWall,
+  SimplifiedPortal,
 } from '@/types';
 import { chunkKey, CHUNK_SIZE } from './coords';
 import { BitSet } from './BitSet';
@@ -64,6 +65,7 @@ export class ChunkManager {
       entities: [],
       mapObjects: [],
       walls: [],
+      portals: [],
       dirty: false,
     };
 
@@ -224,6 +226,15 @@ export class ChunkManager {
         y: w.y,
         edge: w.edge,
       })),
+      portals: (data.portals || []).map((p, i) => ({
+        id: `portal_${i}`,
+        x: p.x,
+        y: p.y,
+        width: p.width,
+        height: p.height,
+        targetMap: p.targetMap,
+        targetSpawn: p.targetSpawn,
+      })),
       dirty: false,
     };
 
@@ -376,6 +387,15 @@ export class ChunkManager {
       edge: w.edge,
     }));
 
+    const portals: SimplifiedPortal[] = (chunk.portals || []).map((p) => ({
+      x: p.x,
+      y: p.y,
+      width: p.width,
+      height: p.height,
+      targetMap: p.targetMap,
+      targetSpawn: p.targetSpawn,
+    }));
+
     return {
       version: 2,
       coord: chunk.coord,
@@ -389,6 +409,7 @@ export class ChunkManager {
       entities,
       mapObjects,
       walls,
+      portals,
     };
   }
 
@@ -422,6 +443,7 @@ export class ChunkManager {
       entities: [],
       mapObjects: [],
       walls: [],
+      portals: [],
       dirty: true,
     };
 

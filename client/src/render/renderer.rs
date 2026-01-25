@@ -1310,8 +1310,15 @@ impl Renderer {
             let screen_h = screen_height();
             let margin = TILE_WIDTH * 4.0; // Extra margin for chunk edges
 
+            // Check if we're in interior mode
+            let interior_size = state.chunk_manager.get_interior_size();
+
             // Render from chunk manager
             for (coord, chunk) in chunks.iter() {
+                // For interiors, the chunk is at (0,0) and uses interior dimensions
+                // For overworld, use standard CHUNK_SIZE
+                let (tile_width, tile_height) = interior_size.unwrap_or((CHUNK_SIZE, CHUNK_SIZE));
+
                 let chunk_offset_x = coord.x * CHUNK_SIZE as i32;
                 let chunk_offset_y = coord.y * CHUNK_SIZE as i32;
 
@@ -1319,9 +1326,9 @@ impl Renderer {
                 // In isometric projection, a chunk forms a diamond. Check all 4 corners.
                 let corners = [
                     (chunk_offset_x as f32, chunk_offset_y as f32),                           // top
-                    (chunk_offset_x as f32 + CHUNK_SIZE as f32, chunk_offset_y as f32),       // right
-                    (chunk_offset_x as f32, chunk_offset_y as f32 + CHUNK_SIZE as f32),       // left
-                    (chunk_offset_x as f32 + CHUNK_SIZE as f32, chunk_offset_y as f32 + CHUNK_SIZE as f32), // bottom
+                    (chunk_offset_x as f32 + tile_width as f32, chunk_offset_y as f32),       // right
+                    (chunk_offset_x as f32, chunk_offset_y as f32 + tile_height as f32),       // left
+                    (chunk_offset_x as f32 + tile_width as f32, chunk_offset_y as f32 + tile_height as f32), // bottom
                 ];
 
                 // Get screen bounds of the chunk
@@ -1351,12 +1358,12 @@ impl Renderer {
                     }
 
                     // Render tiles in isometric order
-                    for local_y in 0..CHUNK_SIZE {
-                        for local_x in 0..CHUNK_SIZE {
+                    for local_y in 0..tile_height {
+                        for local_x in 0..tile_width {
                             let world_x = chunk_offset_x + local_x as i32;
                             let world_y = chunk_offset_y + local_y as i32;
 
-                            let idx = (local_y * CHUNK_SIZE + local_x) as usize;
+                            let idx = (local_y * tile_width + local_x) as usize;
                             let tile_id = layer.tiles.get(idx).copied().unwrap_or(0);
 
                             if tile_id == 0 {

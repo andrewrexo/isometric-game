@@ -1,13 +1,21 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { useEditorStore } from '@/state/store';
 import { chunkManager } from '@/core/ChunkManager';
 import { chunkKey } from '@/core/coords';
 import { history } from '@/core/History';
 import { storage } from '@/core/Storage';
+import { interiorStorage } from '@/core/InteriorStorage';
 import styles from './MenuBar.module.css';
 
 export function MenuBar() {
+  const [showNewInteriorModal, setShowNewInteriorModal] = useState(false);
+  const [showOpenInteriorModal, setShowOpenInteriorModal] = useState(false);
+  const [newInteriorId, setNewInteriorId] = useState('');
+  const [newInteriorName, setNewInteriorName] = useState('');
+  const [newInteriorWidth, setNewInteriorWidth] = useState(16);
+  const [newInteriorHeight, setNewInteriorHeight] = useState(16);
+
   const {
     chunks,
     showGrid,
@@ -21,6 +29,15 @@ export function MenuBar() {
     setChunks,
     setWorldBounds,
     isConnected,
+    editorMode,
+    currentInterior,
+    currentInteriorId,
+    availableInteriors,
+    switchToOverworld,
+    createInterior,
+    loadInterior,
+    saveCurrentInterior,
+    setAvailableInteriors,
   } = useEditorStore();
 
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -106,7 +123,7 @@ export function MenuBar() {
 
     // Export all chunks from the store (not ChunkManager's cache)
     const allChunks = Array.from(chunks.values());
-    let exported = 0;
+    let exportedChunks = 0;
 
     for (const chunk of allChunks) {
       const json = chunkManager.exportChunkDataToJSON(chunk);
@@ -115,29 +132,61 @@ export function MenuBar() {
       const writable = await fileHandle.createWritable();
       await writable.write(json);
       await writable.close();
-      exported++;
+      exportedChunks++;
+    }
+
+    // Export all interiors to interiors/ subdirectory
+    const allInteriors = interiorStorage.getAllInteriors();
+    let exportedInteriors = 0;
+
+    if (allInteriors.length > 0) {
+      // Create or get interiors subdirectory
+      const interiorsDir = await dirHandle.getDirectoryHandle('interiors', { create: true });
+
+      for (const interior of allInteriors) {
+        const json = interiorStorage.exportInteriorToJSON(interior);
+        const filename = `${interior.id}.json`;
+        const fileHandle = await interiorsDir.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(json);
+        await writable.close();
+        exportedInteriors++;
+      }
     }
 
     markAllClean();
-    alert(`Exported ${exported} chunk(s) to ${dirHandle.name}/`);
+    alert(`Exported ${exportedChunks} chunk(s) and ${exportedInteriors} interior(s) to ${dirHandle.name}/`);
   };
 
   // Fallback: export as downloadable ZIP file
   const exportAsZip = async () => {
     const allChunks = Array.from(chunks.values());
-    if (allChunks.length === 0) {
-      alert('No chunks to export');
+    const allInteriors = interiorStorage.getAllInteriors();
+
+    if (allChunks.length === 0 && allInteriors.length === 0) {
+      alert('No chunks or interiors to export');
       return;
     }
 
     const zip = new JSZip();
-    let exported = 0;
+    let exportedChunks = 0;
+    let exportedInteriors = 0;
 
     for (const chunk of allChunks) {
       const json = chunkManager.exportChunkDataToJSON(chunk);
       const filename = `chunk_${chunk.coord.cx}_${chunk.coord.cy}.json`;
       zip.file(filename, json);
-      exported++;
+      exportedChunks++;
+    }
+
+    // Add interiors to interiors/ folder in ZIP
+    if (allInteriors.length > 0) {
+      const interiorsFolder = zip.folder('interiors');
+      for (const interior of allInteriors) {
+        const json = interiorStorage.exportInteriorToJSON(interior);
+        interiorsFolder?.file(`${interior.id}.json`, json);
+        exportedInteriors++;
+      }
     }
 
     // Generate and download ZIP
@@ -150,7 +199,7 @@ export function MenuBar() {
     URL.revokeObjectURL(url);
 
     markAllClean();
-    alert(`Downloaded map_export.zip with ${exported} chunk(s).\n\nExtract to: rust-server/maps/world_0/`);
+    alert(`Downloaded map_export.zip with ${exportedChunks} chunk(s) and ${exportedInteriors} interior(s).\n\nExtract to: rust-server/maps/world_0/`);
   };
 
   const handleZoomIn = () => {
@@ -324,6 +373,66 @@ export function MenuBar() {
     }
   };
 
+  // Interior handlers
+  const handleNewInterior = () => {
+    setNewInteriorId('');
+    setNewInteriorName('');
+    setNewInteriorWidth(16);
+    setNewInteriorHeight(16);
+    setShowNewInteriorModal(true);
+  };
+
+  const handleCreateInterior = () => {
+    if (!newInteriorId.trim()) {
+      alert('Please enter an ID for the interior map');
+      return;
+    }
+    if (!newInteriorName.trim()) {
+      alert('Please enter a name for the interior map');
+      return;
+    }
+    if (availableInteriors.includes(newInteriorId)) {
+      alert(`An interior with ID "${newInteriorId}" already exists`);
+      return;
+    }
+
+    createInterior(newInteriorId.trim(), newInteriorName.trim(), newInteriorWidth, newInteriorHeight);
+    setShowNewInteriorModal(false);
+  };
+
+  const handleOpenInterior = async () => {
+    // Load list of available interiors
+    const ids = await interiorStorage.loadInteriorList();
+    setAvailableInteriors(ids);
+    setShowOpenInteriorModal(true);
+  };
+
+  const handleSelectInterior = async (id: string) => {
+    await loadInterior(id);
+    setShowOpenInteriorModal(false);
+  };
+
+  const handleSaveInterior = async () => {
+    if (currentInterior) {
+      const success = await saveCurrentInterior();
+      if (success) {
+        alert(`Saved interior "${currentInterior.id}"`);
+      } else {
+        alert('Failed to save interior');
+      }
+    }
+  };
+
+  const handleBackToOverworld = () => {
+    if (currentInterior?.dirty) {
+      const confirmed = window.confirm(
+        'You have unsaved changes to this interior. Discard changes?'
+      );
+      if (!confirmed) return;
+    }
+    switchToOverworld();
+  };
+
   return (
     <div className={styles.menuBar}>
       <input
@@ -337,28 +446,49 @@ export function MenuBar() {
         <div className={styles.menuItem}>
           <span className={styles.menuTitle}>File</span>
           <div className={styles.dropdown}>
-            <button className={styles.dropdownItem} onClick={handleSyncToServer}>
-              Sync to Server
-            </button>
-            <button className={styles.dropdownItem} onClick={handleSaveAll}>
-              Download Modified ({getDirtyChunks().length})
-            </button>
-            <button className={styles.dropdownItem} onClick={handleExportToServer}>
-              Export to Directory...
-            </button>
+            {editorMode === 'overworld' ? (
+              <>
+                <button className={styles.dropdownItem} onClick={handleSyncToServer}>
+                  Sync to Server
+                </button>
+                <button className={styles.dropdownItem} onClick={handleSaveAll}>
+                  Download Modified ({getDirtyChunks().length})
+                </button>
+                <button className={styles.dropdownItem} onClick={handleExportToServer}>
+                  Export to Directory...
+                </button>
+                <div className={styles.separator} />
+                <button className={styles.dropdownItem} onClick={handleExportMap}>
+                  Export Map (JSON)
+                </button>
+                <button className={styles.dropdownItem} onClick={handleImportMap}>
+                  Import Map (JSON)
+                </button>
+                <div className={styles.separator} />
+                <button className={styles.dropdownItem} onClick={handleResetToServer}>
+                  Reset to Server Data
+                </button>
+                <button className={styles.dropdownItem} onClick={handleClearLocalData}>
+                  Clear Local Storage
+                </button>
+              </>
+            ) : (
+              <>
+                <button className={styles.dropdownItem} onClick={handleSaveInterior}>
+                  Save Interior {currentInterior?.dirty ? '*' : ''}
+                </button>
+                <div className={styles.separator} />
+                <button className={styles.dropdownItem} onClick={handleBackToOverworld}>
+                  Back to Overworld
+                </button>
+              </>
+            )}
             <div className={styles.separator} />
-            <button className={styles.dropdownItem} onClick={handleExportMap}>
-              Export Map (JSON)
+            <button className={styles.dropdownItem} onClick={handleNewInterior}>
+              New Interior Map...
             </button>
-            <button className={styles.dropdownItem} onClick={handleImportMap}>
-              Import Map (JSON)
-            </button>
-            <div className={styles.separator} />
-            <button className={styles.dropdownItem} onClick={handleResetToServer}>
-              Reset to Server Data
-            </button>
-            <button className={styles.dropdownItem} onClick={handleClearLocalData}>
-              Clear Local Storage
+            <button className={styles.dropdownItem} onClick={handleOpenInterior}>
+              Open Interior Map...
             </button>
           </div>
         </div>
@@ -407,14 +537,102 @@ export function MenuBar() {
       </div>
 
       <div className={styles.status}>
+        {editorMode === 'interior' && currentInteriorId && (
+          <span className={styles.statusItem}>
+            Editing: {currentInteriorId} {currentInterior?.dirty ? '*' : ''}
+          </span>
+        )}
         <span className={styles.statusItem}>Zoom: {Math.round(viewport.zoom * 100)}%</span>
-        <span className={styles.statusItem}>
-          {getDirtyChunks().length > 0 && `${getDirtyChunks().length} unsaved`}
-        </span>
+        {editorMode === 'overworld' && (
+          <span className={styles.statusItem}>
+            {getDirtyChunks().length > 0 && `${getDirtyChunks().length} unsaved`}
+          </span>
+        )}
         <span className={`${styles.statusItem} ${styles.connectionStatus} ${isConnected ? styles.connected : styles.disconnected}`}>
           {isConnected ? 'Connected' : 'Offline'}
         </span>
       </div>
+
+      {/* New Interior Modal */}
+      {showNewInteriorModal && (
+        <div className={styles.modalOverlay} onClick={() => setShowNewInteriorModal(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h3>New Interior Map</h3>
+            <div className={styles.modalField}>
+              <label>ID (no spaces)</label>
+              <input
+                type="text"
+                value={newInteriorId}
+                onChange={(e) => setNewInteriorId(e.target.value.replace(/\s/g, '_'))}
+                placeholder="e.g., blacksmith_shop"
+                autoFocus
+              />
+            </div>
+            <div className={styles.modalField}>
+              <label>Display Name</label>
+              <input
+                type="text"
+                value={newInteriorName}
+                onChange={(e) => setNewInteriorName(e.target.value)}
+                placeholder="e.g., Blacksmith's Workshop"
+              />
+            </div>
+            <div className={styles.modalFieldRow}>
+              <div className={styles.modalField}>
+                <label>Width (tiles)</label>
+                <input
+                  type="number"
+                  value={newInteriorWidth}
+                  onChange={(e) => setNewInteriorWidth(Math.max(4, parseInt(e.target.value) || 16))}
+                  min={4}
+                  max={64}
+                />
+              </div>
+              <div className={styles.modalField}>
+                <label>Height (tiles)</label>
+                <input
+                  type="number"
+                  value={newInteriorHeight}
+                  onChange={(e) => setNewInteriorHeight(Math.max(4, parseInt(e.target.value) || 16))}
+                  min={4}
+                  max={64}
+                />
+              </div>
+            </div>
+            <div className={styles.modalActions}>
+              <button onClick={() => setShowNewInteriorModal(false)}>Cancel</button>
+              <button onClick={handleCreateInterior} className={styles.primaryButton}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Open Interior Modal */}
+      {showOpenInteriorModal && (
+        <div className={styles.modalOverlay} onClick={() => setShowOpenInteriorModal(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h3>Open Interior Map</h3>
+            {availableInteriors.length === 0 ? (
+              <p className={styles.emptyMessage}>No interior maps found</p>
+            ) : (
+              <div className={styles.interiorList}>
+                {availableInteriors.map((id) => (
+                  <button
+                    key={id}
+                    className={styles.interiorItem}
+                    onClick={() => handleSelectInterior(id)}
+                  >
+                    {id}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className={styles.modalActions}>
+              <button onClick={() => setShowOpenInteriorModal(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

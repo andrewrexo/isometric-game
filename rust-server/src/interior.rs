@@ -30,6 +30,46 @@ pub struct InteriorPortal {
     pub target_spawn: Option<String>,
 }
 
+/// A map object placed from object layer (trees, rocks, decorations)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteriorMapObject {
+    pub gid: u32,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// A wall placed on a tile edge
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InteriorWall {
+    pub gid: u32,
+    pub x: i32,
+    pub y: i32,
+    pub edge: String,
+}
+
+/// Entity spawn point in an interior
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteriorEntitySpawn {
+    pub entity_id: String,
+    pub x: i32,
+    pub y: i32,
+    #[serde(default = "default_level")]
+    pub level: i32,
+    #[serde(default)]
+    pub unique_id: Option<String>,
+    #[serde(default)]
+    pub facing: Option<String>,
+    #[serde(default = "default_true")]
+    pub respawn: bool,
+}
+
+fn default_level() -> i32 { 1 }
+fn default_true() -> bool { true }
+
 /// Definition of an interior map (loaded from JSON)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InteriorMapDef {
@@ -45,7 +85,11 @@ pub struct InteriorMapDef {
     #[serde(default)]
     pub collision: String,  // Base64 encoded or empty
     #[serde(default)]
-    pub entities: Vec<serde_json::Value>,  // NPC spawns etc
+    pub entities: Vec<InteriorEntitySpawn>,
+    #[serde(default, rename = "mapObjects")]
+    pub map_objects: Vec<InteriorMapObject>,
+    #[serde(default)]
+    pub walls: Vec<InteriorWall>,
 }
 
 /// Layer data for interior maps

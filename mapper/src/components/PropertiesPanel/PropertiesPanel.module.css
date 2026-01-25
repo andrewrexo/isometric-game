@@ -102,3 +102,19 @@
   text-align: center;
   margin-top: 4px;
 }
+
+.jumpButton {
+  padding: 8px 12px;
+  background: #4ecdc4;
+  border: none;
+  border-radius: 4px;
+  color: #1a1a2e;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+
+.jumpButton:hover {
+  background: #3dbdb5;
+}

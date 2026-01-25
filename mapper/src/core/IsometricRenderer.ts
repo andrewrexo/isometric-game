@@ -1,4 +1,4 @@
-import type { Chunk, Viewport, WorldCoord, MapObject, Wall } from '@/types';
+import type { Chunk, Viewport, WorldCoord, MapObject, Wall, InteriorMap } from '@/types';
 import {
   TILE_WIDTH,
   TILE_HEIGHT,
@@ -17,6 +17,7 @@ export interface RenderOptions {
   showCollision: boolean;
   showEntities: boolean;
   showMapObjects: boolean;
+  showPortals: boolean;
   visibleLayers: {
     ground: boolean;
     objects: boolean;
@@ -30,6 +31,7 @@ const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   showCollision: false,
   showEntities: true,
   showMapObjects: true,
+  showPortals: true,
   visibleLayers: {
     ground: true,
     objects: true,
@@ -112,8 +114,368 @@ export class IsometricRenderer {
       }
     }
 
+    if (this.options.showPortals) {
+      for (const chunk of sortedChunks) {
+        this.renderPortals(chunk, viewport);
+      }
+    }
+
     if (this.options.showGrid) {
       this.renderGrid(viewport);
+    }
+  }
+
+  // Render an interior map (fixed-size, not chunk-based)
+  renderInterior(interior: InteriorMap, viewport: Viewport): void {
+    if (!this.ctx || !this.canvas) return;
+
+    this.clear();
+
+    // Render tiles
+    for (let y = 0; y < interior.height; y++) {
+      for (let x = 0; x < interior.width; x++) {
+        const index = y * interior.width + x;
+        const worldCoord: WorldCoord = { wx: x, wy: y };
+        const screen = worldToScreen(worldCoord, viewport);
+
+        const drawX = screen.sx - (TILE_WIDTH / 2) * viewport.zoom;
+        const drawY = screen.sy;
+
+        // Render ground layer
+        if (this.options.visibleLayers.ground) {
+          const groundTile = interior.layers.ground[index];
+          if (groundTile > 0) {
+            tilesetLoader.drawTile(this.ctx, groundTile, drawX, drawY, viewport.zoom);
+          }
+        }
+
+        // Render objects layer
+        if (this.options.visibleLayers.objects) {
+          const objectTile = interior.layers.objects[index];
+          if (objectTile > 0) {
+            tilesetLoader.drawTile(this.ctx, objectTile, drawX, drawY, viewport.zoom);
+          }
+        }
+
+        // Render overhead layer
+        if (this.options.visibleLayers.overhead) {
+          const overheadTile = interior.layers.overhead[index];
+          if (overheadTile > 0) {
+            tilesetLoader.drawTile(this.ctx, overheadTile, drawX, drawY, viewport.zoom);
+          }
+        }
+      }
+    }
+
+    // Render interior bounds
+    this.renderInteriorBounds(interior, viewport);
+
+    // Render collision overlay
+    if (this.options.showCollision) {
+      this.renderInteriorCollision(interior, viewport);
+    }
+
+    // Render map objects and walls
+    if (this.options.showMapObjects) {
+      this.renderInteriorObjectsAndWalls(interior, viewport);
+    }
+
+    // Render entities
+    if (this.options.showEntities) {
+      this.renderInteriorEntities(interior, viewport);
+    }
+
+    // Render spawn points
+    this.renderInteriorSpawnPoints(interior, viewport);
+
+    // Render exit portals
+    this.renderInteriorExitPortals(interior, viewport);
+
+    if (this.options.showGrid) {
+      this.renderGrid(viewport);
+    }
+  }
+
+  private renderInteriorBounds(interior: InteriorMap, viewport: Viewport): void {
+    if (!this.ctx) return;
+
+    const corners: WorldCoord[] = [
+      { wx: 0, wy: 0 },
+      { wx: interior.width, wy: 0 },
+      { wx: interior.width, wy: interior.height },
+      { wx: 0, wy: interior.height },
+    ];
+
+    const screenCorners = corners.map((c) => worldToScreen(c, viewport));
+
+    this.ctx.strokeStyle = interior.dirty ? '#ff6b6b' : '#4ecdc4';
+    this.ctx.lineWidth = 3;
+    this.ctx.beginPath();
+    this.ctx.moveTo(screenCorners[0].sx, screenCorners[0].sy);
+    for (let i = 1; i < screenCorners.length; i++) {
+      this.ctx.lineTo(screenCorners[i].sx, screenCorners[i].sy);
+    }
+    this.ctx.closePath();
+    this.ctx.stroke();
+
+    // Draw interior name label
+    const centerWorld: WorldCoord = {
+      wx: interior.width / 2,
+      wy: interior.height / 2,
+    };
+    const centerScreen = worldToScreen(centerWorld, viewport);
+
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = `bold ${14 * viewport.zoom}px monospace`;
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText(interior.name, centerScreen.sx, centerScreen.sy - 20 * viewport.zoom);
+  }
+
+  private renderInteriorCollision(interior: InteriorMap, viewport: Viewport): void {
+    if (!this.ctx) return;
+
+    const bitset = new BitSet(interior.width * interior.height);
+    bitset.setRaw(interior.collision);
+
+    this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+
+    for (let i = 0; i < interior.width * interior.height; i++) {
+      if (bitset.get(i)) {
+        const x = i % interior.width;
+        const y = Math.floor(i / interior.width);
+        const worldCoord: WorldCoord = { wx: x, wy: y };
+        const screen = worldToScreen(worldCoord, viewport);
+
+        const hw = (TILE_WIDTH / 2) * viewport.zoom;
+        const hh = (TILE_HEIGHT / 2) * viewport.zoom;
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(screen.sx, screen.sy);
+        this.ctx.lineTo(screen.sx + hw, screen.sy + hh);
+        this.ctx.lineTo(screen.sx, screen.sy + TILE_HEIGHT * viewport.zoom);
+        this.ctx.lineTo(screen.sx - hw, screen.sy + hh);
+        this.ctx.closePath();
+        this.ctx.fill();
+      }
+    }
+  }
+
+  private renderInteriorObjectsAndWalls(interior: InteriorMap, viewport: Viewport): void {
+    if (!this.ctx) return;
+
+    type Renderable =
+      | { type: 'object'; obj: MapObject }
+      | { type: 'wall'; wall: Wall };
+
+    const renderables: Array<{ depth: number; item: Renderable }> = [];
+
+    for (const obj of interior.mapObjects) {
+      renderables.push({
+        depth: obj.x + obj.y,
+        item: { type: 'object', obj }
+      });
+    }
+
+    for (const wall of interior.walls) {
+      renderables.push({
+        depth: wall.x + wall.y,
+        item: { type: 'wall', wall }
+      });
+    }
+
+    renderables.sort((a, b) => a.depth - b.depth);
+
+    for (const { item } of renderables) {
+      if (item.type === 'object') {
+        this.renderInteriorMapObject(item.obj, viewport);
+      } else {
+        this.renderInteriorWall(item.wall, viewport);
+      }
+    }
+  }
+
+  private renderInteriorMapObject(obj: MapObject, viewport: Viewport): void {
+    if (!this.ctx) return;
+
+    const worldCoord: WorldCoord = { wx: obj.x, wy: obj.y };
+    const screen = worldToScreen(worldCoord, viewport);
+
+    const objDef = objectLoader.getObjectByGid(obj.gid);
+
+    if (objDef?.image) {
+      const scaledWidth = obj.width * viewport.zoom;
+      const scaledHeight = obj.height * viewport.zoom;
+
+      const drawX = screen.sx - scaledWidth / 2;
+      const drawY = screen.sy + TILE_HEIGHT * viewport.zoom - scaledHeight;
+
+      this.ctx.drawImage(
+        objDef.image,
+        0,
+        0,
+        objDef.image.width,
+        objDef.image.height,
+        drawX,
+        drawY,
+        scaledWidth,
+        scaledHeight
+      );
+    }
+  }
+
+  private renderInteriorWall(wall: Wall, viewport: Viewport): void {
+    if (!this.ctx) return;
+
+    const worldCoord: WorldCoord = { wx: wall.x, wy: wall.y };
+    const screen = worldToScreen(worldCoord, viewport);
+
+    const objDef = objectLoader.getObjectByGid(wall.gid);
+
+    if (objDef?.image) {
+      const scaledWidth = objDef.image.width * viewport.zoom;
+      const scaledHeight = objDef.image.height * viewport.zoom;
+
+      const bottomVertexX = screen.sx;
+      const bottomVertexY = screen.sy + TILE_HEIGHT * viewport.zoom;
+
+      let drawX: number;
+      let drawY: number;
+
+      if (wall.edge === 'down') {
+        drawX = bottomVertexX - scaledWidth;
+        drawY = bottomVertexY - scaledHeight;
+      } else {
+        drawX = bottomVertexX;
+        drawY = bottomVertexY - scaledHeight;
+      }
+
+      this.ctx.drawImage(
+        objDef.image,
+        0,
+        0,
+        objDef.image.width,
+        objDef.image.height,
+        drawX,
+        drawY,
+        scaledWidth,
+        scaledHeight
+      );
+    }
+  }
+
+  private renderInteriorEntities(interior: InteriorMap, viewport: Viewport): void {
+    if (!this.ctx) return;
+
+    for (const entity of interior.entities) {
+      const worldCoord: WorldCoord = { wx: entity.x, wy: entity.y };
+      const screen = worldToScreen(worldCoord, viewport);
+
+      const size = 8 * viewport.zoom;
+      this.ctx.fillStyle = '#ffd93d';
+      this.ctx.strokeStyle = '#000000';
+      this.ctx.lineWidth = 1;
+
+      this.ctx.beginPath();
+      this.ctx.arc(screen.sx, screen.sy + (TILE_HEIGHT / 2) * viewport.zoom, size, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      if (viewport.zoom >= 0.5) {
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `${10 * Math.max(1, viewport.zoom)}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(
+          entity.name || entity.entityId,
+          screen.sx,
+          screen.sy + (TILE_HEIGHT / 2) * viewport.zoom - size - 4
+        );
+      }
+    }
+  }
+
+  private renderInteriorSpawnPoints(interior: InteriorMap, viewport: Viewport): void {
+    if (!this.ctx) return;
+
+    for (const spawn of interior.spawnPoints) {
+      const worldCoord: WorldCoord = { wx: spawn.x, wy: spawn.y };
+      const screen = worldToScreen(worldCoord, viewport);
+
+      const hw = (TILE_WIDTH / 2) * viewport.zoom;
+      const hh = (TILE_HEIGHT / 2) * viewport.zoom;
+
+      // Draw green diamond for spawn point
+      this.ctx.fillStyle = 'rgba(0, 255, 100, 0.5)';
+      this.ctx.beginPath();
+      this.ctx.moveTo(screen.sx, screen.sy);
+      this.ctx.lineTo(screen.sx + hw, screen.sy + hh);
+      this.ctx.lineTo(screen.sx, screen.sy + TILE_HEIGHT * viewport.zoom);
+      this.ctx.lineTo(screen.sx - hw, screen.sy + hh);
+      this.ctx.closePath();
+      this.ctx.fill();
+
+      this.ctx.strokeStyle = 'rgba(0, 255, 100, 0.9)';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      // Draw spawn name
+      if (viewport.zoom >= 0.5) {
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `bold ${10 * Math.max(1, viewport.zoom)}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(
+          spawn.name,
+          screen.sx,
+          screen.sy + (TILE_HEIGHT / 2) * viewport.zoom
+        );
+      }
+    }
+  }
+
+  private renderInteriorExitPortals(interior: InteriorMap, viewport: Viewport): void {
+    if (!this.ctx) return;
+
+    for (const exitPortal of interior.exitPortals) {
+      for (let py = 0; py < exitPortal.height; py++) {
+        for (let px = 0; px < exitPortal.width; px++) {
+          const worldCoord: WorldCoord = { wx: exitPortal.x + px, wy: exitPortal.y + py };
+          const screen = worldToScreen(worldCoord, viewport);
+
+          const hw = (TILE_WIDTH / 2) * viewport.zoom;
+          const hh = (TILE_HEIGHT / 2) * viewport.zoom;
+
+          // Draw orange diamond for exit portal
+          this.ctx.fillStyle = 'rgba(255, 165, 0, 0.5)';
+          this.ctx.beginPath();
+          this.ctx.moveTo(screen.sx, screen.sy);
+          this.ctx.lineTo(screen.sx + hw, screen.sy + hh);
+          this.ctx.lineTo(screen.sx, screen.sy + TILE_HEIGHT * viewport.zoom);
+          this.ctx.lineTo(screen.sx - hw, screen.sy + hh);
+          this.ctx.closePath();
+          this.ctx.fill();
+
+          this.ctx.strokeStyle = 'rgba(255, 165, 0, 0.9)';
+          this.ctx.lineWidth = 2;
+          this.ctx.stroke();
+        }
+      }
+
+      // Draw exit label
+      if (viewport.zoom >= 0.5) {
+        const worldCoord: WorldCoord = { wx: exitPortal.x, wy: exitPortal.y };
+        const screen = worldToScreen(worldCoord, viewport);
+
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `bold ${10 * Math.max(1, viewport.zoom)}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(
+          'EXIT',
+          screen.sx,
+          screen.sy + (TILE_HEIGHT / 2) * viewport.zoom
+        );
+      }
     }
   }
 
@@ -366,6 +728,56 @@ export class IsometricRenderer {
           entity.name || entity.entityId,
           screen.sx,
           screen.sy + (TILE_HEIGHT / 2) * viewport.zoom - size - 4
+        );
+      }
+    }
+  }
+
+  private renderPortals(chunk: Chunk, viewport: Viewport): void {
+    if (!this.ctx || !chunk.portals) return;
+
+    for (const portal of chunk.portals) {
+      // Render each tile of the portal
+      for (let py = 0; py < portal.height; py++) {
+        for (let px = 0; px < portal.width; px++) {
+          const worldCoord = chunkLocalToWorld(chunk.coord, { lx: portal.x + px, ly: portal.y + py });
+          const screen = worldToScreen(worldCoord, viewport);
+
+          const hw = (TILE_WIDTH / 2) * viewport.zoom;
+          const hh = (TILE_HEIGHT / 2) * viewport.zoom;
+
+          // Draw semi-transparent purple diamond
+          this.ctx.fillStyle = 'rgba(128, 0, 255, 0.5)';
+          this.ctx.beginPath();
+          this.ctx.moveTo(screen.sx, screen.sy);
+          this.ctx.lineTo(screen.sx + hw, screen.sy + hh);
+          this.ctx.lineTo(screen.sx, screen.sy + TILE_HEIGHT * viewport.zoom);
+          this.ctx.lineTo(screen.sx - hw, screen.sy + hh);
+          this.ctx.closePath();
+          this.ctx.fill();
+
+          // Draw border
+          this.ctx.strokeStyle = 'rgba(180, 0, 255, 0.8)';
+          this.ctx.lineWidth = 2;
+          this.ctx.stroke();
+        }
+      }
+
+      // Draw portal label on the first tile
+      if (viewport.zoom >= 0.5) {
+        const worldCoord = chunkLocalToWorld(chunk.coord, { lx: portal.x, ly: portal.y });
+        const screen = worldToScreen(worldCoord, viewport);
+
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `bold ${10 * Math.max(1, viewport.zoom)}px sans-serif`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        const label = portal.targetMap || 'Portal';
+        this.ctx.fillText(
+          label,
+          screen.sx,
+          screen.sy + (TILE_HEIGHT / 2) * viewport.zoom
         );
       }
     }

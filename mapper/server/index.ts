@@ -18,10 +18,12 @@ const mapperRoot = path.join(serverRoot, '..');
 // Data directory for chunk storage
 const DATA_DIR = path.join(mapperRoot, 'mapper-data');
 const CHUNKS_DIR = path.join(DATA_DIR, 'chunks');
+const INTERIORS_DIR = path.join(DATA_DIR, 'interiors');
 
 // Ensure data directories exist
 async function ensureDataDirs() {
   await fs.mkdir(CHUNKS_DIR, { recursive: true });
+  await fs.mkdir(INTERIORS_DIR, { recursive: true });
 }
 
 // Middleware
@@ -146,6 +148,74 @@ app.delete('/api/chunks/:cx/:cy', async (req, res) => {
     } else {
       console.error('Error deleting chunk:', err);
       res.status(500).json({ error: 'Failed to delete chunk' });
+    }
+  }
+});
+
+// --- Interior Maps API ---
+
+// List all interior maps
+app.get('/api/interiors', async (_req, res) => {
+  try {
+    const files = await fs.readdir(INTERIORS_DIR);
+    const interiors = files
+      .filter(f => f.endsWith('.json'))
+      .map(f => f.replace('.json', ''));
+    res.json({ interiors });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      res.json({ interiors: [] });
+    } else {
+      console.error('Error listing interiors:', err);
+      res.status(500).json({ error: 'Failed to list interiors' });
+    }
+  }
+});
+
+// Get single interior map
+app.get('/api/interiors/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const filePath = path.join(INTERIORS_DIR, `${id}.json`);
+    const data = await fs.readFile(filePath, 'utf-8');
+    res.json(JSON.parse(data));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      res.status(404).json({ error: 'Interior not found' });
+    } else {
+      console.error('Error reading interior:', err);
+      res.status(500).json({ error: 'Failed to read interior' });
+    }
+  }
+});
+
+// Save interior map
+app.put('/api/interiors/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const interior = req.body;
+    const filePath = path.join(INTERIORS_DIR, `${id}.json`);
+    await fs.writeFile(filePath, JSON.stringify(interior, null, 2));
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error saving interior:', err);
+    res.status(500).json({ error: 'Failed to save interior' });
+  }
+});
+
+// Delete interior map
+app.delete('/api/interiors/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const filePath = path.join(INTERIORS_DIR, `${id}.json`);
+    await fs.unlink(filePath);
+    res.json({ success: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      res.json({ success: true }); // Already gone
+    } else {
+      console.error('Error deleting interior:', err);
+      res.status(500).json({ error: 'Failed to delete interior' });
     }
   }
 });

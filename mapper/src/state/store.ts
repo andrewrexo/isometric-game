@@ -11,6 +11,11 @@ import type {
   MapObject,
   Wall,
   WallEdge,
+  Portal,
+  InteriorMap,
+  SpawnPoint,
+  ExitPortal,
+  EditorMode,
 } from '@/types';
 import { Tool, Layer } from '@/types';
 import { chunkKey, worldToChunk, worldToLocal, localToIndex } from '@/core/coords';
@@ -19,6 +24,7 @@ import { history } from '@/core/History';
 import { chunkManager } from '@/core/ChunkManager';
 import { objectLoader } from '@/core/ObjectLoader';
 import { storage } from '@/core/Storage';
+import { interiorStorage } from '@/core/InteriorStorage';
 
 // Debounce helper for auto-save
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -32,7 +38,12 @@ const debouncedSave = (chunks: Map<string, Chunk>) => {
 };
 
 interface EditorState {
-  // World state
+  // Editor mode
+  editorMode: EditorMode;
+  currentInteriorId: string | null;
+  availableInteriors: string[];
+
+  // World state (overworld)
   chunks: Map<string, Chunk>;
   worldBounds: {
     minCx: number;
@@ -40,6 +51,11 @@ interface EditorState {
     minCy: number;
     maxCy: number;
   };
+
+  // Interior state
+  currentInterior: InteriorMap | null;
+  selectedExitPortal: { portalId: string } | null;
+  selectedSpawnPoint: string | null;
 
   // View state
   viewport: Viewport;
@@ -56,6 +72,7 @@ interface EditorState {
   // Selection state (for placed items on map)
   selectedEntitySpawn: { chunkCoord: ChunkCoord; spawnId: string } | null;
   selectedMapObject: { chunkCoord: ChunkCoord; objectId: string } | null;
+  selectedPortal: { chunkCoord: ChunkCoord; portalId: string } | null;
 
   // Magic wand tile selection
   selectedTiles: Set<string>; // Set of "wx,wy" coordinate strings
@@ -70,6 +87,7 @@ interface EditorState {
   showCollision: boolean;
   showEntities: boolean;
   showMapObjects: boolean;
+  showPortals: boolean;
   visibleLayers: {
     ground: boolean;
     objects: boolean;
@@ -110,8 +128,10 @@ interface EditorActions {
   // Selection actions (for placed items)
   setSelectedEntitySpawn: (selection: { chunkCoord: ChunkCoord; spawnId: string } | null) => void;
   setSelectedMapObject: (selection: { chunkCoord: ChunkCoord; objectId: string } | null) => void;
+  setSelectedPortal: (selection: { chunkCoord: ChunkCoord; portalId: string } | null) => void;
   findEntityAtWorld: (world: WorldCoord) => { chunkCoord: ChunkCoord; entity: EntitySpawn } | null;
   findMapObjectAtWorld: (world: WorldCoord) => { chunkCoord: ChunkCoord; object: MapObject } | null;
+  findPortalAtWorld: (world: WorldCoord) => { chunkCoord: ChunkCoord; portal: Portal } | null;
 
   // Tile editing actions
   setTile: (world: WorldCoord, layer: Layer, tileId: number) => void;
@@ -136,6 +156,11 @@ interface EditorActions {
   // Wall actions
   toggleWall: (world: WorldCoord, edge: WallEdge, gid: number) => void;
 
+  // Portal actions
+  addPortal: (world: WorldCoord) => Portal;
+  removePortal: (chunkCoord: ChunkCoord, portalId: string) => void;
+  updatePortal: (chunkCoord: ChunkCoord, portalId: string, updates: Partial<Portal>) => void;
+
   // Asset actions
   setTilesets: (tilesets: Tileset[]) => void;
   setEntityRegistry: (registry: EntityRegistry) => void;
@@ -146,6 +171,7 @@ interface EditorActions {
   toggleCollisionOverlay: () => void;
   toggleEntitiesOverlay: () => void;
   toggleMapObjectsOverlay: () => void;
+  togglePortalsOverlay: () => void;
   setLayerVisibility: (layer: keyof EditorState['visibleLayers'], visible: boolean) => void;
 
   // History actions
@@ -166,12 +192,68 @@ interface EditorActions {
   getOrCreateChunk: (coord: ChunkCoord) => Chunk;
   getDirtyChunks: () => Chunk[];
   markAllClean: () => void;
+
+  // Editor mode actions
+  setEditorMode: (mode: EditorMode) => void;
+  switchToOverworld: () => void;
+  setAvailableInteriors: (ids: string[]) => void;
+
+  // Interior actions
+  createInterior: (id: string, name: string, width?: number, height?: number) => InteriorMap;
+  loadInterior: (id: string) => Promise<InteriorMap | null>;
+  saveCurrentInterior: () => Promise<boolean>;
+  setCurrentInterior: (interior: InteriorMap | null) => void;
+  updateInteriorProperty: (key: keyof InteriorMap, value: unknown) => void;
+
+  // Interior tile editing
+  setInteriorTile: (x: number, y: number, layer: Layer, tileId: number) => void;
+  toggleInteriorCollision: (x: number, y: number) => void;
+  fillInteriorTiles: (startX: number, startY: number, layer: Layer, tileId: number) => void;
+
+  // Interior entity actions
+  addInteriorEntity: (x: number, y: number, entityId: string) => EntitySpawn;
+  removeInteriorEntity: (entityId: string) => void;
+  updateInteriorEntity: (entityId: string, updates: Partial<EntitySpawn>) => void;
+
+  // Interior map object actions
+  addInteriorMapObject: (x: number, y: number, objectId: number, width: number, height: number) => MapObject;
+  removeInteriorMapObject: (objectId: string) => void;
+
+  // Interior wall actions
+  toggleInteriorWall: (x: number, y: number, edge: WallEdge, gid: number) => void;
+
+  // Spawn point actions
+  addSpawnPoint: (name: string, x: number, y: number) => void;
+  removeSpawnPoint: (name: string) => void;
+  updateSpawnPoint: (name: string, updates: Partial<SpawnPoint>) => void;
+  setSelectedSpawnPoint: (name: string | null) => void;
+
+  // Exit portal actions
+  addExitPortal: (x: number, y: number) => ExitPortal;
+  removeExitPortal: (portalId: string) => void;
+  updateExitPortal: (portalId: string, updates: Partial<ExitPortal>) => void;
+  setSelectedExitPortal: (selection: { portalId: string } | null) => void;
+  findExitPortalAt: (x: number, y: number) => ExitPortal | null;
+
+  // Jump to target
+  jumpToPortalTarget: (portal: Portal) => Promise<void>;
+  jumpToExitPortalTarget: (portal: ExitPortal) => void;
 }
 
 export const useEditorStore = create<EditorState & EditorActions>((set, get) => ({
+  // Editor mode
+  editorMode: 'overworld' as EditorMode,
+  currentInteriorId: null,
+  availableInteriors: [],
+
   // Initial state
   chunks: new Map(),
   worldBounds: { minCx: 0, maxCx: 0, minCy: 0, maxCy: 0 },
+
+  // Interior state
+  currentInterior: null,
+  selectedExitPortal: null,
+  selectedSpawnPoint: null,
 
   viewport: {
     offsetX: 400,
@@ -189,6 +271,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
 
   selectedEntitySpawn: null,
   selectedMapObject: null,
+  selectedPortal: null,
   selectedTiles: new Set(),
 
   tilesets: [],
@@ -199,6 +282,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   showCollision: false,
   showEntities: true,
   showMapObjects: true,
+  showPortals: true,
   visibleLayers: {
     ground: true,
     objects: true,
@@ -283,6 +367,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   // Selection actions (for placed items)
   setSelectedEntitySpawn: (selection) => set({ selectedEntitySpawn: selection }),
   setSelectedMapObject: (selection) => set({ selectedMapObject: selection }),
+  setSelectedPortal: (selection) => set({ selectedPortal: selection }),
 
   findEntityAtWorld: (world) => {
     const chunkCoord = worldToChunk(world);
@@ -308,6 +393,23 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
     const object = chunk.mapObjects.find((o) => o.x === local.lx && o.y === local.ly);
     if (object) {
       return { chunkCoord, object };
+    }
+    return null;
+  },
+
+  findPortalAtWorld: (world) => {
+    const chunkCoord = worldToChunk(world);
+    const chunk = get().getChunk(chunkCoord);
+    if (!chunk || !chunk.portals) return null;
+
+    const local = worldToLocal(world);
+    // Find portal that contains this position (considering width/height)
+    const portal = chunk.portals.find((p) => {
+      return local.lx >= p.x && local.lx < p.x + p.width &&
+             local.ly >= p.y && local.ly < p.y + p.height;
+    });
+    if (portal) {
+      return { chunkCoord, portal };
     }
     return null;
   },
@@ -873,6 +975,95 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
     }
   },
 
+  // Portal actions
+  addPortal: (world) => {
+    const chunkCoord = worldToChunk(world);
+    get().getOrCreateChunk(chunkCoord); // Ensure chunk exists
+    const local = worldToLocal(world);
+
+    const newPortal: Portal = {
+      id: `portal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      x: local.lx,
+      y: local.ly,
+      width: 1,
+      height: 1,
+      targetMap: '',
+      targetSpawn: '',
+    };
+
+    history.push({
+      type: 'addPortal',
+      description: `Add portal at ${world.wx},${world.wy}`,
+      undo: () => get().removePortal(chunkCoord, newPortal.id),
+      redo: () => {
+        get().updateChunk(chunkCoord, (c) => ({
+          ...c,
+          portals: [...(c.portals || []), newPortal],
+          dirty: true,
+        }));
+      },
+    });
+
+    get().updateChunk(chunkCoord, (c) => ({
+      ...c,
+      portals: [...(c.portals || []), newPortal],
+      dirty: true,
+    }));
+
+    return newPortal;
+  },
+
+  removePortal: (chunkCoord, portalId) => {
+    const chunk = get().getChunk(chunkCoord);
+    if (!chunk || !chunk.portals) return;
+
+    const portal = chunk.portals.find((p) => p.id === portalId);
+    if (!portal) return;
+
+    history.push({
+      type: 'removePortal',
+      description: `Remove portal`,
+      undo: () => {
+        get().updateChunk(chunkCoord, (c) => ({
+          ...c,
+          portals: [...(c.portals || []), portal],
+          dirty: true,
+        }));
+      },
+      redo: () => get().removePortal(chunkCoord, portalId),
+    });
+
+    get().updateChunk(chunkCoord, (c) => ({
+      ...c,
+      portals: (c.portals || []).filter((p) => p.id !== portalId),
+      dirty: true,
+    }));
+  },
+
+  updatePortal: (chunkCoord, portalId, updates) => {
+    const chunk = get().getChunk(chunkCoord);
+    if (!chunk || !chunk.portals) return;
+
+    const portalIndex = chunk.portals.findIndex((p) => p.id === portalId);
+    if (portalIndex === -1) return;
+
+    const oldPortal = { ...chunk.portals[portalIndex] };
+    const newPortal = { ...oldPortal, ...updates };
+
+    history.push({
+      type: 'updatePortal',
+      description: `Update portal`,
+      undo: () => get().updatePortal(chunkCoord, portalId, oldPortal),
+      redo: () => get().updatePortal(chunkCoord, portalId, updates),
+    });
+
+    get().updateChunk(chunkCoord, (c) => ({
+      ...c,
+      portals: (c.portals || []).map((p, i) => (i === portalIndex ? newPortal : p)),
+      dirty: true,
+    }));
+  },
+
   // Asset actions
   setTilesets: (tilesets) => set({ tilesets }),
   setEntityRegistry: (registry) => set({ entityRegistry: registry }),
@@ -883,6 +1074,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   toggleCollisionOverlay: () => set((state) => ({ showCollision: !state.showCollision })),
   toggleEntitiesOverlay: () => set((state) => ({ showEntities: !state.showEntities })),
   toggleMapObjectsOverlay: () => set((state) => ({ showMapObjects: !state.showMapObjects })),
+  togglePortalsOverlay: () => set((state) => ({ showPortals: !state.showPortals })),
   setLayerVisibility: (layer, visible) =>
     set((state) => ({
       visibleLayers: { ...state.visibleLayers, [layer]: visible },
@@ -932,5 +1124,475 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       }
     }
     set({ chunks });
+  },
+
+  // Editor mode actions
+  setEditorMode: (mode) => set({ editorMode: mode }),
+
+  switchToOverworld: () => {
+    // Sync current interior to cache before switching
+    const currentInterior = get().currentInterior;
+    if (currentInterior) {
+      interiorStorage.updateInterior(currentInterior.id, currentInterior);
+    }
+
+    set({
+      editorMode: 'overworld',
+      currentInteriorId: null,
+      currentInterior: null,
+      selectedExitPortal: null,
+      selectedSpawnPoint: null,
+    });
+  },
+
+  setAvailableInteriors: (ids) => set({ availableInteriors: ids }),
+
+  // Interior actions
+  createInterior: (id, name, width = 16, height = 16) => {
+    const interior = interiorStorage.createInterior(id, name, width, height);
+    const viewport = get().viewport;
+    // Center viewport on interior map
+    const centerX = width / 2;
+    const centerY = height / 2;
+    // In isometric, screen x = (wx - wy) * tileWidth / 2, y = (wx + wy) * tileHeight / 2
+    const screenX = (centerX - centerY) * (64 / 2);
+    const screenY = (centerX + centerY) * (32 / 2);
+
+    set({
+      editorMode: 'interior',
+      currentInteriorId: id,
+      currentInterior: interior,
+      availableInteriors: interiorStorage.getInteriorIds(),
+      viewport: {
+        ...viewport,
+        offsetX: 400 - screenX * viewport.zoom,
+        offsetY: 100 - screenY * viewport.zoom,
+      },
+    });
+    // Auto-save to server
+    interiorStorage.saveInterior(interior).then((success) => {
+      if (success) {
+        // Mark as clean since it's saved
+        set((state) => ({
+          currentInterior: state.currentInterior ? { ...state.currentInterior, dirty: false } : null,
+        }));
+      }
+    });
+    return interior;
+  },
+
+  loadInterior: async (id) => {
+    const interior = await interiorStorage.loadInterior(id);
+    if (interior) {
+      const viewport = get().viewport;
+      // Center viewport on interior map
+      const centerX = interior.width / 2;
+      const centerY = interior.height / 2;
+      const screenX = (centerX - centerY) * (64 / 2);
+      const screenY = (centerX + centerY) * (32 / 2);
+
+      set({
+        editorMode: 'interior',
+        currentInteriorId: id,
+        currentInterior: interior,
+        viewport: {
+          ...viewport,
+          offsetX: 400 - screenX * viewport.zoom,
+          offsetY: 100 - screenY * viewport.zoom,
+        },
+      });
+    }
+    return interior;
+  },
+
+  saveCurrentInterior: async () => {
+    const interior = get().currentInterior;
+    if (!interior) return false;
+    return await interiorStorage.saveInterior(interior);
+  },
+
+  setCurrentInterior: (interior) => set({ currentInterior: interior }),
+
+  updateInteriorProperty: (key, value) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    const updated = { ...interior, [key]: value, dirty: true };
+    set({ currentInterior: updated });
+    interiorStorage.updateInterior(interior.id, { [key]: value });
+  },
+
+  // Interior tile editing
+  setInteriorTile: (x, y, layer, tileId) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+    if (x < 0 || x >= interior.width || y < 0 || y >= interior.height) return;
+
+    const index = y * interior.width + x;
+    const layerKey = layer === Layer.Ground ? 'ground' : layer === Layer.Objects ? 'objects' : 'overhead';
+    if (layerKey !== 'ground' && layerKey !== 'objects' && layerKey !== 'overhead') return;
+
+    const newLayers = {
+      ...interior.layers,
+      [layerKey]: interior.layers[layerKey].map((t, i) => (i === index ? tileId : t)),
+    };
+
+    set({
+      currentInterior: { ...interior, layers: newLayers, dirty: true },
+    });
+  },
+
+  toggleInteriorCollision: (x, y) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+    if (x < 0 || x >= interior.width || y < 0 || y >= interior.height) return;
+
+    const index = y * interior.width + x;
+    const bitset = new BitSet(interior.width * interior.height);
+    bitset.setRaw(interior.collision);
+    bitset.set(index, !bitset.get(index));
+
+    set({
+      currentInterior: { ...interior, collision: bitset.getRaw(), dirty: true },
+    });
+  },
+
+  fillInteriorTiles: (startX, startY, layer, tileId) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+    if (startX < 0 || startX >= interior.width || startY < 0 || startY >= interior.height) return;
+
+    const layerKey = layer === Layer.Ground ? 'ground' : layer === Layer.Objects ? 'objects' : 'overhead';
+    if (layerKey !== 'ground' && layerKey !== 'objects' && layerKey !== 'overhead') return;
+
+    const startIndex = startY * interior.width + startX;
+    const targetTileId = interior.layers[layerKey][startIndex];
+    if (targetTileId === tileId) return;
+
+    const filled = new Set<number>();
+    const toFill: number[] = [startIndex];
+    const newLayer = [...interior.layers[layerKey]];
+
+    while (toFill.length > 0) {
+      const index = toFill.pop()!;
+      if (filled.has(index)) continue;
+      if (index < 0 || index >= interior.width * interior.height) continue;
+      if (newLayer[index] !== targetTileId) continue;
+
+      filled.add(index);
+      newLayer[index] = tileId;
+
+      const x = index % interior.width;
+      const y = Math.floor(index / interior.width);
+
+      if (x > 0) toFill.push(index - 1);
+      if (x < interior.width - 1) toFill.push(index + 1);
+      if (y > 0) toFill.push(index - interior.width);
+      if (y < interior.height - 1) toFill.push(index + interior.width);
+    }
+
+    set({
+      currentInterior: {
+        ...interior,
+        layers: { ...interior.layers, [layerKey]: newLayer },
+        dirty: true,
+      },
+    });
+  },
+
+  // Interior entity actions
+  addInteriorEntity: (x, y, entityId) => {
+    const interior = get().currentInterior;
+    if (!interior) throw new Error('No interior loaded');
+
+    const newEntity: EntitySpawn = {
+      id: `entity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      entityId,
+      name: entityId,
+      x,
+      y,
+      level: 1,
+    };
+
+    set({
+      currentInterior: {
+        ...interior,
+        entities: [...interior.entities, newEntity],
+        dirty: true,
+      },
+    });
+
+    return newEntity;
+  },
+
+  removeInteriorEntity: (entityId) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    set({
+      currentInterior: {
+        ...interior,
+        entities: interior.entities.filter((e) => e.id !== entityId),
+        dirty: true,
+      },
+    });
+  },
+
+  updateInteriorEntity: (entityId, updates) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    set({
+      currentInterior: {
+        ...interior,
+        entities: interior.entities.map((e) =>
+          e.id === entityId ? { ...e, ...updates } : e
+        ),
+        dirty: true,
+      },
+    });
+  },
+
+  // Interior map object actions
+  addInteriorMapObject: (x, y, objectId, width, height) => {
+    const interior = get().currentInterior;
+    if (!interior) throw new Error('No interior loaded');
+
+    const gid = objectLoader.idToGid(objectId);
+    const newObject: MapObject = {
+      id: `obj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      gid,
+      x,
+      y,
+      width,
+      height,
+    };
+
+    set({
+      currentInterior: {
+        ...interior,
+        mapObjects: [...interior.mapObjects, newObject],
+        dirty: true,
+      },
+    });
+
+    return newObject;
+  },
+
+  removeInteriorMapObject: (objectId) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    set({
+      currentInterior: {
+        ...interior,
+        mapObjects: interior.mapObjects.filter((o) => o.id !== objectId),
+        dirty: true,
+      },
+    });
+  },
+
+  toggleInteriorWall: (x, y, edge, gid) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    // Check if wall already exists at this position
+    const existingIdx = interior.walls.findIndex(
+      (w) => w.x === x && w.y === y && w.edge === edge
+    );
+
+    if (existingIdx >= 0) {
+      // Remove existing wall (toggle off)
+      set({
+        currentInterior: {
+          ...interior,
+          walls: interior.walls.filter((_, i) => i !== existingIdx),
+          dirty: true,
+        },
+      });
+    } else {
+      // Add new wall
+      const newWall: Wall = {
+        id: `wall_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        gid,
+        x,
+        y,
+        edge,
+      };
+
+      set({
+        currentInterior: {
+          ...interior,
+          walls: [...interior.walls, newWall],
+          dirty: true,
+        },
+      });
+    }
+  },
+
+  // Spawn point actions
+  addSpawnPoint: (name, x, y) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    // Check for duplicate name
+    if (interior.spawnPoints.some((sp) => sp.name === name)) {
+      console.warn(`Spawn point "${name}" already exists`);
+      return;
+    }
+
+    set({
+      currentInterior: {
+        ...interior,
+        spawnPoints: [...interior.spawnPoints, { name, x, y }],
+        dirty: true,
+      },
+    });
+  },
+
+  removeSpawnPoint: (name) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    set({
+      currentInterior: {
+        ...interior,
+        spawnPoints: interior.spawnPoints.filter((sp) => sp.name !== name),
+        dirty: true,
+      },
+    });
+  },
+
+  updateSpawnPoint: (name, updates) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    set({
+      currentInterior: {
+        ...interior,
+        spawnPoints: interior.spawnPoints.map((sp) =>
+          sp.name === name ? { ...sp, ...updates } : sp
+        ),
+        dirty: true,
+      },
+    });
+  },
+
+  setSelectedSpawnPoint: (name) => set({ selectedSpawnPoint: name }),
+
+  // Exit portal actions
+  addExitPortal: (x, y) => {
+    const interior = get().currentInterior;
+    if (!interior) throw new Error('No interior loaded');
+
+    const newPortal: ExitPortal = {
+      id: `exit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      x,
+      y,
+      width: 1,
+      height: 1,
+      targetX: 0,
+      targetY: 0,
+    };
+
+    set({
+      currentInterior: {
+        ...interior,
+        exitPortals: [...interior.exitPortals, newPortal],
+        dirty: true,
+      },
+    });
+
+    return newPortal;
+  },
+
+  removeExitPortal: (portalId) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    set({
+      currentInterior: {
+        ...interior,
+        exitPortals: interior.exitPortals.filter((p) => p.id !== portalId),
+        dirty: true,
+      },
+    });
+  },
+
+  updateExitPortal: (portalId, updates) => {
+    const interior = get().currentInterior;
+    if (!interior) return;
+
+    set({
+      currentInterior: {
+        ...interior,
+        exitPortals: interior.exitPortals.map((p) =>
+          p.id === portalId ? { ...p, ...updates } : p
+        ),
+        dirty: true,
+      },
+    });
+  },
+
+  setSelectedExitPortal: (selection) => set({ selectedExitPortal: selection }),
+
+  findExitPortalAt: (x, y) => {
+    const interior = get().currentInterior;
+    if (!interior) return null;
+
+    return interior.exitPortals.find((p) =>
+      x >= p.x && x < p.x + p.width && y >= p.y && y < p.y + p.height
+    ) || null;
+  },
+
+  // Jump to target
+  jumpToPortalTarget: async (portal) => {
+    if (!portal.targetMap) return;
+
+    // Load the target interior
+    const interior = await get().loadInterior(portal.targetMap);
+    if (!interior) {
+      console.warn(`Could not load interior "${portal.targetMap}"`);
+      return;
+    }
+
+    // Find the target spawn point and center viewport on it
+    const spawnPoint = interior.spawnPoints.find((sp) => sp.name === portal.targetSpawn);
+    if (spawnPoint) {
+      // Center viewport on spawn point
+      // This will need to be adjusted based on tile size and viewport
+      const { viewport } = get();
+      const TILE_WIDTH = 64;
+      const TILE_HEIGHT = 32;
+      const screenX = (spawnPoint.x - spawnPoint.y) * (TILE_WIDTH / 2);
+      const screenY = (spawnPoint.x + spawnPoint.y) * (TILE_HEIGHT / 2);
+
+      set({
+        viewport: {
+          ...viewport,
+          offsetX: 400 - screenX * viewport.zoom,
+          offsetY: 200 - screenY * viewport.zoom,
+        },
+      });
+    }
+  },
+
+  jumpToExitPortalTarget: (portal) => {
+    // Switch to overworld and center on target coordinates
+    get().switchToOverworld();
+
+    const { viewport } = get();
+    const TILE_WIDTH = 64;
+    const TILE_HEIGHT = 32;
+    const screenX = (portal.targetX - portal.targetY) * (TILE_WIDTH / 2);
+    const screenY = (portal.targetX + portal.targetY) * (TILE_HEIGHT / 2);
+
+    set({
+      viewport: {
+        ...viewport,
+        offsetX: 400 - screenX * viewport.zoom,
+        offsetY: 200 - screenY * viewport.zoom,
+      },
+    });
   },
 }));

@@ -2,13 +2,17 @@ import { useEditorStore } from '@/state/store';
 import { Layer } from '@/types';
 import styles from './LayerPanel.module.css';
 
-const layers: { id: Layer; label: string }[] = [
+// Add a special 'portals' layer type for visibility toggle
+type ExtendedLayer = Layer | 'portals';
+
+const layers: { id: ExtendedLayer; label: string }[] = [
   { id: Layer.Ground, label: 'Ground' },
   { id: Layer.Objects, label: 'Objects (Tiles)' },
   { id: Layer.Overhead, label: 'Overhead' },
   { id: Layer.MapObjects, label: 'Map Objects' },
   { id: Layer.Collision, label: 'Collision' },
   { id: Layer.Entities, label: 'Entities' },
+  { id: 'portals', label: 'Portals' },
 ];
 
 export function LayerPanel() {
@@ -22,12 +26,14 @@ export function LayerPanel() {
     showCollision,
     showEntities,
     showMapObjects,
+    showPortals,
     toggleCollisionOverlay,
     toggleEntitiesOverlay,
     toggleMapObjectsOverlay,
+    togglePortalsOverlay,
   } = useEditorStore();
 
-  const isLayerVisible = (layer: Layer): boolean => {
+  const isLayerVisible = (layer: ExtendedLayer): boolean => {
     switch (layer) {
       case Layer.Ground:
         return visibleLayers.ground;
@@ -41,12 +47,14 @@ export function LayerPanel() {
         return showEntities;
       case Layer.MapObjects:
         return showMapObjects;
+      case 'portals':
+        return showPortals;
       default:
         return true;
     }
   };
 
-  const toggleVisibility = (layer: Layer) => {
+  const toggleVisibility = (layer: ExtendedLayer) => {
     switch (layer) {
       case Layer.Ground:
         setLayerVisibility('ground', !visibleLayers.ground);
@@ -66,6 +74,16 @@ export function LayerPanel() {
       case Layer.MapObjects:
         toggleMapObjectsOverlay();
         break;
+      case 'portals':
+        togglePortalsOverlay();
+        break;
+    }
+  };
+
+  const handleLayerClick = (layer: ExtendedLayer) => {
+    // Don't change active layer for portals - it's just a visibility toggle
+    if (layer !== 'portals') {
+      setActiveLayer(layer as Layer);
     }
   };
 
@@ -90,7 +108,7 @@ export function LayerPanel() {
               />
               <button
                 className={styles.layerButton}
-                onClick={() => setActiveLayer(layer.id)}
+                onClick={() => handleLayerClick(layer.id)}
               >
                 {layer.label}
               </button>

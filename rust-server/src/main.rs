@@ -193,6 +193,7 @@ impl AppState {
             self.quest_registry.clone(),
             self.crafting_registry.clone(),
             self.item_registry.clone(),
+            self.player_instances.clone(),
         ).await);
         self.rooms.insert(room.id.clone(), room.clone());
         room
@@ -1307,35 +1308,57 @@ async fn handle_enter_portal(
     use crate::protocol::{ChunkLayerData, ChunkPortalData};
     use base64::Engine;
 
+    info!("Player {} attempting to enter portal '{}'", player_id, portal_id);
+
     // Find portal at player position
     let portal = match room.find_portal_at_player(player_id).await {
-        Some(p) if p.id == portal_id => p,
-        _ => {
-            warn!("Player {} tried to use portal {} but not standing on it", player_id, portal_id);
+        Some(p) => {
+            info!("Found portal at player position: id='{}', target_map='{}', target_spawn='{}'",
+                p.id, p.target_map, p.target_spawn);
+            if p.id == portal_id {
+                p
+            } else {
+                warn!("Player {} tried to use portal '{}' but is standing on portal '{}'",
+                    player_id, portal_id, p.id);
+                return;
+            }
+        }
+        None => {
+            warn!("Player {} tried to use portal '{}' but no portal found at position", player_id, portal_id);
             return;
         }
     };
 
     // Get interior definition
+    info!("Looking up interior map '{}'", portal.target_map);
     let interior = match state.interior_registry.get(&portal.target_map) {
-        Some(i) => i,
+        Some(i) => {
+            info!("Found interior '{}' with {} spawn points", i.id, i.spawn_points.len());
+            i
+        }
         None => {
-            error!("Portal {} references unknown interior {}", portal_id, portal.target_map);
+            error!("Portal '{}' references unknown interior '{}'. Available interiors: {:?}",
+                portal_id, portal.target_map, state.interior_registry.list_ids());
             return;
         }
     };
 
     // Get spawn point
+    info!("Looking up spawn point '{}' in interior '{}'", portal.target_spawn, interior.id);
     let spawn = match interior.get_spawn_point(&portal.target_spawn) {
-        Some(s) => s,
+        Some(s) => {
+            info!("Found spawn point '{}' at ({}, {})", portal.target_spawn, s.x, s.y);
+            s
+        }
         None => {
-            error!("Interior {} has no spawn point {}", interior.id, portal.target_spawn);
+            error!("Interior '{}' has no spawn point '{}'. Available spawn points: {:?}",
+                interior.id, portal.target_spawn, interior.spawn_points.keys().collect::<Vec<_>>());
             return;
         }
     };
 
     // Get or create instance based on type
-    let instance = match interior.instance_type {
+    let (instance, is_new) = match interior.instance_type {
         InstanceType::Public => {
             state.instance_manager.get_or_create_public(&interior.id)
         }
@@ -1343,6 +1366,11 @@ async fn handle_enter_portal(
             state.instance_manager.get_or_create_private(&interior.id, player_id)
         }
     };
+
+    // Spawn NPCs if this is a new instance
+    if is_new || !*instance.npcs_spawned.read().await {
+        instance.spawn_npcs(&interior.entities, &state.entity_registry).await;
+    }
 
     // Track player's instance
     {
@@ -1393,6 +1421,21 @@ async fn handle_enter_portal(
         target_spawn: p.target_spawn.clone().unwrap_or_default(),
     }).collect();
 
+    let objects: Vec<protocol::ChunkObjectData> = interior.map_objects.iter().map(|o| protocol::ChunkObjectData {
+        gid: o.gid,
+        tile_x: o.x,
+        tile_y: o.y,
+        width: o.width,
+        height: o.height,
+    }).collect();
+
+    let walls: Vec<protocol::ChunkWallData> = interior.walls.iter().map(|w| protocol::ChunkWallData {
+        gid: w.gid,
+        tile_x: w.x,
+        tile_y: w.y,
+        edge: w.edge.clone(),
+    }).collect();
+
     room.send_to_player(
         player_id,
         ServerMessage::InteriorData {
@@ -1405,8 +1448,24 @@ async fn handle_enter_portal(
             layers,
             collision,
             portals,
+            objects,
+            walls,
         },
     ).await;
+
+    // Send NPC updates for this instance
+    let npc_updates = instance.get_npc_updates().await;
+    if !npc_updates.is_empty() {
+        info!("Sending {} instance NPCs to player {}", npc_updates.len(), player_id);
+        room.send_to_player(
+            player_id,
+            ServerMessage::StateSync {
+                tick: 0,
+                players: vec![],
+                npcs: npc_updates,
+            },
+        ).await;
+    }
 }
 
 async fn handle_client_message(

@@ -24,12 +24,16 @@ export function Canvas() {
     selectedEntityId,
     selectedObjectId,
     selectedTiles,
+    selectedPortal,
     showGrid,
     showChunkBounds,
     showCollision,
     showEntities,
     showMapObjects,
+    showPortals,
     visibleLayers,
+    editorMode,
+    currentInterior,
     pan,
     zoom,
     setHoveredTile,
@@ -42,12 +46,27 @@ export function Canvas() {
     removeEntity,
     addMapObject,
     removeMapObject,
+    addPortal,
     setSelectedTileId,
     findEntityAtWorld,
     setSelectedEntitySpawn,
     findMapObjectAtWorld,
     setSelectedMapObject,
+    findPortalAtWorld,
+    setSelectedPortal,
     toggleWall,
+    setInteriorTile,
+    toggleInteriorCollision,
+    fillInteriorTiles,
+    addInteriorEntity,
+    removeInteriorEntity,
+    addInteriorMapObject,
+    removeInteriorMapObject,
+    toggleInteriorWall,
+    addSpawnPoint,
+    removeSpawnPoint,
+    addExitPortal,
+    removeExitPortal,
   } = useEditorStore();
 
   // Setup canvas and renderer
@@ -128,29 +147,58 @@ export function Canvas() {
       showCollision,
       showEntities,
       showMapObjects,
+      showPortals,
       visibleLayers,
     });
-  }, [showGrid, showChunkBounds, showCollision, showEntities, showMapObjects, visibleLayers]);
+  }, [showGrid, showChunkBounds, showCollision, showEntities, showMapObjects, showPortals, visibleLayers]);
 
   // Render loop
   useEffect(() => {
     let animationId: number;
 
     const render = () => {
-      const allChunks = Array.from(chunks.values());
-      isometricRenderer.render(allChunks, viewport);
+      if (editorMode === 'interior' && currentInterior) {
+        // Render interior map
+        isometricRenderer.renderInterior(currentInterior, viewport);
+      } else {
+        // Render overworld chunks
+        const allChunks = Array.from(chunks.values());
+        isometricRenderer.render(allChunks, viewport);
 
-      // Highlight selected tiles (magic wand selection)
-      if (selectedTiles.size > 0) {
-        for (const tileKey of selectedTiles) {
-          const [wxStr, wyStr] = tileKey.split(',');
-          const wx = parseInt(wxStr, 10);
-          const wy = parseInt(wyStr, 10);
-          isometricRenderer.highlightTile({ wx, wy }, viewport, 'rgba(0, 150, 255, 0.4)', true);
+        // Highlight selected tiles (magic wand selection)
+        if (selectedTiles.size > 0) {
+          for (const tileKey of selectedTiles) {
+            const [wxStr, wyStr] = tileKey.split(',');
+            const wx = parseInt(wxStr, 10);
+            const wy = parseInt(wyStr, 10);
+            isometricRenderer.highlightTile({ wx, wy }, viewport, 'rgba(0, 150, 255, 0.4)', true);
+          }
+        }
+
+        // Highlight selected portal
+        if (selectedPortal) {
+          const chunk = chunks.get(`${selectedPortal.chunkCoord.cx},${selectedPortal.chunkCoord.cy}`);
+          if (chunk && chunk.portals) {
+            const portal = chunk.portals.find((p) => p.id === selectedPortal.portalId);
+            if (portal) {
+              const baseX = selectedPortal.chunkCoord.cx * 32;
+              const baseY = selectedPortal.chunkCoord.cy * 32;
+              for (let py = 0; py < portal.height; py++) {
+                for (let px = 0; px < portal.width; px++) {
+                  isometricRenderer.highlightTile(
+                    { wx: baseX + portal.x + px, wy: baseY + portal.y + py },
+                    viewport,
+                    'rgba(200, 0, 255, 0.6)',
+                    true
+                  );
+                }
+              }
+            }
+          }
         }
       }
 
-      // Highlight hovered tile
+      // Highlight hovered tile (works for both modes)
       if (hoveredTile) {
         isometricRenderer.highlightTile(hoveredTile, viewport, '#ffffff');
       }
@@ -163,7 +211,7 @@ export function Canvas() {
     return () => {
       cancelAnimationFrame(animationId);
     };
-  }, [chunks, viewport, hoveredTile, selectedTiles]);
+  }, [chunks, viewport, hoveredTile, selectedTiles, selectedPortal, editorMode, currentInterior]);
 
   // Handle tool action at position
   const handleToolAction = useCallback(
@@ -176,6 +224,124 @@ export function Canvas() {
       const screenY = clientY - rect.top;
       const worldTile = screenToWorldTile({ sx: screenX, sy: screenY }, viewport);
 
+      // Interior mode handling
+      if (editorMode === 'interior' && currentInterior) {
+        // Check bounds
+        if (worldTile.wx < 0 || worldTile.wx >= currentInterior.width ||
+            worldTile.wy < 0 || worldTile.wy >= currentInterior.height) {
+          return; // Outside interior bounds
+        }
+
+        switch (activeTool) {
+          case Tool.Paint:
+            if (activeLayer === Layer.Ground || activeLayer === Layer.Objects || activeLayer === Layer.Overhead) {
+              setInteriorTile(worldTile.wx, worldTile.wy, activeLayer, selectedTileId);
+            }
+            break;
+          case Tool.Eraser:
+            if (activeLayer === Layer.Entities) {
+              const entity = currentInterior.entities.find(
+                (e) => e.x === worldTile.wx && e.y === worldTile.wy
+              );
+              if (entity) {
+                removeInteriorEntity(entity.id);
+              }
+            } else if (activeLayer === Layer.MapObjects) {
+              const obj = currentInterior.mapObjects.find(
+                (o) => o.x === worldTile.wx && o.y === worldTile.wy
+              );
+              if (obj) {
+                removeInteriorMapObject(obj.id);
+              }
+            } else if (activeLayer === Layer.Ground || activeLayer === Layer.Objects || activeLayer === Layer.Overhead) {
+              setInteriorTile(worldTile.wx, worldTile.wy, activeLayer, 0);
+            }
+            break;
+          case Tool.Collision:
+            toggleInteriorCollision(worldTile.wx, worldTile.wy);
+            break;
+          case Tool.Fill:
+            if (activeLayer === Layer.Ground || activeLayer === Layer.Objects || activeLayer === Layer.Overhead) {
+              fillInteriorTiles(worldTile.wx, worldTile.wy, activeLayer, selectedTileId);
+            }
+            break;
+          case Tool.Entity:
+            if (selectedEntityId) {
+              addInteriorEntity(worldTile.wx, worldTile.wy, selectedEntityId);
+            }
+            break;
+          case Tool.Object:
+            if (selectedObjectId) {
+              const objDef = objectLoader.getObject(selectedObjectId);
+              if (objDef) {
+                addInteriorMapObject(worldTile.wx, worldTile.wy, selectedObjectId, objDef.width, objDef.height);
+              }
+            }
+            break;
+          case Tool.Eyedropper: {
+            const index = worldTile.wy * currentInterior.width + worldTile.wx;
+            const layerKey =
+              activeLayer === Layer.Ground
+                ? 'ground'
+                : activeLayer === Layer.Objects
+                  ? 'objects'
+                  : 'overhead';
+            if (layerKey === 'ground' || layerKey === 'objects' || layerKey === 'overhead') {
+              const tileId = currentInterior.layers[layerKey][index];
+              if (tileId > 0) {
+                setSelectedTileId(tileId);
+              }
+            }
+            break;
+          }
+          case Tool.WallDown:
+          case Tool.WallRight: {
+            if (selectedObjectId) {
+              const wallDef = objectLoader.getWall(selectedObjectId);
+              const objDef = wallDef || objectLoader.getObject(selectedObjectId);
+              if (objDef) {
+                const edge = activeTool === Tool.WallDown ? 'down' : 'right';
+                const gid = wallDef
+                  ? objectLoader.wallIdToGid(selectedObjectId)
+                  : objectLoader.idToGid(selectedObjectId);
+                toggleInteriorWall(worldTile.wx, worldTile.wy, edge, gid);
+              }
+            }
+            break;
+          }
+          case Tool.SpawnPoint: {
+            // Check if spawn point exists at this location
+            const existingSpawn = currentInterior.spawnPoints.find(
+              (sp) => sp.x === worldTile.wx && sp.y === worldTile.wy
+            );
+            if (existingSpawn) {
+              removeSpawnPoint(existingSpawn.name);
+            } else {
+              // Prompt for spawn point name
+              const name = prompt('Enter spawn point name:', `spawn_${currentInterior.spawnPoints.length}`);
+              if (name) {
+                addSpawnPoint(name, worldTile.wx, worldTile.wy);
+              }
+            }
+            break;
+          }
+          case Tool.ExitPortal: {
+            // Check if exit portal exists at this location
+            const existingExit = currentInterior.exitPortals.find(
+              (ep) => ep.x === worldTile.wx && ep.y === worldTile.wy
+            );
+            if (existingExit) {
+              removeExitPortal(existingExit.id);
+            } else {
+              addExitPortal(worldTile.wx, worldTile.wy);
+            }
+            break;
+          }
+        }
+        return;
+      }
+
+      // Overworld mode handling
       switch (activeTool) {
         case Tool.Paint:
           if (activeLayer === Layer.Ground || activeLayer === Layer.Objects || activeLayer === Layer.Overhead) {
@@ -318,6 +484,27 @@ export function Canvas() {
           }
           break;
         }
+        case Tool.Portal: {
+          // First check if there's an existing portal to select
+          const existingPortal = findPortalAtWorld(worldTile);
+          if (existingPortal) {
+            setSelectedPortal({
+              chunkCoord: existingPortal.chunkCoord,
+              portalId: existingPortal.portal.id,
+            });
+          } else {
+            // No existing portal, place a new one
+            const newPortal = addPortal(worldTile);
+            setSelectedPortal({
+              chunkCoord: useEditorStore.getState().getChunk({
+                cx: Math.floor(worldTile.wx / 32),
+                cy: Math.floor(worldTile.wy / 32),
+              })?.coord || { cx: Math.floor(worldTile.wx / 32), cy: Math.floor(worldTile.wy / 32) },
+              portalId: newPortal.id,
+            });
+          }
+          break;
+        }
       }
     },
     [
@@ -328,6 +515,8 @@ export function Canvas() {
       selectedEntityId,
       selectedObjectId,
       selectedTiles,
+      editorMode,
+      currentInterior,
       setTile,
       toggleCollision,
       fillTiles,
@@ -336,12 +525,27 @@ export function Canvas() {
       removeEntity,
       addMapObject,
       removeMapObject,
+      addPortal,
       setSelectedTileId,
       findEntityAtWorld,
       setSelectedEntitySpawn,
       findMapObjectAtWorld,
       setSelectedMapObject,
+      findPortalAtWorld,
+      setSelectedPortal,
       toggleWall,
+      setInteriorTile,
+      toggleInteriorCollision,
+      fillInteriorTiles,
+      addInteriorEntity,
+      removeInteriorEntity,
+      addInteriorMapObject,
+      removeInteriorMapObject,
+      toggleInteriorWall,
+      addSpawnPoint,
+      removeSpawnPoint,
+      addExitPortal,
+      removeExitPortal,
     ]
   );
 
@@ -437,6 +641,12 @@ export function Canvas() {
         onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
+      {editorMode === 'interior' && currentInterior && (
+        <div className={styles.modeIndicator}>
+          INTERIOR MODE
+          <span className={styles.interiorName}>{currentInterior.name}</span>
+        </div>
+      )}
       {hoveredTile && (
         <div className={styles.coords}>
           {hoveredTile.wx}, {hoveredTile.wy}

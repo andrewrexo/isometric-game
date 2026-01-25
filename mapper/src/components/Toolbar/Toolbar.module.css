@@ -70,3 +70,22 @@
   display: flex;
   gap: 4px;
 }
+
+.interiorGroup {
+  display: flex;
+  gap: 4px;
+}
+
+.interiorTool {
+  background: #2d4444;
+  border-color: #3d5c5c;
+}
+
+.interiorTool:hover {
+  background: #3d5c5c;
+}
+
+.interiorTool.active {
+  background: #4ecdc4;
+  border-color: #5dded5;
+}

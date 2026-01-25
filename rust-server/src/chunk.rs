@@ -60,7 +60,9 @@ pub struct Wall {
 
 /// A portal that teleports players to another map
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Portal {
+    #[serde(default)]
     pub id: String,
     pub x: i32,
     pub y: i32,

@@ -116,3 +116,132 @@
 .disconnected::before {
   background: #ff6b6b;
 }
+
+/* Modal styles */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #2d2d44;
+  border: 1px solid #3d3d5c;
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 320px;
+  max-width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.modal h3 {
+  margin: 0 0 16px;
+  color: #fff;
+  font-size: 16px;
+}
+
+.modalField {
+  margin-bottom: 12px;
+}
+
+.modalField label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.modalField input {
+  width: 100%;
+  padding: 8px 10px;
+  background: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.modalField input:focus {
+  outline: none;
+  border-color: #4ecdc4;
+}
+
+.modalFieldRow {
+  display: flex;
+  gap: 12px;
+}
+
+.modalFieldRow .modalField {
+  flex: 1;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.modalActions button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  background: #3d3d5c;
+  color: #ccc;
+}
+
+.modalActions button:hover {
+  background: #4d4d6c;
+  color: #fff;
+}
+
+.primaryButton {
+  background: #4ecdc4 !important;
+  color: #1a1a2e !important;
+}
+
+.primaryButton:hover {
+  background: #3dbdb5 !important;
+}
+
+.emptyMessage {
+  color: #888;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+
+.interiorList {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.interiorItem {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  background: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  color: #ccc;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.interiorItem:hover {
+  background: #3d3d5c;
+  color: #fff;
+  border-color: #4ecdc4;
+}

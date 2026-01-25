@@ -270,6 +270,9 @@ function App() {
         case 'o':
           store.setActiveTool('object');
           break;
+        case 'p':
+          store.setActiveTool('portal');
+          break;
         case 'i':
           store.setActiveTool('eyedropper');
           break;

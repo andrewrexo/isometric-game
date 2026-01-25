@@ -66,6 +66,9 @@ export const Tool = {
   MagicWand: 'magicWand',
   WallDown: 'wallDown',
   WallRight: 'wallRight',
+  Portal: 'portal',
+  SpawnPoint: 'spawnPoint',
+  ExitPortal: 'exitPortal',
 } as const;
 export type Tool = typeof Tool[keyof typeof Tool];
 
@@ -134,6 +137,7 @@ export interface Chunk {
   entities: EntitySpawn[];
   mapObjects: MapObject[]; // Trees, rocks, decorations
   walls: Wall[];
+  portals: Portal[];
   dirty: boolean;
 }
 
@@ -237,6 +241,7 @@ export interface SimplifiedChunk {
   entities: SimplifiedEntitySpawn[];
   mapObjects: SimplifiedMapObject[];
   walls: SimplifiedWall[];
+  portals: SimplifiedPortal[];
 }
 
 export interface SimplifiedEntitySpawn {
@@ -274,6 +279,99 @@ export interface SimplifiedWall {
   y: number;
   edge: WallEdge;
 }
+
+// Portal types
+export interface Portal {
+  id: string;           // Unique ID (auto-generated)
+  x: number;            // Local tile X within chunk
+  y: number;            // Local tile Y within chunk
+  width: number;        // Width in tiles (default 1)
+  height: number;       // Height in tiles (default 1)
+  targetMap: string;    // Interior map ID (e.g., "test_house")
+  targetSpawn: string;  // Spawn point name (e.g., "entrance")
+}
+
+export interface SimplifiedPortal {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  targetMap: string;
+  targetSpawn: string;
+}
+
+// Exit portal (for interior maps - links back to overworld)
+export interface ExitPortal {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  targetX: number;      // World X coordinate in overworld
+  targetY: number;      // World Y coordinate in overworld
+}
+
+// Spawn point in interior map
+export interface SpawnPoint {
+  name: string;
+  x: number;
+  y: number;
+}
+
+// Instance types for interior maps
+export type InstanceType = 'public' | 'private';
+
+// Interior map definition
+export interface InteriorMap {
+  id: string;
+  name: string;
+  instanceType: InstanceType;
+  width: number;        // Map width in tiles
+  height: number;       // Map height in tiles
+  spawnPoints: SpawnPoint[];
+  layers: {
+    ground: number[];
+    objects: number[];
+    overhead: number[];
+  };
+  collision: Uint8Array;
+  entities: EntitySpawn[];
+  mapObjects: MapObject[];
+  walls: Wall[];
+  exitPortals: ExitPortal[];
+  dirty: boolean;
+}
+
+// Serialized interior map format
+export interface SerializedInteriorMap {
+  id: string;
+  name: string;
+  instance_type: InstanceType;
+  size: { width: number; height: number };
+  spawn_points: { [name: string]: { x: number; y: number } };
+  layers: {
+    ground: number[];
+    objects: number[];
+    overhead: number[];
+  };
+  collision: string;    // Base64 encoded
+  entities: SimplifiedEntitySpawn[];
+  mapObjects: SimplifiedMapObject[];
+  walls: SimplifiedWall[];
+  portals: Array<{
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    target_map: string;
+    target_x: number;
+    target_y: number;
+  }>;
+}
+
+// Editor mode
+export type EditorMode = 'overworld' | 'interior';
 
 // History types
 export interface HistoryAction {

@@ -427,6 +427,8 @@ pub struct GameRoom {
     broadcast_tx: broadcast::Sender<ServerMessage>,
     /// Per-player message senders for unicast (SECURITY: private inventory updates)
     player_senders: RwLock<HashMap<String, mpsc::Sender<Vec<u8>>>>,
+    /// Tracks which instance each player is currently in (None = overworld)
+    player_instances: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl GameRoom {
@@ -436,6 +438,7 @@ impl GameRoom {
         quest_registry: Arc<QuestRegistry>,
         crafting_registry: Arc<crate::crafting::CraftingRegistry>,
         item_registry: Arc<ItemRegistry>,
+        player_instances: Arc<RwLock<HashMap<String, String>>>,
     ) -> Self {
         let (tx, _) = broadcast::channel(256);
         let world = Arc::new(World::new("maps/world_0"));
@@ -508,6 +511,7 @@ impl GameRoom {
             tick: RwLock::new(0),
             broadcast_tx: tx,
             player_senders: RwLock::new(HashMap::new()),
+            player_instances,
         }
     }
 
@@ -536,14 +540,45 @@ impl GameRoom {
 
     /// Find a portal at the player's current position
     pub async fn find_portal_at_player(&self, player_id: &str) -> Option<crate::chunk::Portal> {
+        use crate::chunk::CHUNK_SIZE;
+        use tracing::{debug, trace};
+
         let players = self.players.read().await;
         let player = players.get(player_id)?;
         let coord = ChunkCoord::from_world(player.x, player.y);
 
+        debug!(
+            "Looking for portal at player {} position ({}, {}), chunk ({}, {})",
+            player_id, player.x, player.y, coord.x, coord.y
+        );
+
         let chunk = self.world.get_or_load_chunk(coord).await?;
+
+        debug!("Chunk has {} portals", chunk.portals.len());
+
+        // Portal coordinates in chunk JSON are LOCAL (0-31), need to convert to WORLD coords
+        let chunk_base_x = coord.x * CHUNK_SIZE as i32;
+        let chunk_base_y = coord.y * CHUNK_SIZE as i32;
+
+        for p in &chunk.portals {
+            let world_x = chunk_base_x + p.x;
+            let world_y = chunk_base_y + p.y;
+            trace!(
+                "Portal '{}' at local ({}, {}) -> world ({}, {}) to ({}, {}), target: {}",
+                p.id, p.x, p.y, world_x, world_y,
+                world_x + p.width, world_y + p.height, p.target_map
+            );
+        }
+
         chunk.portals.iter().find(|p| {
-            player.x >= p.x && player.x < p.x + p.width &&
-            player.y >= p.y && player.y < p.y + p.height
+            let world_x = chunk_base_x + p.x;
+            let world_y = chunk_base_y + p.y;
+            let in_portal = player.x >= world_x && player.x < world_x + p.width &&
+                           player.y >= world_y && player.y < world_y + p.height;
+            if in_portal {
+                debug!("Player {} is inside portal '{}'", player_id, p.id);
+            }
+            in_portal
         }).cloned()
     }
 
@@ -3599,14 +3634,31 @@ impl GameRoom {
             }
         }
 
-        // Broadcast state sync (always include NPCs even if no players)
+        // Send state sync to each player, filtering NPCs for players in instances
         let tick = *self.tick.read().await;
-        self.broadcast(ServerMessage::StateSync {
-            tick,
-            players: player_updates,
-            npcs: npc_updates,
-        })
-        .await;
+        let player_instances = self.player_instances.read().await;
+        let senders = self.player_senders.read().await;
+
+        for (player_id, sender) in senders.iter() {
+            // Players in instances should not receive world NPCs
+            let npcs_for_player = if player_instances.contains_key(player_id) {
+                // Player is in an instance - send empty NPC list (instance NPCs are sent separately)
+                Vec::new()
+            } else {
+                // Player is in overworld - send all world NPCs
+                npc_updates.clone()
+            };
+
+            let msg = ServerMessage::StateSync {
+                tick,
+                players: player_updates.clone(),
+                npcs: npcs_for_player,
+            };
+
+            if let Ok(bytes) = crate::protocol::encode_server_message(&msg) {
+                let _ = sender.try_send(bytes);
+            }
+        }
     }
 
     /// Restock all shops that have restock intervals

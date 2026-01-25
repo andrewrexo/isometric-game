@@ -2011,13 +2011,16 @@ impl InputHandler {
 
         // Interact with nearest NPC or portal (E key)
         if is_key_pressed(KeyCode::E) {
+            log::info!("E key pressed!");
             if let Some(local_id) = &state.local_player_id {
                 if let Some(player) = state.players.get(local_id) {
+                    log::info!("E pressed - checking for portal at player pos ({}, {})", player.x, player.y);
                     // First check if player is standing on a portal
                     if let Some(portal) = state.chunk_manager.get_portal_at(player.x, player.y) {
-                        log::info!("Entering portal: {}", portal.id);
+                        log::info!("Entering portal: {} -> {}", portal.id, portal.target_map);
                         commands.push(InputCommand::EnterPortal { portal_id: portal.id.clone() });
                     } else {
+                        log::info!("No portal found at player position");
                         // Find nearest NPC within interaction range (2.5 tiles)
                         const INTERACT_RANGE: f32 = 2.5;
                         let mut nearest_npc: Option<(String, f32)> = None;

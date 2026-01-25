@@ -336,6 +336,8 @@ pub enum ServerMessage {
         layers: Vec<ChunkLayerData>,
         collision: Vec<u8>,
         portals: Vec<ChunkPortalData>,
+        objects: Vec<ChunkObjectData>,
+        walls: Vec<ChunkWallData>,
     },
 }
 
@@ -1500,6 +1502,8 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             layers,
             collision,
             portals,
+            objects,
+            walls,
         } => {
             let mut map = Vec::new();
             map.push((Value::String("mapId".into()), Value::String(map_id.clone().into())));
@@ -1552,6 +1556,35 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                 })
                 .collect();
             map.push((Value::String("portals".into()), Value::Array(portal_values)));
+
+            // Encode objects (trees, rocks, decorations)
+            let object_values: Vec<Value> = objects
+                .iter()
+                .map(|o| {
+                    let mut omap = Vec::new();
+                    omap.push((Value::String("gid".into()), Value::Integer((o.gid as i64).into())));
+                    omap.push((Value::String("tileX".into()), Value::Integer((o.tile_x as i64).into())));
+                    omap.push((Value::String("tileY".into()), Value::Integer((o.tile_y as i64).into())));
+                    omap.push((Value::String("width".into()), Value::Integer((o.width as i64).into())));
+                    omap.push((Value::String("height".into()), Value::Integer((o.height as i64).into())));
+                    Value::Map(omap)
+                })
+                .collect();
+            map.push((Value::String("objects".into()), Value::Array(object_values)));
+
+            // Encode walls
+            let wall_values: Vec<Value> = walls
+                .iter()
+                .map(|w| {
+                    let mut wmap = Vec::new();
+                    wmap.push((Value::String("gid".into()), Value::Integer((w.gid as i64).into())));
+                    wmap.push((Value::String("tileX".into()), Value::Integer((w.tile_x as i64).into())));
+                    wmap.push((Value::String("tileY".into()), Value::Integer((w.tile_y as i64).into())));
+                    wmap.push((Value::String("edge".into()), Value::String(w.edge.clone().into())));
+                    Value::Map(wmap)
+                })
+                .collect();
+            map.push((Value::String("walls".into()), Value::Array(wall_values)));
 
             Value::Map(map)
         }

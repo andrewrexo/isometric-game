@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { useEditorStore } from '@/state/store';
 import { objectLoader } from '@/core/ObjectLoader';
-import type { EntitySpawn } from '@/types';
+import { interiorStorage } from '@/core/InteriorStorage';
+import type { EntitySpawn, Portal } from '@/types';
 import styles from './PropertiesPanel.module.css';
 
 export function PropertiesPanel() {
@@ -9,11 +10,17 @@ export function PropertiesPanel() {
     chunks,
     selectedEntitySpawn,
     selectedMapObject,
+    selectedPortal,
+    availableInteriors,
     setSelectedEntitySpawn,
     setSelectedMapObject,
+    setSelectedPortal,
     updateEntity,
     removeEntity,
     removeMapObject,
+    updatePortal,
+    removePortal,
+    jumpToPortalTarget,
   } = useEditorStore();
 
   // Get the actual entity spawn from the selection
@@ -40,8 +47,21 @@ export function PropertiesPanel() {
     return { object: obj, chunkCoord: selectedMapObject.chunkCoord };
   };
 
+  // Get the actual portal from the selection
+  const getSelectedPortalData = () => {
+    if (!selectedPortal) return null;
+    const chunk = chunks.get(
+      `${selectedPortal.chunkCoord.cx},${selectedPortal.chunkCoord.cy}`
+    );
+    if (!chunk || !chunk.portals) return null;
+    const portal = chunk.portals.find((p) => p.id === selectedPortal.portalId);
+    if (!portal) return null;
+    return { portal, chunkCoord: selectedPortal.chunkCoord };
+  };
+
   const selectedEntity = getSelectedEntity();
   const selectedObject = getSelectedObject();
+  const selectedPortalData = getSelectedPortalData();
 
   // Delete key handler
   useEffect(() => {
@@ -59,13 +79,147 @@ export function PropertiesPanel() {
           e.preventDefault();
           removeMapObject(selectedObject.chunkCoord, selectedObject.object.id);
           setSelectedMapObject(null);
+        } else if (selectedPortalData) {
+          e.preventDefault();
+          removePortal(selectedPortalData.chunkCoord, selectedPortalData.portal.id);
+          setSelectedPortal(null);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedEntity, selectedObject, removeEntity, removeMapObject, setSelectedEntitySpawn, setSelectedMapObject]);
+  }, [selectedEntity, selectedObject, selectedPortalData, removeEntity, removeMapObject, removePortal, setSelectedEntitySpawn, setSelectedMapObject, setSelectedPortal]);
+
+  // Show portal properties
+  if (selectedPortalData) {
+    const { portal, chunkCoord } = selectedPortalData;
+
+    const handlePortalChange = (field: keyof Portal, value: string | number) => {
+      updatePortal(chunkCoord, portal.id, { [field]: value });
+    };
+
+    const handleDeletePortal = () => {
+      removePortal(chunkCoord, portal.id);
+      setSelectedPortal(null);
+    };
+
+    const handleJumpToTarget = () => {
+      if (portal.targetMap) {
+        jumpToPortalTarget(portal);
+      }
+    };
+
+    // Get spawn points for the selected target map
+    const targetSpawnPoints = portal.targetMap
+      ? interiorStorage.getSpawnPoints(portal.targetMap)
+      : [];
+
+    // Calculate world position
+    const worldX = chunkCoord.cx * 32 + portal.x;
+    const worldY = chunkCoord.cy * 32 + portal.y;
+
+    return (
+      <div className={styles.panel}>
+        <div className={styles.title}>Portal Properties</div>
+        <div className={styles.content}>
+          <div className={styles.field}>
+            <label className={styles.label}>Target Map</label>
+            {availableInteriors.length > 0 ? (
+              <select
+                className={styles.select}
+                value={portal.targetMap}
+                onChange={(e) => handlePortalChange('targetMap', e.target.value)}
+              >
+                <option value="">Select interior...</option>
+                {availableInteriors.map((id) => (
+                  <option key={id} value={id}>{id}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                className={styles.input}
+                value={portal.targetMap}
+                placeholder="e.g., test_house"
+                onChange={(e) => handlePortalChange('targetMap', e.target.value)}
+              />
+            )}
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Target Spawn</label>
+            {targetSpawnPoints.length > 0 ? (
+              <select
+                className={styles.select}
+                value={portal.targetSpawn}
+                onChange={(e) => handlePortalChange('targetSpawn', e.target.value)}
+              >
+                <option value="">Select spawn point...</option>
+                {targetSpawnPoints.map((sp) => (
+                  <option key={sp.name} value={sp.name}>{sp.name}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                className={styles.input}
+                value={portal.targetSpawn}
+                placeholder="e.g., entrance"
+                onChange={(e) => handlePortalChange('targetSpawn', e.target.value)}
+              />
+            )}
+          </div>
+
+          {portal.targetMap && (
+            <button
+              className={styles.jumpButton}
+              onClick={handleJumpToTarget}
+            >
+              Jump To Target
+            </button>
+          )}
+
+          <div className={styles.field}>
+            <label className={styles.label}>Width (tiles)</label>
+            <input
+              type="number"
+              className={styles.input}
+              value={portal.width}
+              min={1}
+              onChange={(e) => handlePortalChange('width', Math.max(1, parseInt(e.target.value) || 1))}
+            />
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Height (tiles)</label>
+            <input
+              type="number"
+              className={styles.input}
+              value={portal.height}
+              min={1}
+              onChange={(e) => handlePortalChange('height', Math.max(1, parseInt(e.target.value) || 1))}
+            />
+          </div>
+
+          <div className={styles.info}>
+            Position: {worldX}, {worldY}
+            <br />
+            Chunk: {chunkCoord.cx}, {chunkCoord.cy}
+            <br />
+            Local: {portal.x}, {portal.y}
+          </div>
+
+          <div className={styles.actions}>
+            <button className={styles.deleteButton} onClick={handleDeletePortal}>
+              Delete Portal
+            </button>
+          </div>
+          <div className={styles.hint}>Press Delete to remove</div>
+        </div>
+      </div>
+    );
+  }
 
   // Show entity properties
   if (selectedEntity) {

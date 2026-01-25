@@ -23,3 +23,27 @@
   font-size: 12px;
   pointer-events: none;
 }
+
+.modeIndicator {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(78, 205, 196, 0.9);
+  color: #1a1a2e;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-family: sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.interiorName {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 2px;
+}

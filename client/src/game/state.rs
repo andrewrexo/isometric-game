@@ -578,6 +578,8 @@ pub struct GameState {
 
     /// Current interior map ID if in an interior (None = overworld)
     pub current_interior: Option<String>,
+    /// Current instance ID if in an instance
+    pub current_instance: Option<String>,
 }
 
 impl GameState {
@@ -617,6 +619,7 @@ impl GameState {
             frame_timings: FrameTimings::default(),
             map_transition: MapTransition::default(),
             current_interior: None,
+            current_instance: None,
         }
     }
 

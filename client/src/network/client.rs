@@ -355,7 +355,7 @@ impl NetworkClient {
     }
 
     fn handle_binary_message(&self, data: &[u8], state: &mut GameState) {
-        log::debug!("Received {} bytes: {:?}", data.len(), &data[..data.len().min(50)]);
+        log::trace!("Received {} bytes: {:?}", data.len(), &data[..data.len().min(50)]);
         match protocol::decode_message(data) {
             Ok(decoded) => {
                 match decoded {
@@ -1666,9 +1666,48 @@ impl NetworkClient {
                         }
                     }
 
+                    // Parse objects (trees, rocks, decorations)
+                    let mut objects: Vec<MapObject> = Vec::new();
+                    if let Some(objects_arr) = extract_array(value, "objects") {
+                        for o in objects_arr {
+                            objects.push(MapObject {
+                                gid: extract_u32(o, "gid").unwrap_or(0),
+                                tile_x: extract_i32(o, "tileX").unwrap_or(0),
+                                tile_y: extract_i32(o, "tileY").unwrap_or(0),
+                                width: extract_u32(o, "width").unwrap_or(32),
+                                height: extract_u32(o, "height").unwrap_or(32),
+                            });
+                        }
+                    }
+
+                    // Parse walls
+                    let mut walls: Vec<Wall> = Vec::new();
+                    if let Some(walls_arr) = extract_array(value, "walls") {
+                        for w in walls_arr {
+                            let edge_str = extract_string(w, "edge").unwrap_or_default();
+                            let edge = match edge_str.as_str() {
+                                "right" | "Right" => WallEdge::Right,
+                                _ => WallEdge::Down,
+                            };
+                            walls.push(Wall {
+                                gid: extract_u32(w, "gid").unwrap_or(0),
+                                tile_x: extract_i32(w, "tileX").unwrap_or(0),
+                                tile_y: extract_i32(w, "tileY").unwrap_or(0),
+                                edge,
+                            });
+                        }
+                    }
+
+                    log::info!("Interior data: {} objects, {} walls, {} portals", objects.len(), walls.len(), portals.len());
+
+                    // Clear world data when entering interior
+                    state.npcs.clear();
+                    state.ground_items.clear();
+
                     // Load the interior
-                    state.chunk_manager.load_interior(width, height, layers, &collision, portals);
-                    state.current_interior = Some(map_id);
+                    state.chunk_manager.load_interior(width, height, layers, &collision, portals, objects, walls);
+                    state.current_interior = Some(map_id.clone());
+                    state.current_instance = Some(instance_id);
 
                     // Update player position to spawn point
                     if let Some(local_id) = &state.local_player_id {
@@ -1679,8 +1718,17 @@ impl NetworkClient {
                     }
 
                     // Complete the transition (fade in)
-                    if state.map_transition.state == crate::game::state::TransitionState::Loading {
-                        state.map_transition.state = crate::game::state::TransitionState::FadingIn;
+                    // Handle both Loading (normal case) and FadingOut (data arrived quickly)
+                    match state.map_transition.state {
+                        crate::game::state::TransitionState::Loading => {
+                            state.map_transition.state = crate::game::state::TransitionState::FadingIn;
+                        }
+                        crate::game::state::TransitionState::FadingOut => {
+                            // Data arrived before fade out completed - skip to fade in
+                            state.map_transition.progress = 1.0;
+                            state.map_transition.state = crate::game::state::TransitionState::FadingIn;
+                        }
+                        _ => {}
                     }
                 }
             }
