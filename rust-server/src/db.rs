@@ -410,8 +410,17 @@ impl Database {
             }
         }
 
+        // Starting equipment for new characters (Tier 0 Cursed Lands gear)
+        let starting_weapon = "worn_pitchfork";
+        let starting_body = "torn_clothes";
+        let starting_feet = "worn_sandals";
+        let starting_gold = 25;
+
         let result = sqlx::query(
-            "INSERT INTO characters (account_id, name, gender, skin, hair_style, hair_color) VALUES (?, ?, ?, ?, ?, ?)",
+            r#"INSERT INTO characters
+               (account_id, name, gender, skin, hair_style, hair_color,
+                equipped_weapon, equipped_body, equipped_feet, gold)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
         )
         .bind(account_id)
         .bind(name)
@@ -419,6 +428,10 @@ impl Database {
         .bind(skin)
         .bind(hair_style)
         .bind(hair_color)
+        .bind(starting_weapon)
+        .bind(starting_body)
+        .bind(starting_feet)
+        .bind(starting_gold)
         .execute(&self.pool)
         .await
         .map_err(|e| {
@@ -430,8 +443,8 @@ impl Database {
         })?;
 
         let character_id = result.last_insert_rowid();
-        tracing::info!("Created character: {} (id: {}) for account {} as {} {} hair:{:?}/{:?}",
-            name, character_id, account_id, gender, skin, hair_style, hair_color);
+        tracing::info!("Created character: {} (id: {}) for account {} with starting gear (pitchfork, clothes, sandals, {}g)",
+            name, character_id, account_id, starting_gold);
 
         // Fetch and return the created character
         self.get_character(character_id).await
