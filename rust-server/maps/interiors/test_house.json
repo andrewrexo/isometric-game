@@ -1,0 +1,22 @@
+{
+  "id": "test_house",
+  "name": "Test House",
+  "instance_type": "public",
+  "size": { "width": 10, "height": 8 },
+  "spawn_points": {
+    "entrance": { "x": 5.0, "y": 6.5 }
+  },
+  "portals": [
+    {
+      "id": "exit_door",
+      "x": 4,
+      "y": 7,
+      "width": 2,
+      "height": 1,
+      "target_map": "world",
+      "target_x": 16.5,
+      "target_y": 17.5,
+      "target_spawn": null
+    }
+  ]
+}
