@@ -3451,12 +3451,22 @@ impl Renderer {
             self.render_item_tooltip(state);
             self.render_skill_tooltip(state, hovered);
 
-            // XP globe tooltip (recalculate position to match render_ui)
-            if state.get_local_player().is_some() {
+            // XP globe tooltip (calculate position to match render_ui exactly)
+            if let Some(player) = state.get_local_player() {
                 let margin = 12.0;
                 let base_y = 25.0;
+                let padding = 6.0;
+                let font_size = 16.0;
                 let tag_height = 22.0;
-                let bar_width = 120.0_f32.max(140.0); // Approximate, matches render_ui
+
+                // Calculate bar_width based on player name (same as render_ui)
+                let name = &player.name;
+                let level_text = format!(" Lv.{}", player.skills.total_level());
+                let name_w = self.measure_text_sharp(name, font_size).width;
+                let level_w = self.measure_text_sharp(&level_text, font_size).width;
+                let total_text_w = name_w + level_w;
+                let bar_width = (total_text_w + padding * 2.0).max(120.0);
+
                 let bar_x = (screen_width() - bar_width - margin).floor();
                 let globe_stats_y = base_y + tag_height / 2.0 + 8.0;
                 self.render_xp_globe_tooltip(&state.xp_globes, bar_x, globe_stats_y);

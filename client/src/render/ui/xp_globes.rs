@@ -110,16 +110,17 @@ impl XpGlobesManager {
         let (mouse_x, mouse_y) = mouse_position();
 
         // Check each globe for hover and reset timer if hovered
+        // Use generous hit detection (square area) since position calc may be approximate
         let mut x = stats_left_x - STATS_PADDING - GLOBE_SPACING - GLOBE_SIZE;
         for globe in self.globes.iter_mut().rev() {
             let center_x = x + GLOBE_SIZE / 2.0;
             let center_y = stats_center_y;
-            let radius = GLOBE_SIZE / 2.0;
+            let half_size = GLOBE_SIZE / 2.0 + 4.0; // Slightly larger hit area
 
-            // Check if mouse is within this globe
-            let dx = mouse_x - center_x;
-            let dy = mouse_y - center_y;
-            if dx * dx + dy * dy <= radius * radius {
+            // Check if mouse is within this globe's area (square hit zone)
+            let dx = (mouse_x - center_x).abs();
+            let dy = (mouse_y - center_y).abs();
+            if dx <= half_size && dy <= half_size {
                 // Mouse is hovering - reset timer to keep it visible
                 globe.last_updated = current_time;
             }
