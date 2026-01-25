@@ -9,6 +9,7 @@ use super::pathfinding::PathState;
 use super::shop::{ShopData, ShopSubTab};
 use crate::render::animation::AnimationState;
 use crate::ui::UiElementId;
+use crate::render::AreaBanner;
 
 /// State of a map transition (fade effect)
 #[derive(Debug, Clone, PartialEq)]
@@ -584,6 +585,8 @@ pub struct GameState {
     pub pending_portal_id: Option<String>,
     /// Last tile position checked for portal (to avoid triggering on spawn)
     pub last_portal_check_pos: Option<(i32, i32)>,
+    /// Area banner for displaying location names during transitions
+    pub area_banner: AreaBanner,
 }
 
 impl GameState {
@@ -626,6 +629,7 @@ impl GameState {
             current_instance: None,
             pending_portal_id: None,
             last_portal_check_pos: None,
+            area_banner: AreaBanner::default(),
         }
     }
 
@@ -720,6 +724,9 @@ impl GameState {
 
         // Clean up old announcements (older than 8 seconds)
         self.ui_state.announcements.retain(|ann| current_time - ann.time < 8.0);
+
+        // Update area banner timer
+        self.area_banner.update(delta);
     }
 
     pub fn get_local_player(&self) -> Option<&Player> {
