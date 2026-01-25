@@ -3,7 +3,7 @@ display_name = "Blacksmith's Wares"
 
 # Tier 0 - Starting gear replacements
 [[stock]]
-item_id = "worn_pitchfork"
+item_id = "chain"
 max_quantity = 5
 restock_rate = 1
 

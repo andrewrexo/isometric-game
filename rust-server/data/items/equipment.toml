@@ -462,16 +462,16 @@ defence_bonus = 0
 [chain]
 display_name = "Chain"
 sprite = "chain"
-description = "A heavy chain that can be swung as a weapon."
+description = "A heavy chain that can be swung as a weapon. Not elegant, but effective."
 category = "equipment"
 max_stack = 1
-base_price = 80
+base_price = 10
 sellable = true
 [chain.equipment]
 slot_type = "weapon"
-attack_level_required = 5
-attack_bonus = 8
-strength_bonus = 12
+attack_level_required = 1
+attack_bonus = 2
+strength_bonus = 3
 defence_bonus = 0
 
 [rapier]

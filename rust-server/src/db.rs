@@ -411,7 +411,7 @@ impl Database {
         }
 
         // Starting equipment for new characters (Tier 0 Cursed Lands gear)
-        let starting_weapon = "worn_pitchfork";
+        let starting_weapon = "chain";
         let starting_body = "torn_clothes";
         let starting_feet = "worn_sandals";
         let starting_gold = 25;
