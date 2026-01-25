@@ -86,6 +86,8 @@ struct AppState {
     crafting_registry: Arc<CraftingRegistry>,
     interior_registry: Arc<InteriorRegistry>,
     instance_manager: Arc<InstanceManager>,
+    /// Tracks which instance each player is currently in (None = overworld)
+    player_instances: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl AppState {
@@ -172,6 +174,7 @@ impl AppState {
             crafting_registry: Arc::new(crafting_registry),
             interior_registry,
             instance_manager,
+            player_instances: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -1265,6 +1268,22 @@ async fn handle_socket(
         warn!("Skipping save for {} on disconnect: invalid auth", character_name);
     }
 
+    // Clean up instance tracking when player disconnects
+    {
+        use crate::interior::InstanceType;
+
+        if let Some(_instance_id) = state.player_instances.write().await.remove(&player_id) {
+            if let Some(instance) = state.instance_manager.find_player_instance(&player_id).await {
+                let remaining = instance.remove_player(&player_id).await;
+                if remaining == 0 && instance.instance_type == InstanceType::Private {
+                    if let Some(owner_id) = &instance.owner_id {
+                        state.instance_manager.remove_private(owner_id, &instance.map_id);
+                    }
+                }
+            }
+        }
+    }
+
     // SECURITY: Unregister player sender before cleanup
     room.unregister_player_sender(&player_id).await;
 
@@ -1284,6 +1303,8 @@ async fn handle_enter_portal(
     player_id: &str,
     portal_id: &str,
 ) {
+    use crate::interior::InstanceType;
+
     // Find portal at player position
     let portal = match room.find_portal_at_player(player_id).await {
         Some(p) if p.id == portal_id => p,
@@ -1311,9 +1332,28 @@ async fn handle_enter_portal(
         }
     };
 
+    // Get or create instance based on type
+    let instance = match interior.instance_type {
+        InstanceType::Public => {
+            state.instance_manager.get_or_create_public(&interior.id)
+        }
+        InstanceType::Private => {
+            state.instance_manager.get_or_create_private(&interior.id, player_id)
+        }
+    };
+
+    // Track player's instance
+    {
+        let mut player_instances = state.player_instances.write().await;
+        player_instances.insert(player_id.to_string(), instance.id.clone());
+    }
+
+    // Add player to instance
+    instance.add_player(player_id).await;
+
     info!(
-        "Player {} entering portal {} -> {} at ({}, {})",
-        player_id, portal_id, interior.id, spawn.x, spawn.y
+        "Player {} entered instance {} (map: {}) at ({}, {})",
+        player_id, instance.id, interior.id, spawn.x, spawn.y
     );
 
     // Send transition message to client
@@ -1324,7 +1364,7 @@ async fn handle_enter_portal(
             map_id: interior.id.clone(),
             spawn_x: spawn.x,
             spawn_y: spawn.y,
-            instance_id: format!("pub_{}", interior.id),
+            instance_id: instance.id.clone(),
         },
     ).await;
 }
