@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
-use crate::chunk::{world_to_local, Chunk, ChunkCoord, ChunkLayer, ChunkLayerType, EntitySpawn, MapObject, Wall, WallEdge, CHUNK_SIZE};
+use crate::chunk::{world_to_local, Chunk, ChunkCoord, ChunkLayer, ChunkLayerType, EntitySpawn, MapObject, Portal, Wall, WallEdge, CHUNK_SIZE};
 
 /// World manager that handles loading and caching chunks
 pub struct World {
@@ -237,6 +237,13 @@ impl World {
                 }
             }
         }
+
+        // Parse portals
+        let portals: Vec<Portal> = value
+            .get("portals")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+        chunk.portals = portals;
 
         Ok(chunk)
     }

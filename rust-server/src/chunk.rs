@@ -58,6 +58,18 @@ pub struct Wall {
     pub edge: WallEdge,
 }
 
+/// A portal that teleports players to another map
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Portal {
+    pub id: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub target_map: String,
+    pub target_spawn: String,
+}
+
 /// Chunk coordinates in the world grid
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChunkCoord {
@@ -176,6 +188,8 @@ pub struct Chunk {
     pub objects: Vec<MapObject>,
     /// Walls placed on tile edges
     pub walls: Vec<Wall>,
+    /// Portals that teleport players to other maps
+    pub portals: Vec<Portal>,
 }
 
 impl Chunk {
@@ -192,6 +206,7 @@ impl Chunk {
             player_spawns: Vec::new(),
             objects: Vec::new(),
             walls: Vec::new(),
+            portals: Vec::new(),
         }
     }
 

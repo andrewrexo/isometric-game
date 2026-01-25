@@ -3651,7 +3651,7 @@ impl GameRoom {
 
     /// Handle chunk request from client
     pub async fn handle_chunk_request(&self, chunk_x: i32, chunk_y: i32) -> Option<ServerMessage> {
-        use crate::protocol::{ChunkLayerData, ChunkObjectData, ChunkWallData};
+        use crate::protocol::{ChunkLayerData, ChunkObjectData, ChunkWallData, ChunkPortalData};
         use crate::chunk::WallEdge;
 
         let coord = ChunkCoord::new(chunk_x, chunk_y);
@@ -3675,6 +3675,16 @@ impl GameRoom {
                 }
             }).collect();
 
+            let portals: Vec<ChunkPortalData> = chunk.portals.iter().map(|p| ChunkPortalData {
+                id: p.id.clone(),
+                x: p.x,
+                y: p.y,
+                width: p.width,
+                height: p.height,
+                target_map: p.target_map.clone(),
+                target_spawn: p.target_spawn.clone(),
+            }).collect();
+
             Some(ServerMessage::ChunkData {
                 chunk_x,
                 chunk_y,
@@ -3690,6 +3700,7 @@ impl GameRoom {
                         WallEdge::Right => "right".to_string(),
                     },
                 }).collect(),
+                portals,
             })
         } else {
             Some(ServerMessage::ChunkNotFound { chunk_x, chunk_y })

@@ -238,6 +238,7 @@ pub enum ServerMessage {
         collision: Vec<u8>, // Packed collision bits
         objects: Vec<ChunkObjectData>, // Map objects (trees, rocks, etc.)
         walls: Vec<ChunkWallData>,  // Edge-aligned walls
+        portals: Vec<ChunkPortalData>, // Portals to other maps
     },
     ChunkNotFound {
         chunk_x: i32,
@@ -338,6 +339,18 @@ pub struct ChunkWallData {
     pub tile_x: i32,
     pub tile_y: i32,
     pub edge: String, // "down" or "right"
+}
+
+/// Portal data for chunk transmission
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChunkPortalData {
+    pub id: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub target_map: String,
+    pub target_spawn: String,
 }
 
 /// Entity definition for client-side registry
@@ -1025,6 +1038,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             collision,
             objects,
             walls,
+            portals,
         } => {
             let mut map = Vec::new();
             map.push((
@@ -1121,6 +1135,44 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                 })
                 .collect();
             map.push((Value::String("walls".into()), Value::Array(wall_values)));
+
+            // Encode portals
+            let portal_values: Vec<Value> = portals
+                .iter()
+                .map(|p| {
+                    let mut pmap = Vec::new();
+                    pmap.push((
+                        Value::String("id".into()),
+                        Value::String(p.id.clone().into()),
+                    ));
+                    pmap.push((
+                        Value::String("x".into()),
+                        Value::Integer((p.x as i64).into()),
+                    ));
+                    pmap.push((
+                        Value::String("y".into()),
+                        Value::Integer((p.y as i64).into()),
+                    ));
+                    pmap.push((
+                        Value::String("width".into()),
+                        Value::Integer((p.width as i64).into()),
+                    ));
+                    pmap.push((
+                        Value::String("height".into()),
+                        Value::Integer((p.height as i64).into()),
+                    ));
+                    pmap.push((
+                        Value::String("targetMap".into()),
+                        Value::String(p.target_map.clone().into()),
+                    ));
+                    pmap.push((
+                        Value::String("targetSpawn".into()),
+                        Value::String(p.target_spawn.clone().into()),
+                    ));
+                    Value::Map(pmap)
+                })
+                .collect();
+            map.push((Value::String("portals".into()), Value::Array(portal_values)));
 
             Value::Map(map)
         }
