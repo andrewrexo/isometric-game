@@ -730,6 +730,9 @@ impl GameState {
 
         // Update area banner timer
         self.area_banner.update(delta);
+
+        // Update XP globes (fade timers)
+        self.xp_globes.update();
     }
 
     pub fn get_local_player(&self) -> Option<&Player> {

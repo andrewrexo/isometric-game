@@ -3278,6 +3278,10 @@ impl Renderer {
             let hp_text = format!("{}/{}", player.hp, player.max_hp);
             let hp_text_w = self.measure_text_sharp(&hp_text, font_size).width;
             self.draw_text_sharp(&hp_text, (hp_bar_x + (bar_width - hp_text_w) / 2.0).floor(), (hp_bar_y + 14.0).floor(), font_size, TEXT_NORMAL);
+
+            // XP Globes (to the left of player stats)
+            let globe_stats_y = tag_y + tag_height / 2.0; // Vertically centered with name tag
+            self.render_xp_globes(&state.xp_globes, bar_x, globe_stats_y);
         }
 
         // Note: Interactive UI (inventory, crafting, dialogue, quick slots) is rendered
