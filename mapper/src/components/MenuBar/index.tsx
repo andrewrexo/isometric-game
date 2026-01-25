@@ -373,6 +373,22 @@ export function MenuBar() {
     }
   };
 
+  const handleDeployToGameServer = async () => {
+    try {
+      const response = await fetch('/api/deploy', { method: 'POST' });
+      const result = await response.json();
+
+      if (result.success) {
+        alert(`Deployed to game server!\n\n${result.chunksCopied} chunks\n${result.interiorsCopied} interiors\n\nRestart the game server to load the changes.`);
+      } else {
+        alert(`Deploy failed: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('Deploy failed:', err);
+      alert(`Deploy failed: ${(err as Error).message}`);
+    }
+  };
+
   // Interior handlers
   const handleNewInterior = () => {
     setNewInteriorId('');
@@ -456,6 +472,9 @@ export function MenuBar() {
                 </button>
                 <button className={styles.dropdownItem} onClick={handleExportToServer}>
                   Export to Directory...
+                </button>
+                <button className={styles.dropdownItem} onClick={handleDeployToGameServer}>
+                  Send to Game Server
                 </button>
                 <div className={styles.separator} />
                 <button className={styles.dropdownItem} onClick={handleExportMap}>

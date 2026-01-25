@@ -67,6 +67,8 @@ export function Canvas() {
     removeSpawnPoint,
     addExitPortal,
     removeExitPortal,
+    findExitPortalAt,
+    setSelectedExitPortal,
   } = useEditorStore();
 
   // Setup canvas and renderer
@@ -327,13 +329,14 @@ export function Canvas() {
           }
           case Tool.ExitPortal: {
             // Check if exit portal exists at this location
-            const existingExit = currentInterior.exitPortals.find(
-              (ep) => ep.x === worldTile.wx && ep.y === worldTile.wy
-            );
+            const existingExit = findExitPortalAt(worldTile.wx, worldTile.wy);
             if (existingExit) {
-              removeExitPortal(existingExit.id);
+              // Select the existing exit portal
+              setSelectedExitPortal({ portalId: existingExit.id });
             } else {
-              addExitPortal(worldTile.wx, worldTile.wy);
+              // Add new exit portal and select it
+              const newPortal = addExitPortal(worldTile.wx, worldTile.wy);
+              setSelectedExitPortal({ portalId: newPortal.id });
             }
             break;
           }
@@ -546,6 +549,8 @@ export function Canvas() {
       removeSpawnPoint,
       addExitPortal,
       removeExitPortal,
+      findExitPortalAt,
+      setSelectedExitPortal,
     ]
   );
 

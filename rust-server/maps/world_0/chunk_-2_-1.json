@@ -3088,25 +3088,33 @@
   "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   "entities": [
     {
+      "id": "entity_1769298626596_tyqledwk3",
       "entityId": "springs",
+      "name": "springs",
       "x": 10,
       "y": 2,
       "level": 1
     },
     {
+      "id": "entity_1769298626928_19mkxjbwe",
       "entityId": "springs",
+      "name": "springs",
       "x": 2,
       "y": 14,
       "level": 1
     },
     {
+      "id": "entity_1769298627311_nfm00qg3k",
       "entityId": "springs",
+      "name": "springs",
       "x": 20,
       "y": 21,
       "level": 1
     },
     {
+      "id": "entity_1769298627630_vj74m1eug",
       "entityId": "springs",
+      "name": "springs",
       "x": 4,
       "y": 23,
       "level": 1

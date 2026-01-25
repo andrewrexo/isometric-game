@@ -25,6 +25,7 @@ pub fn world_to_screen(world_x: f32, world_y: f32, camera: &Camera) -> (f32, f32
 }
 
 /// Convert world to screen WITHOUT pixel snapping (for calculations)
+/// Note: Still floors screen center to match world_to_screen and prevent jitter
 pub fn world_to_screen_exact(world_x: f32, world_y: f32, camera: &Camera) -> (f32, f32) {
     let iso_x = (world_x - world_y) * (TILE_WIDTH / 2.0);
     let iso_y = (world_x + world_y) * (TILE_HEIGHT / 2.0);
@@ -32,8 +33,8 @@ pub fn world_to_screen_exact(world_x: f32, world_y: f32, camera: &Camera) -> (f3
     let cam_iso_x = (camera.x - camera.y) * (TILE_WIDTH / 2.0);
     let cam_iso_y = (camera.x + camera.y) * (TILE_HEIGHT / 2.0);
 
-    let screen_x = (iso_x - cam_iso_x) * camera.zoom + screen_width() / 2.0;
-    let screen_y = (iso_y - cam_iso_y) * camera.zoom + screen_height() / 2.0;
+    let screen_x = (iso_x - cam_iso_x) * camera.zoom + (screen_width() / 2.0).floor();
+    let screen_y = (iso_y - cam_iso_y) * camera.zoom + (screen_height() / 2.0).floor();
 
     (screen_x, screen_y)
 }

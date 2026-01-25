@@ -3085,16 +3085,20 @@
       0
     ]
   },
-  "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAEAAA=",
+  "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAHAAA=",
   "entities": [
     {
+      "id": "entity_1769298606749_u5ia6g64j",
       "entityId": "pig",
+      "name": "pig",
       "x": 16,
       "y": 26,
       "level": 1
     },
     {
+      "id": "entity_1769298608214_hhg048br5",
       "entityId": "pig",
+      "name": "pig",
       "x": 5,
       "y": 14,
       "level": 1
@@ -3103,126 +3107,147 @@
   "mapObjects": [],
   "walls": [
     {
+      "id": "wall_1769295763133_beo9czh2n",
       "gid": 150,
       "x": 10,
       "y": 30,
       "edge": "right"
     },
     {
+      "id": "wall_1769295773594_va39bp0d9",
       "gid": 149,
       "x": 10,
       "y": 31,
       "edge": "right"
     },
     {
+      "id": "wall_1769296228434_p9bbnz5ph",
       "gid": 358,
       "x": 14,
       "y": 18,
       "edge": "down"
     },
     {
+      "id": "wall_1769296229552_sb8zxsxpi",
       "gid": 358,
       "x": 15,
       "y": 18,
       "edge": "down"
     },
     {
+      "id": "wall_1769296229784_q86f9m3ck",
       "gid": 358,
       "x": 16,
       "y": 18,
       "edge": "down"
     },
     {
+      "id": "wall_1769296230002_gutkslqpk",
       "gid": 358,
       "x": 17,
       "y": 18,
       "edge": "down"
     },
     {
+      "id": "wall_1769296249062_53lmzevon",
       "gid": 359,
       "x": 17,
       "y": 18,
       "edge": "right"
     },
     {
+      "id": "wall_1769296251133_rkbn8bow9",
       "gid": 359,
       "x": 17,
       "y": 17,
       "edge": "right"
     },
     {
+      "id": "wall_1769296251366_l31ufv5h5",
       "gid": 359,
       "x": 17,
       "y": 16,
       "edge": "right"
     },
     {
+      "id": "wall_1769296251640_7fsjkhwsy",
       "gid": 359,
       "x": 17,
       "y": 15,
       "edge": "right"
     },
     {
+      "id": "wall_1769296251921_yc153x1je",
       "gid": 359,
       "x": 17,
       "y": 14,
       "edge": "right"
     },
     {
+      "id": "wall_1769296256457_124969xip",
       "gid": 359,
       "x": 13,
       "y": 18,
       "edge": "right"
     },
     {
+      "id": "wall_1769296256844_1881v69hh",
       "gid": 359,
       "x": 13,
       "y": 17,
       "edge": "right"
     },
     {
+      "id": "wall_1769296257727_mibdqn32v",
       "gid": 359,
       "x": 13,
       "y": 15,
       "edge": "right"
     },
     {
+      "id": "wall_1769296258000_h6jo4fbjk",
       "gid": 359,
       "x": 13,
       "y": 16,
       "edge": "right"
     },
     {
+      "id": "wall_1769296259040_uoyx5mo0e",
       "gid": 359,
       "x": 13,
       "y": 13,
       "edge": "right"
     },
     {
+      "id": "wall_1769296259309_52czorw9i",
       "gid": 359,
       "x": 13,
       "y": 14,
       "edge": "right"
     },
     {
+      "id": "wall_1769296264299_r8xsewxjv",
       "gid": 358,
       "x": 14,
       "y": 12,
       "edge": "down"
     },
     {
+      "id": "wall_1769296281972_4k6ijklli",
       "gid": 358,
       "x": 15,
       "y": 12,
       "edge": "down"
     },
     {
+      "id": "wall_1769296282961_jm4w2006m",
       "gid": 358,
       "x": 16,
       "y": 12,
       "edge": "down"
     },
     {
+      "id": "wall_1769296283277_7gizzc6fm",
       "gid": 358,
       "x": 17,
       "y": 12,

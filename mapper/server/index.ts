@@ -20,6 +20,11 @@ const DATA_DIR = path.join(mapperRoot, 'mapper-data');
 const CHUNKS_DIR = path.join(DATA_DIR, 'chunks');
 const INTERIORS_DIR = path.join(DATA_DIR, 'interiors');
 
+// Game server maps directory (for deploy)
+const GAME_SERVER_DIR = path.join(mapperRoot, '..', 'rust-server', 'maps');
+const GAME_CHUNKS_DIR = path.join(GAME_SERVER_DIR, 'world_0');
+const GAME_INTERIORS_DIR = path.join(GAME_SERVER_DIR, 'interiors');
+
 // Ensure data directories exist
 async function ensureDataDirs() {
   await fs.mkdir(CHUNKS_DIR, { recursive: true });
@@ -280,6 +285,111 @@ app.post('/api/map/import', async (req, res) => {
   } catch (err) {
     console.error('Error importing map:', err);
     res.status(500).json({ error: 'Failed to import map' });
+  }
+});
+
+// --- Deploy to Game Server ---
+
+// Convert collision array to base64-encoded bitset
+function collisionToBase64(collision: number[], size: number): string {
+  const byteLength = Math.ceil(size / 8);
+  const bytes = new Uint8Array(byteLength);
+
+  for (let i = 0; i < collision.length && i < byteLength; i++) {
+    bytes[i] = collision[i];
+  }
+
+  // Convert to base64
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return Buffer.from(binary, 'binary').toString('base64');
+}
+
+// Convert mapper chunk format to game server format
+function convertChunkToGameFormat(mapperChunk: Record<string, unknown>): Record<string, unknown> {
+  const width = mapperChunk.width as number;
+  const height = mapperChunk.height as number;
+  const size = width; // Assuming square chunks
+
+  // Convert collision array to base64
+  const collisionArray = mapperChunk.collision as number[] || [];
+  const collisionBase64 = collisionToBase64(collisionArray, size * size);
+
+  return {
+    version: 2,
+    coord: mapperChunk.coord,
+    size,
+    layers: mapperChunk.layers,
+    collision: collisionBase64,
+    entities: mapperChunk.entities || [],
+    mapObjects: mapperChunk.mapObjects || [],
+    walls: mapperChunk.walls || [],
+    portals: mapperChunk.portals || [],
+  };
+}
+
+// Deploy maps to game server directory
+app.post('/api/deploy', async (_req, res) => {
+  try {
+    // Ensure game server directories exist
+    await fs.mkdir(GAME_CHUNKS_DIR, { recursive: true });
+    await fs.mkdir(GAME_INTERIORS_DIR, { recursive: true });
+
+    let chunksCopied = 0;
+    let interiorsCopied = 0;
+
+    // Convert and copy chunks (mapper format -> game server format)
+    try {
+      const chunkFiles = await fs.readdir(CHUNKS_DIR);
+      for (const file of chunkFiles) {
+        if (!file.endsWith('.json')) continue;
+        const srcPath = path.join(CHUNKS_DIR, file);
+
+        // Read and convert chunk
+        const data = await fs.readFile(srcPath, 'utf-8');
+        const mapperChunk = JSON.parse(data);
+        const gameChunk = convertChunkToGameFormat(mapperChunk);
+
+        // Write to game server with chunk_ prefix
+        const destFilename = `chunk_${file}`;
+        const destPath = path.join(GAME_CHUNKS_DIR, destFilename);
+        await fs.writeFile(destPath, JSON.stringify(gameChunk, null, 2));
+        chunksCopied++;
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw err;
+      }
+    }
+
+    // Copy interiors (same filename format - already in correct format)
+    try {
+      const interiorFiles = await fs.readdir(INTERIORS_DIR);
+      for (const file of interiorFiles) {
+        if (!file.endsWith('.json')) continue;
+        const srcPath = path.join(INTERIORS_DIR, file);
+        const destPath = path.join(GAME_INTERIORS_DIR, file);
+        await fs.copyFile(srcPath, destPath);
+        interiorsCopied++;
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw err;
+      }
+    }
+
+    console.log(`Deployed ${chunksCopied} chunks and ${interiorsCopied} interiors to game server`);
+    res.json({
+      success: true,
+      chunksCopied,
+      interiorsCopied,
+      destination: GAME_SERVER_DIR
+    });
+  } catch (err) {
+    console.error('Deploy failed:', err);
+    res.status(500).json({ error: `Deploy failed: ${(err as Error).message}` });
   }
 });
 

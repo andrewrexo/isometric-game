@@ -1163,6 +1163,10 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       currentInteriorId: id,
       currentInterior: interior,
       availableInteriors: interiorStorage.getInteriorIds(),
+      // Clear overworld selections when entering interior
+      selectedPortal: null,
+      selectedEntitySpawn: null,
+      selectedMapObject: null,
       viewport: {
         ...viewport,
         offsetX: 400 - screenX * viewport.zoom,
@@ -1195,6 +1199,10 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
         editorMode: 'interior',
         currentInteriorId: id,
         currentInterior: interior,
+        // Clear overworld selections when entering interior
+        selectedPortal: null,
+        selectedEntitySpawn: null,
+        selectedMapObject: null,
         viewport: {
           ...viewport,
           offsetX: 400 - screenX * viewport.zoom,

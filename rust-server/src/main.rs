@@ -197,6 +197,7 @@ impl AppState {
             self.crafting_registry.clone(),
             self.item_registry.clone(),
             self.player_instances.clone(),
+            self.instance_manager.clone(),
         ).await);
         self.rooms.insert(room.id.clone(), room.clone());
         room
@@ -1374,19 +1375,25 @@ async fn handle_enter_portal(
                 }
 
                 if portal.target_map == "overworld" {
-                    // Return to overworld - use stored entrance position, or portal target, or default
+                    // Return to overworld - use portal target if specified, otherwise stored entrance position
                     let (spawn_x, spawn_y) = {
-                        // First try to get the stored entrance position
-                        let mut entrance_positions = state.player_entrance_positions.write().await;
-                        if let Some((x, y)) = entrance_positions.remove(player_id) {
-                            info!("Using stored entrance position ({}, {}) for player {}", x, y, player_id);
-                            (x as f32, y as f32)
-                        } else if portal.target_x != 0.0 || portal.target_y != 0.0 {
-                            // Fall back to portal's target coordinates
+                        if portal.target_x != 0.0 || portal.target_y != 0.0 {
+                            // Portal has explicit exit coordinates - use them
+                            info!("Using portal exit coordinates ({}, {}) for player {}", portal.target_x, portal.target_y, player_id);
+                            // Clean up stored entrance since we're not using it
+                            let mut entrance_positions = state.player_entrance_positions.write().await;
+                            entrance_positions.remove(player_id);
                             (portal.target_x, portal.target_y)
                         } else {
-                            // Default spawn if nothing specified
-                            (0.0, 0.0)
+                            // Fall back to stored entrance position
+                            let mut entrance_positions = state.player_entrance_positions.write().await;
+                            if let Some((x, y)) = entrance_positions.remove(player_id) {
+                                info!("Using stored entrance position ({}, {}) for player {}", x, y, player_id);
+                                (x as f32, y as f32)
+                            } else {
+                                // Default spawn if nothing specified
+                                (0.0, 0.0)
+                            }
                         }
                     };
 

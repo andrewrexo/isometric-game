@@ -429,6 +429,8 @@ pub struct GameRoom {
     player_senders: RwLock<HashMap<String, mpsc::Sender<Vec<u8>>>>,
     /// Tracks which instance each player is currently in (None = overworld)
     player_instances: Arc<RwLock<HashMap<String, String>>>,
+    /// Instance manager for looking up instance NPCs
+    instance_manager: Arc<crate::instance::InstanceManager>,
 }
 
 impl GameRoom {
@@ -439,6 +441,7 @@ impl GameRoom {
         crafting_registry: Arc<crate::crafting::CraftingRegistry>,
         item_registry: Arc<ItemRegistry>,
         player_instances: Arc<RwLock<HashMap<String, String>>>,
+        instance_manager: Arc<crate::instance::InstanceManager>,
     ) -> Self {
         let (tx, _) = broadcast::channel(256);
         let world = Arc::new(World::new("maps/world_0"));
@@ -512,6 +515,7 @@ impl GameRoom {
             broadcast_tx: tx,
             player_senders: RwLock::new(HashMap::new()),
             player_instances,
+            instance_manager,
         }
     }
 
@@ -1870,8 +1874,30 @@ impl GameRoom {
             }
         };
 
-        // Get NPC info and check distance
-        let npc_info = {
+        // Check if player is in an instance
+        let instance_id = {
+            let instances = self.player_instances.read().await;
+            instances.get(player_id).cloned()
+        };
+
+        // Get NPC info - check instance NPCs first, then overworld NPCs
+        let npc_info = if let Some(ref inst_id) = instance_id {
+            // Player is in an instance - look up instance NPCs
+            if let Some(instance) = self.instance_manager.find_player_instance(player_id).await {
+                let npcs = instance.npcs.read().await;
+                npcs.get(npc_id).map(|npc| {
+                    let dx = (npc.x - player_x) as f32;
+                    let dy = (npc.y - player_y) as f32;
+                    let distance = (dx * dx + dy * dy).sqrt();
+                    let entity_type = npc.prototype_id.clone();
+                    (entity_type, distance, npc.is_alive())
+                })
+            } else {
+                tracing::warn!("Player {} in instance {} but instance not found", player_id, inst_id);
+                None
+            }
+        } else {
+            // Player is in overworld - check room NPCs
             let npcs = self.npcs.read().await;
             npcs.get(npc_id).map(|npc| {
                 let dx = (npc.x - player_x) as f32;

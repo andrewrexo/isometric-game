@@ -3090,12 +3090,14 @@
   "mapObjects": [],
   "walls": [
     {
+      "id": "wall_1769300122386_aqu2e9lab",
       "gid": 175,
       "x": 0,
       "y": 0,
       "edge": "down"
     },
     {
+      "id": "wall_1769300123674_oabdm5f1o",
       "gid": 175,
       "x": 0,
       "y": 1,

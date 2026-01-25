@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useEditorStore } from '@/state/store';
 import { objectLoader } from '@/core/ObjectLoader';
 import { interiorStorage } from '@/core/InteriorStorage';
-import type { EntitySpawn, Portal } from '@/types';
+import type { EntitySpawn, Portal, ExitPortal } from '@/types';
 import styles from './PropertiesPanel.module.css';
 
 export function PropertiesPanel() {
@@ -11,16 +11,22 @@ export function PropertiesPanel() {
     selectedEntitySpawn,
     selectedMapObject,
     selectedPortal,
+    selectedExitPortal,
+    currentInterior,
     availableInteriors,
     setSelectedEntitySpawn,
     setSelectedMapObject,
     setSelectedPortal,
+    setSelectedExitPortal,
     updateEntity,
     removeEntity,
     removeMapObject,
     updatePortal,
     removePortal,
+    updateExitPortal,
+    removeExitPortal,
     jumpToPortalTarget,
+    jumpToExitPortalTarget,
   } = useEditorStore();
 
   // Get the actual entity spawn from the selection
@@ -59,9 +65,18 @@ export function PropertiesPanel() {
     return { portal, chunkCoord: selectedPortal.chunkCoord };
   };
 
+  // Get the actual exit portal from the selection (interior mode)
+  const getSelectedExitPortalData = () => {
+    if (!selectedExitPortal || !currentInterior) return null;
+    const portal = currentInterior.exitPortals?.find((p) => p.id === selectedExitPortal.portalId);
+    if (!portal) return null;
+    return portal;
+  };
+
   const selectedEntity = getSelectedEntity();
   const selectedObject = getSelectedObject();
   const selectedPortalData = getSelectedPortalData();
+  const selectedExitPortalData = getSelectedExitPortalData();
 
   // Delete key handler
   useEffect(() => {
@@ -83,13 +98,17 @@ export function PropertiesPanel() {
           e.preventDefault();
           removePortal(selectedPortalData.chunkCoord, selectedPortalData.portal.id);
           setSelectedPortal(null);
+        } else if (selectedExitPortalData) {
+          e.preventDefault();
+          removeExitPortal(selectedExitPortalData.id);
+          setSelectedExitPortal(null);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedEntity, selectedObject, selectedPortalData, removeEntity, removeMapObject, removePortal, setSelectedEntitySpawn, setSelectedMapObject, setSelectedPortal]);
+  }, [selectedEntity, selectedObject, selectedPortalData, selectedExitPortalData, removeEntity, removeMapObject, removePortal, removeExitPortal, setSelectedEntitySpawn, setSelectedMapObject, setSelectedPortal, setSelectedExitPortal]);
 
   // Show portal properties
   if (selectedPortalData) {
@@ -213,6 +232,108 @@ export function PropertiesPanel() {
           <div className={styles.actions}>
             <button className={styles.deleteButton} onClick={handleDeletePortal}>
               Delete Portal
+            </button>
+          </div>
+          <div className={styles.hint}>Press Delete to remove</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show exit portal properties (interior mode)
+  if (selectedExitPortalData && currentInterior) {
+    const portal = selectedExitPortalData;
+
+    const handleExitPortalChange = (field: keyof ExitPortal, value: number) => {
+      updateExitPortal(portal.id, { [field]: value });
+    };
+
+    const handleDeleteExitPortal = () => {
+      removeExitPortal(portal.id);
+      setSelectedExitPortal(null);
+    };
+
+    const handleJumpToTarget = () => {
+      jumpToExitPortalTarget(portal);
+    };
+
+    const handleApplyToAll = () => {
+      // Apply current targetX/targetY to all exit portals in this interior
+      const exitPortals = currentInterior.exitPortals || [];
+      for (const p of exitPortals) {
+        updateExitPortal(p.id, { targetX: portal.targetX, targetY: portal.targetY });
+      }
+    };
+
+    return (
+      <div className={styles.panel}>
+        <div className={styles.title}>Exit Portal Properties</div>
+        <div className={styles.content}>
+          <div className={styles.field}>
+            <label className={styles.label}>Exit Target X (world)</label>
+            <input
+              type="number"
+              className={styles.input}
+              value={portal.targetX}
+              onChange={(e) => handleExitPortalChange('targetX', parseFloat(e.target.value) || 0)}
+            />
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Exit Target Y (world)</label>
+            <input
+              type="number"
+              className={styles.input}
+              value={portal.targetY}
+              onChange={(e) => handleExitPortalChange('targetY', parseFloat(e.target.value) || 0)}
+            />
+          </div>
+
+          {(portal.targetX !== 0 || portal.targetY !== 0) && (
+            <button
+              className={styles.jumpButton}
+              onClick={handleJumpToTarget}
+            >
+              Jump To Exit Location
+            </button>
+          )}
+
+          <button
+            className={styles.applyAllButton}
+            onClick={handleApplyToAll}
+          >
+            Apply to All Exits ({currentInterior.exitPortals?.length || 0})
+          </button>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Width (tiles)</label>
+            <input
+              type="number"
+              className={styles.input}
+              value={portal.width}
+              min={1}
+              onChange={(e) => handleExitPortalChange('width', Math.max(1, parseInt(e.target.value) || 1))}
+            />
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Height (tiles)</label>
+            <input
+              type="number"
+              className={styles.input}
+              value={portal.height}
+              min={1}
+              onChange={(e) => handleExitPortalChange('height', Math.max(1, parseInt(e.target.value) || 1))}
+            />
+          </div>
+
+          <div className={styles.info}>
+            Position in interior: {portal.x}, {portal.y}
+          </div>
+
+          <div className={styles.actions}>
+            <button className={styles.deleteButton} onClick={handleDeleteExitPortal}>
+              Delete Exit Portal
             </button>
           </div>
           <div className={styles.hint}>Press Delete to remove</div>

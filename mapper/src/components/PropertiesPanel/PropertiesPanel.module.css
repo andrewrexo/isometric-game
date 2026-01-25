@@ -118,3 +118,19 @@
 .jumpButton:hover {
   background: #3dbdb5;
 }
+
+.applyAllButton {
+  padding: 8px 12px;
+  background: #6c757d;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+
+.applyAllButton:hover {
+  background: #5a6268;
+}

@@ -3088,13 +3088,17 @@
   "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   "entities": [
     {
+      "id": "entity_1769298602941_aaqjnf1d1",
       "entityId": "pig",
+      "name": "pig",
       "x": 6,
       "y": 1,
       "level": 1
     },
     {
+      "id": "entity_1769298603925_a8nwkjhbp",
       "entityId": "pig",
+      "name": "pig",
       "x": 17,
       "y": 7,
       "level": 1
