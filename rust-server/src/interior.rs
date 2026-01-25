@@ -39,6 +39,24 @@ pub struct InteriorMapDef {
     pub size: InteriorSize,
     pub spawn_points: HashMap<String, SpawnPoint>,
     pub portals: Vec<InteriorPortal>,
+    // Map data fields
+    #[serde(default)]
+    pub layers: InteriorLayers,
+    #[serde(default)]
+    pub collision: String,  // Base64 encoded or empty
+    #[serde(default)]
+    pub entities: Vec<serde_json::Value>,  // NPC spawns etc
+}
+
+/// Layer data for interior maps
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct InteriorLayers {
+    #[serde(default)]
+    pub ground: Vec<u32>,
+    #[serde(default)]
+    pub objects: Vec<u32>,
+    #[serde(default)]
+    pub overhead: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

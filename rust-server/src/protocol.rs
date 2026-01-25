@@ -325,6 +325,18 @@ pub enum ServerMessage {
         spawn_y: f32,
         instance_id: String,   // Unique instance identifier
     },
+    /// Full interior map data sent when entering an interior
+    InteriorData {
+        map_id: String,
+        instance_id: String,
+        width: u32,
+        height: u32,
+        spawn_x: f32,
+        spawn_y: f32,
+        layers: Vec<ChunkLayerData>,
+        collision: Vec<u8>,
+        portals: Vec<ChunkPortalData>,
+    },
 }
 
 /// Layer data for chunk transmission
@@ -503,6 +515,7 @@ impl ServerMessage {
             ServerMessage::EquipResult { .. } => "equipResult",
             ServerMessage::Announcement { .. } => "announcement",
             ServerMessage::MapTransition { .. } => "mapTransition",
+            ServerMessage::InteriorData { .. } => "interiorData",
         }
     }
 }
@@ -1475,6 +1488,71 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("spawnX".into()), Value::F64(*spawn_x as f64)));
             map.push((Value::String("spawnY".into()), Value::F64(*spawn_y as f64)));
             map.push((Value::String("instanceId".into()), Value::String(instance_id.clone().into())));
+            Value::Map(map)
+        }
+        ServerMessage::InteriorData {
+            map_id,
+            instance_id,
+            width,
+            height,
+            spawn_x,
+            spawn_y,
+            layers,
+            collision,
+            portals,
+        } => {
+            let mut map = Vec::new();
+            map.push((Value::String("mapId".into()), Value::String(map_id.clone().into())));
+            map.push((Value::String("instanceId".into()), Value::String(instance_id.clone().into())));
+            map.push((Value::String("width".into()), Value::Integer((*width as i64).into())));
+            map.push((Value::String("height".into()), Value::Integer((*height as i64).into())));
+            map.push((Value::String("spawnX".into()), Value::F64(*spawn_x as f64)));
+            map.push((Value::String("spawnY".into()), Value::F64(*spawn_y as f64)));
+
+            // Encode layers (same format as ChunkData)
+            let layer_values: Vec<Value> = layers
+                .iter()
+                .map(|l| {
+                    let mut lmap = Vec::new();
+                    lmap.push((
+                        Value::String("layerType".into()),
+                        Value::Integer((l.layer_type as i64).into()),
+                    ));
+                    let tiles: Vec<Value> = l
+                        .tiles
+                        .iter()
+                        .map(|&t| Value::Integer((t as i64).into()))
+                        .collect();
+                    lmap.push((Value::String("tiles".into()), Value::Array(tiles)));
+                    Value::Map(lmap)
+                })
+                .collect();
+            map.push((Value::String("layers".into()), Value::Array(layer_values)));
+
+            // Encode collision as binary array
+            let collision_bytes: Vec<Value> = collision
+                .iter()
+                .map(|&b| Value::Integer((b as i64).into()))
+                .collect();
+            map.push((Value::String("collision".into()), Value::Array(collision_bytes)));
+
+            // Encode portals
+            let portal_values: Vec<Value> = portals
+                .iter()
+                .map(|p| {
+                    let mut pmap = Vec::new();
+                    pmap.push((Value::String("id".into()), Value::String(p.id.clone().into())));
+                    pmap.push((Value::String("x".into()), Value::Integer((p.x as i64).into())));
+                    pmap.push((Value::String("y".into()), Value::Integer((p.y as i64).into())));
+                    pmap.push((Value::String("width".into()), Value::Integer((p.width as i64).into())));
+                    pmap.push((Value::String("height".into()), Value::Integer((p.height as i64).into())));
+                    pmap.push((Value::String("targetMap".into()), Value::String(p.target_map.clone().into())));
+                    pmap.push((Value::String("targetSpawn".into()), Value::String(p.target_spawn.clone().into())));
+                    Value::Map(pmap)
+                })
+                .collect();
+            map.push((Value::String("portals".into()), Value::Array(portal_values)));
+
             Value::Map(map)
         }
     };

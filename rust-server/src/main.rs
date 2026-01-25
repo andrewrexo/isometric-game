@@ -1304,6 +1304,8 @@ async fn handle_enter_portal(
     portal_id: &str,
 ) {
     use crate::interior::InstanceType;
+    use crate::protocol::{ChunkLayerData, ChunkPortalData};
+    use base64::Engine;
 
     // Find portal at player position
     let portal = match room.find_portal_at_player(player_id).await {
@@ -1365,6 +1367,44 @@ async fn handle_enter_portal(
             spawn_x: spawn.x,
             spawn_y: spawn.y,
             instance_id: instance.id.clone(),
+        },
+    ).await;
+
+    // Send interior map data
+    let layers = vec![
+        ChunkLayerData { layer_type: 0, tiles: interior.layers.ground.clone() },
+        ChunkLayerData { layer_type: 1, tiles: interior.layers.objects.clone() },
+        ChunkLayerData { layer_type: 2, tiles: interior.layers.overhead.clone() },
+    ];
+
+    let collision = if interior.collision.is_empty() {
+        vec![]
+    } else {
+        base64::engine::general_purpose::STANDARD.decode(&interior.collision).unwrap_or_default()
+    };
+
+    let portals: Vec<ChunkPortalData> = interior.portals.iter().map(|p| ChunkPortalData {
+        id: p.id.clone(),
+        x: p.x,
+        y: p.y,
+        width: p.width,
+        height: p.height,
+        target_map: p.target_map.clone(),
+        target_spawn: p.target_spawn.clone().unwrap_or_default(),
+    }).collect();
+
+    room.send_to_player(
+        player_id,
+        ServerMessage::InteriorData {
+            map_id: interior.id.clone(),
+            instance_id: instance.id.clone(),
+            width: interior.size.width,
+            height: interior.size.height,
+            spawn_x: spawn.x,
+            spawn_y: spawn.y,
+            layers,
+            collision,
+            portals,
         },
     ).await;
 }
