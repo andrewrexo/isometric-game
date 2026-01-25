@@ -15,7 +15,7 @@ pub use tilemap::{Tilemap, TilemapLayer, LayerType};
 pub use npc::{Npc, NpcState};
 pub use item::{GroundItem, Inventory, InventorySlot, INVENTORY_SIZE, RecipeDefinition, RecipeIngredient, RecipeResult};
 pub use item_registry::{ItemRegistry, ItemDefinition, EquipmentStats};
-pub use chunk::{ChunkManager, ChunkCoord, ChunkLayerType, Chunk, MapObject, Wall, WallEdge, CHUNK_SIZE};
+pub use chunk::{ChunkManager, ChunkCoord, ChunkLayerType, Chunk, MapObject, Wall, WallEdge, Portal, CHUNK_SIZE};
 pub use pathfinding::PathState;
 pub use shop::{ShopData, ShopStockItem, ShopSubTab};
 pub use skills::{Skills, Skill, SkillType};

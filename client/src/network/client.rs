@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType, Wall, WallEdge};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType, Wall, WallEdge, Portal};
 use crate::game::npc::{Npc, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -1141,10 +1141,33 @@ impl NetworkClient {
                         }
                     }
 
-                    log::debug!("Received chunk data: ({}, {}) with {} layers, {} collision bytes, {} objects, {} walls",
-                        chunk_x, chunk_y, layers.len(), collision.len(), objects.len(), walls.len());
+                    // Parse portals from server message
+                    let mut portals: Vec<Portal> = Vec::new();
+                    if let Some(portals_arr) = extract_array(value, "portals") {
+                        for p in portals_arr {
+                            let id = extract_string(p, "id").unwrap_or_default();
+                            let x = extract_i32(p, "x").unwrap_or(0);
+                            let y = extract_i32(p, "y").unwrap_or(0);
+                            let width = extract_i32(p, "width").unwrap_or(1);
+                            let height = extract_i32(p, "height").unwrap_or(1);
+                            let target_map = extract_string(p, "targetMap").unwrap_or_default();
+                            let target_spawn = extract_string(p, "targetSpawn").unwrap_or_default();
+                            portals.push(Portal {
+                                id,
+                                x,
+                                y,
+                                width,
+                                height,
+                                target_map,
+                                target_spawn,
+                            });
+                        }
+                    }
 
-                    state.chunk_manager.load_chunk(chunk_x, chunk_y, layers, &collision, objects, walls);
+                    log::debug!("Received chunk data: ({}, {}) with {} layers, {} collision bytes, {} objects, {} walls, {} portals",
+                        chunk_x, chunk_y, layers.len(), collision.len(), objects.len(), walls.len(), portals.len());
+
+                    state.chunk_manager.load_chunk(chunk_x, chunk_y, layers, &collision, objects, walls, portals);
                 }
             }
 

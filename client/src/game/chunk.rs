@@ -71,6 +71,18 @@ pub struct Wall {
     pub edge: WallEdge,
 }
 
+/// A portal that teleports players to another map
+#[derive(Debug, Clone)]
+pub struct Portal {
+    pub id: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub target_map: String,
+    pub target_spawn: String,
+}
+
 /// Layer types matching server
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChunkLayerType {
@@ -124,6 +136,8 @@ pub struct Chunk {
     pub objects: Vec<MapObject>,
     /// Walls placed on tile edges
     pub walls: Vec<Wall>,
+    /// Portals that teleport players to other maps
+    pub portals: Vec<Portal>,
 }
 
 impl Chunk {
@@ -138,6 +152,7 @@ impl Chunk {
             collision: vec![false; (CHUNK_SIZE * CHUNK_SIZE) as usize],
             objects: Vec::new(),
             walls: Vec::new(),
+            portals: Vec::new(),
         }
     }
 
@@ -236,6 +251,7 @@ impl ChunkManager {
         collision: &[u8],
         objects: Vec<MapObject>,
         walls: Vec<Wall>,
+        portals: Vec<Portal>,
     ) {
         let coord = ChunkCoord::new(chunk_x, chunk_y);
         let mut chunk = Chunk::new(coord);
@@ -260,15 +276,19 @@ impl ChunkManager {
         // Load walls
         chunk.walls = walls;
 
+        // Load portals
+        chunk.portals = portals;
+
         // Remove from pending
         self.pending_requests.remove(&coord);
 
         let object_count = chunk.objects.len();
+        let portal_count = chunk.portals.len();
 
         // Store chunk
         self.chunks.insert(coord, chunk);
 
-        log::info!("Loaded chunk ({}, {}) with {} objects", chunk_x, chunk_y, object_count);
+        log::info!("Loaded chunk ({}, {}) with {} objects, {} portals", chunk_x, chunk_y, object_count, portal_count);
     }
 
     /// Check if a world position is walkable
