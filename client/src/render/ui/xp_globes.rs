@@ -262,4 +262,124 @@ impl Renderer {
             SkillType::Combat => Color::new(0.85, 0.65, 0.15, 1.0),
         }
     }
+
+    /// Render tooltip for XP globe if mouse is hovering over one
+    pub fn render_xp_globe_tooltip(&self, xp_globes: &XpGlobesManager, stats_left_x: f32, stats_center_y: f32) {
+        let current_time = macroquad::time::get_time();
+        let (mouse_x, mouse_y) = mouse_position();
+
+        // Check each globe for hover (same positioning logic as render)
+        let mut x = stats_left_x - GLOBE_SPACING - GLOBE_SIZE;
+
+        for globe in xp_globes.globes.iter().rev() {
+            let opacity = globe.opacity(current_time);
+            if opacity <= 0.0 {
+                x -= GLOBE_SIZE + GLOBE_SPACING;
+                continue;
+            }
+
+            let center_x = x + GLOBE_SIZE / 2.0;
+            let center_y = stats_center_y;
+            let radius = GLOBE_SIZE / 2.0;
+
+            // Check if mouse is within this globe
+            let dx = mouse_x - center_x;
+            let dy = mouse_y - center_y;
+            if dx * dx + dy * dy <= radius * radius {
+                // Mouse is over this globe, show tooltip
+                self.draw_xp_globe_tooltip(globe, mouse_x, mouse_y);
+                return; // Only show one tooltip at a time
+            }
+
+            x -= GLOBE_SIZE + GLOBE_SPACING;
+        }
+    }
+
+    fn draw_xp_globe_tooltip(&self, globe: &XpGlobe, mouse_x: f32, mouse_y: f32) {
+        use super::common::{TOOLTIP_BG, TOOLTIP_FRAME, TEXT_GOLD, TEXT_NORMAL, TEXT_DIM};
+
+        let skill_name = globe.skill_type.display_name();
+        let level_text = format!("Level: {}", globe.level);
+
+        let current_level_xp = crate::game::skills::total_xp_for_level(globe.level);
+        let xp_in_level = globe.current_xp - current_level_xp;
+        let xp_needed = globe.xp_for_next_level - current_level_xp;
+        let progress_pct = if xp_needed > 0 {
+            (xp_in_level as f64 / xp_needed as f64 * 100.0) as i32
+        } else {
+            100
+        };
+
+        let xp_text = format!("XP: {} / {}",
+            format_number(globe.current_xp),
+            format_number(globe.xp_for_next_level)
+        );
+        let progress_text = format!("Progress: {}%", progress_pct);
+        let remaining = globe.xp_for_next_level - globe.current_xp;
+        let remaining_text = format!("To next: {} XP", format_number(remaining.max(0)));
+
+        // Calculate tooltip size
+        let padding = 8.0;
+        let line_height = 20.0;
+        let font_size = 16.0;
+
+        let name_dims = self.measure_text_sharp(skill_name, font_size);
+        let level_dims = self.measure_text_sharp(&level_text, font_size);
+        let xp_dims = self.measure_text_sharp(&xp_text, font_size);
+        let progress_dims = self.measure_text_sharp(&progress_text, font_size);
+        let remaining_dims = self.measure_text_sharp(&remaining_text, font_size);
+
+        let max_width = name_dims.width
+            .max(level_dims.width)
+            .max(xp_dims.width)
+            .max(progress_dims.width)
+            .max(remaining_dims.width);
+
+        let tooltip_width = max_width + padding * 2.0;
+        let tooltip_height = padding * 2.0 + line_height * 5.0; // 5 lines of text
+
+        // Position tooltip (offset from cursor, keep on screen)
+        let tooltip_x = (mouse_x + 16.0).min(screen_width() - tooltip_width - 8.0);
+        let tooltip_y = (mouse_y + 16.0).min(screen_height() - tooltip_height - 8.0);
+
+        // Draw tooltip background
+        draw_rectangle(tooltip_x - 1.0, tooltip_y - 1.0, tooltip_width + 2.0, tooltip_height + 2.0, TOOLTIP_FRAME);
+        draw_rectangle(tooltip_x, tooltip_y, tooltip_width, tooltip_height, TOOLTIP_BG);
+
+        // Draw text
+        let mut text_y = tooltip_y + padding + 14.0;
+
+        // Skill name (gold)
+        self.draw_text_sharp(skill_name, tooltip_x + padding, text_y, font_size, TEXT_GOLD);
+        text_y += line_height;
+
+        // Level
+        self.draw_text_sharp(&level_text, tooltip_x + padding, text_y, font_size, TEXT_NORMAL);
+        text_y += line_height;
+
+        // XP
+        self.draw_text_sharp(&xp_text, tooltip_x + padding, text_y, font_size, TEXT_NORMAL);
+        text_y += line_height;
+
+        // Progress percentage
+        self.draw_text_sharp(&progress_text, tooltip_x + padding, text_y, font_size, TEXT_NORMAL);
+        text_y += line_height;
+
+        // Remaining
+        self.draw_text_sharp(&remaining_text, tooltip_x + padding, text_y, font_size, TEXT_DIM);
+    }
+
+}
+
+/// Format a number with commas (e.g., 1234567 -> "1,234,567")
+fn format_number(n: i64) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result.chars().rev().collect()
 }

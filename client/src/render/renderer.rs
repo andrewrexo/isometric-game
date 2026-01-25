@@ -3450,6 +3450,17 @@ impl Renderer {
             // Only render tooltips if context menu is not open
             self.render_item_tooltip(state);
             self.render_skill_tooltip(state, hovered);
+
+            // XP globe tooltip (recalculate position to match render_ui)
+            if state.get_local_player().is_some() {
+                let margin = 12.0;
+                let base_y = 25.0;
+                let tag_height = 22.0;
+                let bar_width = 120.0_f32.max(140.0); // Approximate, matches render_ui
+                let bar_x = (screen_width() - bar_width - margin).floor();
+                let globe_stats_y = base_y + tag_height / 2.0 + 8.0;
+                self.render_xp_globe_tooltip(&state.xp_globes, bar_x, globe_stats_y);
+            }
         }
 
         // Render dragged item at cursor (on top of everything)
