@@ -9,6 +9,7 @@ use crate::game::SkillType;
 
 pub const GLOBE_SIZE: f32 = 40.0;
 pub const GLOBE_SPACING: f32 = 4.0;
+const STATS_PADDING: f32 = 6.0;  // Extra padding from the stats bar
 const ICON_SIZE: f32 = 24.0;
 const RING_THICKNESS: f32 = 5.0;
 const VISIBLE_DURATION: f64 = 6.0;  // Seconds before fade starts
@@ -109,7 +110,7 @@ impl XpGlobesManager {
         let (mouse_x, mouse_y) = mouse_position();
 
         // Check each globe for hover and reset timer if hovered
-        let mut x = stats_left_x - GLOBE_SPACING - GLOBE_SIZE;
+        let mut x = stats_left_x - STATS_PADDING - GLOBE_SPACING - GLOBE_SIZE;
         for globe in self.globes.iter_mut().rev() {
             let center_x = x + GLOBE_SIZE / 2.0;
             let center_y = stats_center_y;
@@ -145,7 +146,7 @@ impl Renderer {
         // Globes render right-to-left from stats area
         // Most recent XP (first in vec) appears leftmost, but we want it rightmost
         // So iterate in reverse order
-        let mut x = stats_left_x - GLOBE_SPACING - GLOBE_SIZE;
+        let mut x = stats_left_x - STATS_PADDING - GLOBE_SPACING - GLOBE_SIZE;
 
         for globe in xp_globes.globes.iter().rev() {
             let opacity = globe.opacity(current_time);
@@ -291,7 +292,7 @@ impl Renderer {
         let (mouse_x, mouse_y) = mouse_position();
 
         // Check each globe for hover (same positioning logic as render)
-        let mut x = stats_left_x - GLOBE_SPACING - GLOBE_SIZE;
+        let mut x = stats_left_x - STATS_PADDING - GLOBE_SPACING - GLOBE_SIZE;
 
         for globe in xp_globes.globes.iter().rev() {
             let opacity = globe.opacity(current_time);
