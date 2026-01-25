@@ -1343,6 +1343,9 @@ async fn handle_client_message(
         ClientMessage::ShopSell { npc_id, item_id, quantity } => {
             room.handle_shop_sell(player_id, &npc_id, &item_id, quantity).await;
         }
+        ClientMessage::EnterPortal { portal_id: _ } => {
+            // TODO: Implement portal entry handling (Task 7)
+        }
         // Auth and Register are handled via HTTP endpoints, not WebSocket
         ClientMessage::Auth { .. } | ClientMessage::Register { .. } => {}
     }

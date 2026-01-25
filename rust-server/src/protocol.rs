@@ -87,6 +87,10 @@ pub enum ClientMessage {
     /// Sell item to shop
     #[serde(rename = "shopSell")]
     ShopSell { npc_id: String, item_id: String, quantity: i32 },
+
+    /// Enter a portal to transition to another map
+    #[serde(rename = "enterPortal")]
+    EnterPortal { portal_id: String },
 }
 
 // ============================================================================
@@ -313,6 +317,14 @@ pub enum ServerMessage {
     Announcement {
         text: String,
     },
+    /// Tell client to transition to a different map (interior or world)
+    MapTransition {
+        map_type: String,      // "interior" or "world"
+        map_id: String,        // Interior ID or "world_0"
+        spawn_x: f32,
+        spawn_y: f32,
+        instance_id: String,   // Unique instance identifier
+    },
 }
 
 /// Layer data for chunk transmission
@@ -490,6 +502,7 @@ impl ServerMessage {
             ServerMessage::EquipmentUpdate { .. } => "equipmentUpdate",
             ServerMessage::EquipResult { .. } => "equipResult",
             ServerMessage::Announcement { .. } => "announcement",
+            ServerMessage::MapTransition { .. } => "mapTransition",
         }
     }
 }
@@ -1455,6 +1468,15 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
             map.push((Value::String("text".into()), Value::String(text.clone().into())));
             Value::Map(map)
         }
+        ServerMessage::MapTransition { map_type, map_id, spawn_x, spawn_y, instance_id } => {
+            let mut map = Vec::new();
+            map.push((Value::String("mapType".into()), Value::String(map_type.clone().into())));
+            map.push((Value::String("mapId".into()), Value::String(map_id.clone().into())));
+            map.push((Value::String("spawnX".into()), Value::F64(*spawn_x as f64)));
+            map.push((Value::String("spawnY".into()), Value::F64(*spawn_y as f64)));
+            map.push((Value::String("instanceId".into()), Value::String(instance_id.clone().into())));
+            Value::Map(map)
+        }
     };
 
     // Encode as [13, "msg_type", data] - matching Colyseus ROOM_DATA format
@@ -1630,6 +1652,10 @@ pub fn decode_client_message(data: &[u8]) -> Result<ClientMessage, String> {
             let item_id = extract_string(msg_data, "itemId").unwrap_or_default();
             let quantity = extract_i32(msg_data, "quantity").unwrap_or(0);
             Ok(ClientMessage::ShopSell { npc_id, item_id, quantity })
+        }
+        "enterPortal" => {
+            let portal_id = extract_string(msg_data, "portalId").unwrap_or_default();
+            Ok(ClientMessage::EnterPortal { portal_id })
         }
         _ => Err(format!("Unknown message type: {}", msg_type)),
     }
