@@ -2,6 +2,7 @@ use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
 use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType, Wall, WallEdge, Portal, TransitionState};
 use crate::game::npc::{Npc, NpcState};
+use crate::render::OVERWORLD_NAME;
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u32, extract_u64, extract_array, extract_u8, extract_bool};
 
@@ -1643,6 +1644,9 @@ impl NetworkClient {
                     if map_type == "overworld" {
                         // Returning to overworld from interior
 
+                        // Trigger area banner for overworld
+                        state.area_banner.show(OVERWORLD_NAME);
+
                         // Clear interior mode
                         state.chunk_manager.clear_interior();
                         state.current_interior = None;
@@ -1681,6 +1685,12 @@ impl NetworkClient {
                     let height = extract_u32(value, "height").unwrap_or(32);
                     let spawn_x = extract_f32(value, "spawnX").unwrap_or(0.0);
                     let spawn_y = extract_f32(value, "spawnY").unwrap_or(0.0);
+
+                    // Extract interior name (fallback to map_id if missing)
+                    let name = extract_string(value, "name").unwrap_or(map_id.clone());
+
+                    // Trigger area banner
+                    state.area_banner.show(&name);
 
                     // Parse layers
                     let mut layers: Vec<(u8, Vec<u32>)> = Vec::new();
