@@ -10,6 +10,41 @@ use super::shop::{ShopData, ShopSubTab};
 use crate::render::animation::AnimationState;
 use crate::ui::UiElementId;
 
+/// State of a map transition (fade effect)
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransitionState {
+    None,
+    FadingOut,
+    Loading,
+    FadingIn,
+}
+
+/// Tracks an in-progress map transition
+#[derive(Debug, Clone)]
+pub struct MapTransition {
+    pub state: TransitionState,
+    pub progress: f32,
+    pub target_map_type: String,
+    pub target_map_id: String,
+    pub target_spawn_x: f32,
+    pub target_spawn_y: f32,
+    pub instance_id: String,
+}
+
+impl Default for MapTransition {
+    fn default() -> Self {
+        Self {
+            state: TransitionState::None,
+            progress: 0.0,
+            target_map_type: String::new(),
+            target_map_id: String::new(),
+            target_spawn_x: 0.0,
+            target_spawn_y: 0.0,
+            instance_id: String::new(),
+        }
+    }
+}
+
 /// Frame timing diagnostics for performance analysis
 #[derive(Clone)]
 pub struct FrameTimings {
@@ -537,6 +572,9 @@ pub struct GameState {
 
     // Performance diagnostics (visible in debug mode)
     pub frame_timings: FrameTimings,
+
+    // Map transition state
+    pub map_transition: MapTransition,
 }
 
 impl GameState {
@@ -574,6 +612,7 @@ impl GameState {
             hovered_entity_id: None,
             auto_path: None,
             frame_timings: FrameTimings::default(),
+            map_transition: MapTransition::default(),
         }
     }
 
