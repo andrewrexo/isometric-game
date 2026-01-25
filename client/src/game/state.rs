@@ -8,6 +8,7 @@ use super::chunk::ChunkManager;
 use super::pathfinding::PathState;
 use super::shop::{ShopData, ShopSubTab};
 use crate::render::animation::AnimationState;
+use crate::render::XpGlobesManager;
 use crate::ui::UiElementId;
 use crate::render::AreaBanner;
 
@@ -538,6 +539,7 @@ pub struct GameState {
     pub damage_events: Vec<DamageEvent>,
     pub level_up_events: Vec<LevelUpEvent>,
     pub skill_xp_events: Vec<SkillXpEvent>,
+    pub xp_globes: XpGlobesManager,
     pub projectiles: Vec<Projectile>,
 
     // Chat bubbles above players
@@ -611,6 +613,7 @@ impl GameState {
             damage_events: Vec::new(),
             level_up_events: Vec::new(),
             skill_xp_events: Vec::new(),
+            xp_globes: XpGlobesManager::new(),
             projectiles: Vec::new(),
             chat_bubbles: Vec::new(),
             inventory: Inventory::new(),
