@@ -2784,13 +2784,65 @@ impl Renderer {
 
         let (screen_x, screen_y) = world_to_screen(item.x, item.y, camera);
         let zoom = camera.zoom;
-
-        // Bobbing animation
         let time = macroquad::time::get_time();
-        let bob = ((time - item.animation_time) * 3.0).sin() as f32 * 2.0 * zoom;
+        let elapsed = time - item.animation_time;
+
+        // Animation phase durations (same as gold)
+        const ARC_DURATION: f64 = 0.3;
+        const BOUNCE_DURATION: f64 = 0.2;
+        const SETTLE_DURATION: f64 = 0.1;
+        const TOTAL_DURATION: f64 = ARC_DURATION + BOUNCE_DURATION + SETTLE_DURATION;
+
+        // Animation heights
+        const ARC_HEIGHT: f32 = 10.0;
+        const BOUNCE_HEIGHT: f32 = 4.0;
+
+        // Bob animation (post-settle)
+        const BOB_SPEED: f64 = 3.0;
+        const BOB_AMPLITUDE: f32 = 2.0;
+
+        // Calculate height offset based on animation phase
+        let (height_offset, spawn_progress) = if elapsed < ARC_DURATION {
+            // Phase 1: Arc up and down
+            let t = (elapsed / ARC_DURATION) as f32;
+            let arc = 4.0 * ARC_HEIGHT * t * (1.0 - t);
+            (arc, t)
+        } else if elapsed < ARC_DURATION + BOUNCE_DURATION {
+            // Phase 2: Bounce up
+            let t = ((elapsed - ARC_DURATION) / BOUNCE_DURATION) as f32;
+            let bounce = 4.0 * BOUNCE_HEIGHT * t * (1.0 - t);
+            (bounce, 1.0)
+        } else if elapsed < TOTAL_DURATION {
+            // Phase 3: Settle
+            let t = ((elapsed - ARC_DURATION - BOUNCE_DURATION) / SETTLE_DURATION) as f32;
+            let settle = 4.0 * (BOUNCE_HEIGHT * 0.25) * t * (1.0 - t);
+            (settle, 1.0)
+        } else {
+            // Animation complete - gentle bob
+            let bob = ((elapsed * BOB_SPEED).sin() as f32) * BOB_AMPLITUDE;
+            (bob, 1.0)
+        };
+
+        // Shadow rendering - size and alpha respond to height
+        const SHADOW_WIDTH: f32 = 14.0;
+        const SHADOW_HEIGHT: f32 = 6.0;
+        const SHADOW_BASE_ALPHA: f32 = 50.0;
+
+        let height_normalized = height_offset / ARC_HEIGHT; // Normalize to arc height
+        let shadow_scale = 1.0 - height_normalized * 0.2;
+        let shadow_alpha = ((SHADOW_BASE_ALPHA - height_normalized * 15.0) * spawn_progress).clamp(0.0, 255.0) as u8;
+
+        draw_ellipse(
+            screen_x,
+            screen_y,
+            SHADOW_WIDTH * zoom * shadow_scale,
+            SHADOW_HEIGHT * zoom * shadow_scale,
+            0.0,
+            Color::from_rgba(0, 0, 0, shadow_alpha),
+        );
 
         let item_def = state.item_registry.get_or_placeholder(&item.item_id);
-        let item_y = screen_y - 8.0 * zoom - bob;
+        let item_y = screen_y - 8.0 * zoom - height_offset * zoom;
 
         // Try to use item sprite, fall back to colored rectangle
         if let Some(texture) = self.item_sprites.get(&item.item_id) {
@@ -2834,11 +2886,53 @@ impl Renderer {
 
         let elapsed = time - pile.spawn_time;
 
-        // Animation constants
-        const SPAWN_DURATION: f64 = 0.5;
+        // Animation phase durations
+        const ARC_DURATION: f64 = 0.3;      // Phase 1: arc outward
+        const BOUNCE_DURATION: f64 = 0.2;   // Phase 2: bounce up
+        const SETTLE_DURATION: f64 = 0.1;   // Phase 3: settle down
+        const TOTAL_DURATION: f64 = ARC_DURATION + BOUNCE_DURATION + SETTLE_DURATION;
         const STAGGER_DELAY: f64 = 0.03;
+
+        // Animation heights
+        const ARC_HEIGHT: f32 = 10.0;       // Peak height during arc
+        const BOUNCE_HEIGHT: f32 = 4.0;     // Peak height during bounce
+
+        // Bob animation (post-settle)
         const BOB_SPEED: f64 = 2.5;
         const BOB_AMPLITUDE: f32 = 1.5;
+
+        // Shadow constants
+        const SHADOW_WIDTH: f32 = 18.0;
+        const SHADOW_HEIGHT: f32 = 8.0;
+        const SHADOW_BASE_ALPHA: f32 = 50.0;
+
+        // Calculate overall spawn progress for shadow fade-in
+        let overall_spawn_t = (elapsed / TOTAL_DURATION).clamp(0.0, 1.0) as f32;
+
+        // Calculate average bob for shadow pulse (only after nuggets mostly settled)
+        let avg_bob = if overall_spawn_t > 0.7 {
+            let bob_strength = ((overall_spawn_t - 0.7) / 0.3).min(1.0);
+            let sum: f32 = pile.nuggets.iter().map(|n| {
+                ((time * BOB_SPEED + n.phase_offset).sin() as f32) * BOB_AMPLITUDE * zoom
+            }).sum();
+            (sum / pile.nuggets.len() as f32) * bob_strength
+        } else {
+            0.0
+        };
+
+        // Shadow size and alpha respond to average bob
+        let bob_normalized = avg_bob / (BOB_AMPLITUDE * zoom);
+        let shadow_scale = 1.0 - bob_normalized * 0.15;
+        let shadow_alpha = ((SHADOW_BASE_ALPHA - bob_normalized * 10.0) * overall_spawn_t).clamp(0.0, 255.0) as u8;
+
+        draw_ellipse(
+            screen_x,
+            screen_y,
+            SHADOW_WIDTH * zoom * shadow_scale,
+            SHADOW_HEIGHT * zoom * shadow_scale,
+            0.0,
+            Color::from_rgba(0, 0, 0, shadow_alpha),
+        );
 
         // Sort nuggets by Y offset for proper depth (back to front)
         let mut sorted_indices: Vec<usize> = (0..pile.nuggets.len()).collect();
@@ -2853,27 +2947,47 @@ impl Renderer {
         for (render_idx, &nugget_idx) in sorted_indices.iter().enumerate() {
             let nugget = &pile.nuggets[nugget_idx];
 
-            // Calculate spawn progress with stagger
+            // Calculate elapsed time for this nugget (with stagger)
             let nugget_elapsed = elapsed - (render_idx as f64 * STAGGER_DELAY);
-            let spawn_t = (nugget_elapsed / SPAWN_DURATION).clamp(0.0, 1.0) as f32;
-            // Ease-out cubic
-            let ease_t = 1.0 - (1.0 - spawn_t).powi(3);
+            if nugget_elapsed < 0.0 {
+                continue; // Nugget hasn't spawned yet
+            }
 
-            // Interpolate from burst position to target
-            let current_x = nugget.offset_x + (nugget.target_x - nugget.offset_x) * ease_t;
-            let current_y = nugget.offset_y + (nugget.target_y - nugget.offset_y) * ease_t;
+            // Calculate position and height based on animation phase
+            let (current_x, current_y, height_offset) = if nugget_elapsed < ARC_DURATION {
+                // Phase 1: Arc outward from center to target
+                let t = (nugget_elapsed / ARC_DURATION) as f32;
+                let ease_t = 1.0 - (1.0 - t).powi(2); // Ease-out quadratic for position
 
-            // Bob animation (only after mostly settled)
-            let bob = if spawn_t > 0.7 {
-                let bob_strength = ((spawn_t - 0.7) / 0.3).min(1.0);
-                ((time * BOB_SPEED + nugget.phase_offset).sin() as f32) * BOB_AMPLITUDE * zoom * bob_strength
+                let x = nugget.target_x * ease_t;
+                let y = nugget.target_y * ease_t;
+                // Parabolic arc: height = 4 * peak * t * (1 - t)
+                let arc = 4.0 * ARC_HEIGHT * t * (1.0 - t);
+
+                (x, y, arc)
+            } else if nugget_elapsed < ARC_DURATION + BOUNCE_DURATION {
+                // Phase 2: Bounce up from target position
+                let t = ((nugget_elapsed - ARC_DURATION) / BOUNCE_DURATION) as f32;
+                // Parabolic bounce
+                let bounce = 4.0 * BOUNCE_HEIGHT * t * (1.0 - t);
+
+                (nugget.target_x, nugget.target_y, bounce)
+            } else if nugget_elapsed < TOTAL_DURATION {
+                // Phase 3: Settle down
+                let t = ((nugget_elapsed - ARC_DURATION - BOUNCE_DURATION) / SETTLE_DURATION) as f32;
+                // Small settling bounce (quarter height of main bounce)
+                let settle = 4.0 * (BOUNCE_HEIGHT * 0.25) * t * (1.0 - t);
+
+                (nugget.target_x, nugget.target_y, settle)
             } else {
-                0.0
+                // Animation complete - apply bob
+                let bob = ((time * BOB_SPEED + nugget.phase_offset).sin() as f32) * BOB_AMPLITUDE;
+                (nugget.target_x, nugget.target_y, bob)
             };
 
             // Calculate final screen position
             let nugget_x = screen_x + current_x * zoom;
-            let nugget_y = screen_y + current_y * zoom - bob - 4.0 * zoom;
+            let nugget_y = screen_y + current_y * zoom - height_offset * zoom - 4.0 * zoom;
 
             // Draw nugget sprite
             let width = texture.width() * zoom;

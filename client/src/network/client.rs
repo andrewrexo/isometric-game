@@ -978,7 +978,23 @@ impl NetworkClient {
                     } else {
                         GroundItem::new(id.clone(), item_id, x, y, quantity)
                     };
-                    state.ground_items.insert(id, item);
+
+                    // Check if there's a dying NPC near this drop location
+                    let near_dying_npc = state.npcs.values().any(|npc| {
+                        let dx = npc.x - x;
+                        let dy = npc.y - y;
+                        let dist_sq = dx * dx + dy * dy;
+                        npc.is_dying() && dist_sq < 2.0 // Within ~1.4 tiles
+                    });
+
+                    if near_dying_npc {
+                        // Delay item appearance by 0.6s to let death animation complete
+                        let spawn_time = macroquad::time::get_time() + 0.6;
+                        state.pending_ground_items.push((item, spawn_time));
+                    } else {
+                        // Spawn immediately (player drop, etc.)
+                        state.ground_items.insert(id, item);
+                    }
                 }
             }
 

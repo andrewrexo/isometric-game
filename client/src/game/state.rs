@@ -492,6 +492,8 @@ pub struct GameState {
     pub players: HashMap<String, Player>,
     pub npcs: HashMap<String, Npc>,
     pub ground_items: HashMap<String, GroundItem>,
+    /// Items waiting to spawn (with spawn time) - delays loot appearance until after death animation
+    pub pending_ground_items: Vec<(GroundItem, f64)>,
 
     // Targeting
     pub selected_entity_id: Option<String>,
@@ -554,6 +556,7 @@ impl GameState {
             players: HashMap::new(),
             npcs: HashMap::new(),
             ground_items: HashMap::new(),
+            pending_ground_items: Vec::new(),
             selected_entity_id: None,
             damage_events: Vec::new(),
             level_up_events: Vec::new(),
@@ -633,8 +636,19 @@ impl GameState {
             npc.update(visual_delta);
         }
 
-        // Clean up old damage events (older than 1.2 seconds)
+        // Process pending ground items (spawn them after delay)
         let current_time = macroquad::time::get_time();
+        let mut i = 0;
+        while i < self.pending_ground_items.len() {
+            if current_time >= self.pending_ground_items[i].1 {
+                let (item, _) = self.pending_ground_items.swap_remove(i);
+                self.ground_items.insert(item.id.clone(), item);
+            } else {
+                i += 1;
+            }
+        }
+
+        // Clean up old damage events (older than 1.2 seconds)
         self.damage_events.retain(|event| current_time - event.time < 1.2);
 
         // Clean up old level up events (older than 2.0 seconds)

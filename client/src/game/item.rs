@@ -7,10 +7,7 @@ use macroquad::rand::gen_range;
 /// Animation state for a single gold nugget in a pile
 #[derive(Debug, Clone)]
 pub struct GoldNuggetState {
-    /// Current offset from pile center (pixels, pre-zoom)
-    pub offset_x: f32,
-    pub offset_y: f32,
-    /// Target/resting position after burst animation settles
+    /// Target/resting position after animation settles (pixels, pre-zoom)
     pub target_x: f32,
     pub target_y: f32,
     /// Phase offset for bob animation (creates shimmer effect)
@@ -73,18 +70,10 @@ impl GoldPileState {
                 (x, y)
             };
 
-            // Initial burst position (outward from target)
-            let burst_angle = gen_range(0.0, std::f32::consts::TAU);
-            let burst_distance = gen_range(15.0, 25.0);
-            let offset_x = target_x + burst_angle.cos() * burst_distance;
-            let offset_y = target_y + burst_angle.sin() * burst_distance * 0.5;
-
             // Random phase for bob animation
             let phase_offset = gen_range(0.0, std::f64::consts::TAU);
 
             nuggets.push(GoldNuggetState {
-                offset_x,
-                offset_y,
                 target_x,
                 target_y,
                 phase_offset,

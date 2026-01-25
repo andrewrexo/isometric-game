@@ -114,6 +114,11 @@ impl Npc {
         self.state != NpcState::Dead
     }
 
+    /// Check if NPC is in the process of dying (dead but animation not complete)
+    pub fn is_dying(&self) -> bool {
+        self.state == NpcState::Dead && !self.is_death_animation_complete()
+    }
+
     /// Start the death sequence - NPC will finish moving to target then play death animation
     pub fn start_death(&mut self) {
         self.state = NpcState::Dead;
