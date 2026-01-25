@@ -1189,11 +1189,12 @@ async fn handle_socket(
     // Handle incoming messages
     let room_clone = room.clone();
     let player_id_clone = player_id.clone();
+    let state_clone = state.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
             match msg {
                 Message::Binary(data) => {
-                    if let Err(e) = handle_client_message(&room_clone, &player_id_clone, &data).await
+                    if let Err(e) = handle_client_message(&state_clone, &room_clone, &player_id_clone, &data).await
                     {
                         warn!("Error handling message: {}", e);
                     }
@@ -1277,7 +1278,59 @@ async fn handle_socket(
     .await;
 }
 
+async fn handle_enter_portal(
+    state: &AppState,
+    room: &GameRoom,
+    player_id: &str,
+    portal_id: &str,
+) {
+    // Find portal at player position
+    let portal = match room.find_portal_at_player(player_id).await {
+        Some(p) if p.id == portal_id => p,
+        _ => {
+            warn!("Player {} tried to use portal {} but not standing on it", player_id, portal_id);
+            return;
+        }
+    };
+
+    // Get interior definition
+    let interior = match state.interior_registry.get(&portal.target_map) {
+        Some(i) => i,
+        None => {
+            error!("Portal {} references unknown interior {}", portal_id, portal.target_map);
+            return;
+        }
+    };
+
+    // Get spawn point
+    let spawn = match interior.get_spawn_point(&portal.target_spawn) {
+        Some(s) => s,
+        None => {
+            error!("Interior {} has no spawn point {}", interior.id, portal.target_spawn);
+            return;
+        }
+    };
+
+    info!(
+        "Player {} entering portal {} -> {} at ({}, {})",
+        player_id, portal_id, interior.id, spawn.x, spawn.y
+    );
+
+    // Send transition message to client
+    room.send_to_player(
+        player_id,
+        ServerMessage::MapTransition {
+            map_type: "interior".to_string(),
+            map_id: interior.id.clone(),
+            spawn_x: spawn.x,
+            spawn_y: spawn.y,
+            instance_id: format!("pub_{}", interior.id),
+        },
+    ).await;
+}
+
 async fn handle_client_message(
+    state: &AppState,
     room: &GameRoom,
     player_id: &str,
     data: &[u8],
@@ -1350,8 +1403,8 @@ async fn handle_client_message(
         ClientMessage::ShopSell { npc_id, item_id, quantity } => {
             room.handle_shop_sell(player_id, &npc_id, &item_id, quantity).await;
         }
-        ClientMessage::EnterPortal { portal_id: _ } => {
-            // TODO: Implement portal entry handling (Task 7)
+        ClientMessage::EnterPortal { portal_id } => {
+            handle_enter_portal(state, room, player_id, &portal_id).await;
         }
         // Auth and Register are handled via HTTP endpoints, not WebSocket
         ClientMessage::Auth { .. } | ClientMessage::Register { .. } => {}

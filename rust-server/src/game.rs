@@ -534,6 +534,19 @@ impl GameRoom {
         tracing::debug!("Unregistered sender for player {}", player_id);
     }
 
+    /// Find a portal at the player's current position
+    pub async fn find_portal_at_player(&self, player_id: &str) -> Option<crate::chunk::Portal> {
+        let players = self.players.read().await;
+        let player = players.get(player_id)?;
+        let coord = ChunkCoord::from_world(player.x, player.y);
+
+        let chunk = self.world.get_or_load_chunk(coord).await?;
+        chunk.portals.iter().find(|p| {
+            player.x >= p.x && player.x < p.x + p.width &&
+            player.y >= p.y && player.y < p.y + p.height
+        }).cloned()
+    }
+
     /// Send a message to a specific player (unicast)
     /// SECURITY: Use this for private data like inventory updates
     pub async fn send_to_player(&self, player_id: &str, msg: ServerMessage) {
