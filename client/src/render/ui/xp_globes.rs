@@ -10,7 +10,7 @@ use crate::game::SkillType;
 pub const GLOBE_SIZE: f32 = 40.0;
 pub const GLOBE_SPACING: f32 = 4.0;
 const ICON_SIZE: f32 = 24.0;
-const RING_THICKNESS: f32 = 3.0;
+const RING_THICKNESS: f32 = 5.0;
 const VISIBLE_DURATION: f64 = 6.0;  // Seconds before fade starts
 const FADE_OUT_DURATION: f64 = 0.5; // Seconds to fully fade
 
@@ -189,7 +189,7 @@ impl Renderer {
         // Progress arc (draw in the ring area between outer border and inner circle)
         let progress = globe.progress();
         if progress > 0.0 {
-            self.draw_progress_arc(center_x, center_y, radius - 1.5, inner_radius + 0.5, progress, skill_color, opacity);
+            self.draw_progress_arc(center_x, center_y, radius - 1.0, inner_radius + 1.0, progress, skill_color, opacity);
         }
 
         // Inner dark circle (behind icon)
