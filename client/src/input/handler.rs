@@ -58,6 +58,8 @@ pub enum InputCommand {
     // Shop commands
     ShopBuy { npc_id: String, item_id: String, quantity: u32 },
     ShopSell { npc_id: String, item_id: String, quantity: u32 },
+    // Portal commands
+    EnterPortal { portal_id: String },
 }
 
 /// Cardinal directions for isometric movement (no diagonals)
@@ -2007,34 +2009,40 @@ impl InputHandler {
             }
         }
 
-        // Interact with nearest NPC (E key)
+        // Interact with nearest NPC or portal (E key)
         if is_key_pressed(KeyCode::E) {
             if let Some(local_id) = &state.local_player_id {
                 if let Some(player) = state.players.get(local_id) {
-                    // Find nearest NPC within interaction range (2.5 tiles)
-                    const INTERACT_RANGE: f32 = 2.5;
-                    let mut nearest_npc: Option<(String, f32)> = None;
+                    // First check if player is standing on a portal
+                    if let Some(portal) = state.chunk_manager.get_portal_at(player.x, player.y) {
+                        log::info!("Entering portal: {}", portal.id);
+                        commands.push(InputCommand::EnterPortal { portal_id: portal.id.clone() });
+                    } else {
+                        // Find nearest NPC within interaction range (2.5 tiles)
+                        const INTERACT_RANGE: f32 = 2.5;
+                        let mut nearest_npc: Option<(String, f32)> = None;
 
-                    for (id, npc) in &state.npcs {
-                        // Only interact with alive NPCs
-                        if !npc.is_alive() {
-                            continue;
-                        }
+                        for (id, npc) in &state.npcs {
+                            // Only interact with alive NPCs
+                            if !npc.is_alive() {
+                                continue;
+                            }
 
-                        let dx = npc.x - player.x;
-                        let dy = npc.y - player.y;
-                        let dist = (dx * dx + dy * dy).sqrt();
+                            let dx = npc.x - player.x;
+                            let dy = npc.y - player.y;
+                            let dist = (dx * dx + dy * dy).sqrt();
 
-                        if dist < INTERACT_RANGE {
-                            if nearest_npc.is_none() || dist < nearest_npc.as_ref().unwrap().1 {
-                                nearest_npc = Some((id.clone(), dist));
+                            if dist < INTERACT_RANGE {
+                                if nearest_npc.is_none() || dist < nearest_npc.as_ref().unwrap().1 {
+                                    nearest_npc = Some((id.clone(), dist));
+                                }
                             }
                         }
-                    }
 
-                    if let Some((npc_id, _)) = nearest_npc {
-                        log::info!("Interacting with NPC: {}", npc_id);
-                        commands.push(InputCommand::Interact { npc_id });
+                        if let Some((npc_id, _)) = nearest_npc {
+                            log::info!("Interacting with NPC: {}", npc_id);
+                            commands.push(InputCommand::Interact { npc_id });
+                        }
                     }
                 }
             }

@@ -342,4 +342,17 @@ impl ChunkManager {
                 && (coord.y - current.y).abs() <= keep_radius
         });
     }
+
+    /// Find a portal at the given world position
+    pub fn get_portal_at(&self, x: f32, y: f32) -> Option<&Portal> {
+        let coord = ChunkCoord::from_world_f32(x, y);
+        let chunk = self.chunks.get(&coord)?;
+        let tile_x = x.floor() as i32;
+        let tile_y = y.floor() as i32;
+
+        chunk.portals.iter().find(|p| {
+            tile_x >= p.x && tile_x < p.x + p.width &&
+            tile_y >= p.y && tile_y < p.y + p.height
+        })
+    }
 }

@@ -75,6 +75,9 @@ pub enum ClientMessage {
 
     #[serde(rename = "shopSell")]
     ShopSell { npc_id: String, item_id: String, quantity: u32 },
+
+    #[serde(rename = "enterPortal")]
+    EnterPortal { portal_id: String },
 }
 
 impl ClientMessage {
@@ -195,9 +198,20 @@ impl ClientMessage {
                 data.insert("quantity".into(), Value::Integer((*quantity as i64).into()));
                 "shopSell"
             }
+            ClientMessage::EnterPortal { portal_id } => {
+                data.insert("portalId".into(), Value::String(portal_id.clone().into()));
+                "enterPortal"
+            }
         };
 
         (msg_type, data)
+    }
+}
+
+/// Helper function to create an enter portal message
+pub fn enter_portal(portal_id: &str) -> ClientMessage {
+    ClientMessage::EnterPortal {
+        portal_id: portal_id.to_string(),
     }
 }
 

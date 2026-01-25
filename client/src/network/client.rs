@@ -1609,6 +1609,19 @@ impl NetworkClient {
                 }
             }
 
+            "mapTransition" => {
+                if let Some(value) = data {
+                    let map_type = extract_string(value, "mapType").unwrap_or_default();
+                    let map_id = extract_string(value, "mapId").unwrap_or_default();
+                    let spawn_x = extract_f32(value, "spawnX").unwrap_or(0.0);
+                    let spawn_y = extract_f32(value, "spawnY").unwrap_or(0.0);
+                    let instance_id = extract_string(value, "instanceId").unwrap_or_default();
+
+                    log::info!("Map transition to {} ({}) at ({}, {})", map_id, map_type, spawn_x, spawn_y);
+                    state.start_transition(map_type, map_id, spawn_x, spawn_y, instance_id);
+                }
+            }
+
             _ => {
                 log::debug!("Unhandled message type: {}", msg_type);
             }
