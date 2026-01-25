@@ -1672,6 +1672,12 @@ async fn handle_enter_portal(
             },
         ).await;
     }
+
+    // Send existing ground items in this instance
+    let ground_items = room.get_ground_items_in_instance(Some(&instance.id)).await;
+    for item_msg in ground_items {
+        room.send_to_player(player_id, item_msg).await;
+    }
 }
 
 async fn handle_client_message(

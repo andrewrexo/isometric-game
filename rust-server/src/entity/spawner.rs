@@ -11,6 +11,7 @@ pub fn generate_loot_from_prototype(
     killer_id: &str,
     current_time: u64,
     level: i32,
+    instance_id: Option<String>,
 ) -> Vec<GroundItem> {
     let mut drops = Vec::new();
     let mut rng = rand::thread_rng();
@@ -25,7 +26,7 @@ pub fn generate_loot_from_prototype(
         if gold_amount > 0 {
             let id = format!("item_{}_{}", current_time, item_counter);
             item_counter += 1;
-            drops.push(GroundItem::new(
+            drops.push(GroundItem::new_in_instance(
                 &id,
                 GOLD_ITEM_ID,
                 x,
@@ -33,6 +34,7 @@ pub fn generate_loot_from_prototype(
                 gold_amount,
                 Some(killer_id.to_string()),
                 current_time,
+                instance_id.clone(),
             ));
         }
     }
@@ -46,7 +48,7 @@ pub fn generate_loot_from_prototype(
                 item_counter += 1;
 
                 // Use the item_id string directly from loot table
-                drops.push(GroundItem::new(
+                drops.push(GroundItem::new_in_instance(
                     &id,
                     &entry.item_id,
                     x,
@@ -54,6 +56,7 @@ pub fn generate_loot_from_prototype(
                     quantity,
                     Some(killer_id.to_string()),
                     current_time,
+                    instance_id.clone(),
                 ));
             }
         }

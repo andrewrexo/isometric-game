@@ -853,6 +853,27 @@ impl GameRoom {
         players.get(player_id).map(|p| p.name.clone())
     }
 
+    /// Get all ground items in a specific instance (or overworld if None)
+    pub async fn get_ground_items_in_instance(&self, instance_id: Option<&str>) -> Vec<ServerMessage> {
+        let items = self.ground_items.read().await;
+        items.values()
+            .filter(|item| {
+                match (&item.instance_id, instance_id) {
+                    (None, None) => true,  // Both overworld
+                    (Some(a), Some(b)) => a == b,  // Same instance
+                    _ => false,  // Different zones
+                }
+            })
+            .map(|item| ServerMessage::ItemDropped {
+                id: item.id.clone(),
+                item_id: item.item_id.clone(),
+                x: item.x,
+                y: item.y,
+                quantity: item.quantity,
+            })
+            .collect()
+    }
+
     /// Get the initial inventory update message for a player (used on connection)
     pub async fn get_player_inventory_update(&self, player_id: &str) -> Option<ServerMessage> {
         let players = self.players.read().await;
@@ -1579,9 +1600,15 @@ impl GameRoom {
                     .unwrap()
                     .as_millis() as u64;
 
+                // Get killer's current instance for loot zone tracking
+                let killer_instance = {
+                    let instances = self.player_instances.read().await;
+                    instances.get(player_id).cloned()
+                };
+
                 let drops = if let Some(prototype) = self.entity_registry.get(&prototype_id) {
                     crate::entity::generate_loot_from_prototype(
-                        prototype, target_x, target_y, player_id, current_time, npc_level
+                        prototype, target_x, target_y, player_id, current_time, npc_level, killer_instance
                     )
                 } else {
                     vec![] // No prototype found, no drops
