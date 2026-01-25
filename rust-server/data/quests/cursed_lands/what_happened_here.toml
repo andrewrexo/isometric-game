@@ -8,6 +8,7 @@ description = "The corruption has twisted the farm animals into hostile creature
 giver_npc = "elder_villager"
 level_required = 1
 repeatable = false
+lua_script = "cursed_lands/what_happened_here.lua"
 
 [quest.chain]
 next = "spreading_rot"
