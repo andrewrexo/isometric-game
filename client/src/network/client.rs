@@ -466,6 +466,7 @@ impl NetworkClient {
                     if let Some(players) = extract_array(value, "players") {
                         for player_value in players {
                             let id = extract_string(player_value, "id").unwrap_or_default();
+                            let name = extract_string(player_value, "name").unwrap_or_default();
                             // Server sends i32 grid positions
                             let x = extract_i32(player_value, "x");
                             let y = extract_i32(player_value, "y");
@@ -476,6 +477,8 @@ impl NetworkClient {
                             let hitpoints_level = extract_i32(player_value, "hitpointsLevel");
                             let combat_skill_level = extract_i32(player_value, "combatSkillLevel");
                             let gold = extract_i32(player_value, "gold");
+                            let gender = extract_string(player_value, "gender").unwrap_or_else(|| "male".to_string());
+                            let skin = extract_string(player_value, "skin").unwrap_or_else(|| "tan".to_string());
                             let hair_style = extract_i32(player_value, "hair_style");
                             let hair_color = extract_i32(player_value, "hair_color");
                             let equipped_head = extract_string(player_value, "equipped_head").filter(|s| !s.is_empty());
@@ -556,6 +559,44 @@ impl NetworkClient {
                                 player.equipped_belt = equipped_belt.clone();
                                 // Update admin status
                                 player.is_admin = is_admin;
+                            } else if !is_local_player && !id.is_empty() {
+                                // Player not in our map - create them from stateSync data
+                                // This handles players re-appearing after map transitions
+                                if let (Some(px), Some(py)) = (x, y) {
+                                    log::info!("Creating player from stateSync: {} at ({}, {})", name, px, py);
+                                    let mut new_player = Player::new(
+                                        id.clone(),
+                                        name.clone(),
+                                        px as f32,
+                                        py as f32,
+                                        gender,
+                                        skin,
+                                    );
+                                    new_player.hair_style = hair_style;
+                                    new_player.hair_color = hair_color;
+                                    new_player.equipped_head = equipped_head;
+                                    new_player.equipped_body = equipped_body;
+                                    new_player.equipped_weapon = equipped_weapon;
+                                    new_player.equipped_back = equipped_back;
+                                    new_player.equipped_feet = equipped_feet;
+                                    new_player.equipped_ring = equipped_ring;
+                                    new_player.equipped_gloves = equipped_gloves;
+                                    new_player.equipped_necklace = equipped_necklace;
+                                    new_player.equipped_belt = equipped_belt;
+                                    new_player.is_admin = is_admin;
+                                    if let Some(hp_val) = hp {
+                                        new_player.hp = hp_val;
+                                    }
+                                    if let Some(max_hp_val) = max_hp {
+                                        new_player.max_hp = max_hp_val;
+                                    }
+                                    if let Some(dir) = direction {
+                                        let new_dir = Direction::from_u8(dir as u8);
+                                        new_player.direction = new_dir;
+                                        new_player.animation.direction = new_dir;
+                                    }
+                                    state.players.insert(id.clone(), new_player);
+                                }
                             }
 
                             // Update inventory gold for local player

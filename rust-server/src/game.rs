@@ -362,6 +362,7 @@ impl Player {
 #[derive(Debug, Clone, Serialize)]
 pub struct PlayerUpdate {
     pub id: String,
+    pub name: String,
     pub x: i32,
     pub y: i32,
     pub direction: u8,
@@ -526,6 +527,24 @@ impl GameRoom {
     pub async fn broadcast(&self, msg: ServerMessage) {
         // Ignore send errors (no receivers)
         let _ = self.broadcast_tx.send(msg);
+    }
+
+    /// Broadcast a message only to players in the same zone as the given player
+    /// (same instance, or all overworld players if player is in overworld)
+    pub async fn broadcast_to_zone(&self, source_player_id: &str, msg: ServerMessage) {
+        let player_instances = self.player_instances.read().await;
+        let source_instance = player_instances.get(source_player_id).cloned();
+        let senders = self.player_senders.read().await;
+
+        if let Ok(bytes) = crate::protocol::encode_server_message(&msg) {
+            for (player_id, sender) in senders.iter() {
+                let target_instance = player_instances.get(player_id).cloned();
+                // Send if both in same instance or both in overworld (None)
+                if source_instance == target_instance {
+                    let _ = sender.try_send(bytes.clone());
+                }
+            }
+        }
     }
 
     /// Register a player's message sender for unicast
@@ -827,6 +846,11 @@ impl GameRoom {
     pub async fn get_player_hair(&self, player_id: &str) -> Option<(Option<i32>, Option<i32>)> {
         let players = self.players.read().await;
         players.get(player_id).map(|p| (p.hair_style, p.hair_color))
+    }
+
+    pub async fn get_player_name(&self, player_id: &str) -> Option<String> {
+        let players = self.players.read().await;
+        players.get(player_id).map(|p| p.name.clone())
     }
 
     /// Get the initial inventory update message for a player (used on connection)
@@ -1590,7 +1614,7 @@ impl GameRoom {
                                     quantity: existing.quantity,
                                 };
                                 drop(items); // Release lock before broadcast
-                                self.broadcast(update_msg).await;
+                                self.broadcast_to_zone(player_id, update_msg).await;
                             }
                             continue;
                         }
@@ -1606,7 +1630,7 @@ impl GameRoom {
                     };
                     items.insert(item.id.clone(), item);
                     drop(items); // Release lock before broadcast
-                    self.broadcast(drop_msg).await;
+                    self.broadcast_to_zone(player_id, drop_msg).await;
                 }
             } else {
                 // Broadcast player death
@@ -1839,12 +1863,12 @@ impl GameRoom {
                     self.process_quest_item_collect(player_id, &picked_item_id, picked_up_count).await;
                 }
 
-                // Broadcast pickup (public info - everyone sees item disappear)
+                // Broadcast pickup to players in same zone
                 let pickup_msg = ServerMessage::ItemPickedUp {
                     item_id: item_id.to_string(),
                     player_id: player_id.to_string(),
                 };
-                self.broadcast(pickup_msg).await;
+                self.broadcast_to_zone(player_id, pickup_msg).await;
 
                 // SECURITY: Unicast inventory update (private - only this player receives)
                 let inv_msg = ServerMessage::InventoryUpdate {
@@ -3214,7 +3238,13 @@ impl GameRoom {
         let drop_x_f = drop_x as f32;
         let drop_y_f = drop_y as f32;
 
-        let ground_item = GroundItem::new(
+        // Get player's current instance
+        let instance_id = {
+            let instances = self.player_instances.read().await;
+            instances.get(player_id).cloned()
+        };
+
+        let ground_item = GroundItem::new_in_instance(
             &uuid::Uuid::new_v4().to_string(),
             &item_id,
             drop_x_f,
@@ -3222,12 +3252,13 @@ impl GameRoom {
             qty_to_drop,
             Some(player_id.to_string()),
             current_time,
+            instance_id,
         );
 
         tracing::info!("Player {} dropped {}x {} (protected for 10s)", player_id, qty_to_drop, item_id);
 
-        // Broadcast item drop
-        self.broadcast(ServerMessage::ItemDropped {
+        // Broadcast item drop to players in same zone
+        self.broadcast_to_zone(player_id, ServerMessage::ItemDropped {
             id: ground_item.id.clone(),
             item_id: item_id.clone(),
             x: drop_x_f,
@@ -3296,7 +3327,13 @@ impl GameRoom {
         let drop_x = player_x as f32;
         let drop_y = player_y as f32;
 
-        let ground_item = GroundItem::new(
+        // Get player's current instance
+        let instance_id = {
+            let instances = self.player_instances.read().await;
+            instances.get(player_id).cloned()
+        };
+
+        let ground_item = GroundItem::new_in_instance(
             &uuid::Uuid::new_v4().to_string(),
             GOLD_ITEM_ID,
             drop_x,
@@ -3304,12 +3341,13 @@ impl GameRoom {
             amount,
             Some(player_id.to_string()),
             current_time,
+            instance_id,
         );
 
         tracing::info!("Player {} dropped {}g (protected for 10s)", player_id, amount);
 
-        // Broadcast item drop
-        self.broadcast(ServerMessage::ItemDropped {
+        // Broadcast item drop to players in same zone
+        self.broadcast_to_zone(player_id, ServerMessage::ItemDropped {
             id: ground_item.id.clone(),
             item_id: GOLD_ITEM_ID.to_string(),
             x: drop_x,
@@ -3485,6 +3523,7 @@ impl GameRoom {
 
                 player_updates.push(PlayerUpdate {
                     id: player.id.clone(),
+                    name: player.name.clone(),
                     x: player.x,
                     y: player.y,
                     direction: player.direction as u8,
@@ -3679,13 +3718,27 @@ impl GameRoom {
             }
         }
 
-        // Send state sync to each player, filtering NPCs for players in instances
+        // Send state sync to each player, filtering players and NPCs by instance
         let tick = *self.tick.read().await;
         let player_instances = self.player_instances.read().await;
         let senders = self.player_senders.read().await;
 
         for (player_id, sender) in senders.iter() {
-            // Players in instances should not receive world NPCs
+            // Get this player's current instance (None = overworld)
+            let my_instance = player_instances.get(player_id);
+
+            // Filter players: only send players in the same instance/overworld
+            let players_for_player: Vec<PlayerUpdate> = player_updates
+                .iter()
+                .filter(|p| {
+                    let other_instance = player_instances.get(&p.id);
+                    // Both in overworld (both None) or both in same instance
+                    my_instance == other_instance
+                })
+                .cloned()
+                .collect();
+
+            // Filter NPCs: players in instances should not receive world NPCs
             let npcs_for_player = if player_instances.contains_key(player_id) {
                 // Player is in an instance - send empty NPC list (instance NPCs are sent separately)
                 Vec::new()
@@ -3696,7 +3749,7 @@ impl GameRoom {
 
             let msg = ServerMessage::StateSync {
                 tick,
-                players: player_updates.clone(),
+                players: players_for_player,
                 npcs: npcs_for_player,
             };
 

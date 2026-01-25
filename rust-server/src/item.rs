@@ -232,8 +232,9 @@ pub struct GroundItem {
     pub x: f32,
     pub y: f32,
     pub quantity: i32,
-    pub owner_id: Option<String>, // Player who can pick up (None = anyone)
-    pub drop_time: u64,           // When the item was dropped
+    pub owner_id: Option<String>,    // Player who can pick up (None = anyone)
+    pub drop_time: u64,              // When the item was dropped
+    pub instance_id: Option<String>, // Which instance this item is in (None = overworld)
 }
 
 impl GroundItem {
@@ -254,6 +255,29 @@ impl GroundItem {
             quantity,
             owner_id,
             drop_time: current_time,
+            instance_id: None,
+        }
+    }
+
+    pub fn new_in_instance(
+        id: &str,
+        item_id: &str,
+        x: f32,
+        y: f32,
+        quantity: i32,
+        owner_id: Option<String>,
+        current_time: u64,
+        instance_id: Option<String>,
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            item_id: item_id.to_string(),
+            x,
+            y,
+            quantity,
+            owner_id,
+            drop_time: current_time,
+            instance_id,
         }
     }
 

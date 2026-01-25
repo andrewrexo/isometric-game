@@ -588,6 +588,10 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                         Value::String("id".into()),
                         Value::String(p.id.clone().into()),
                     ));
+                    pmap.push((
+                        Value::String("name".into()),
+                        Value::String(p.name.clone().into()),
+                    ));
                     pmap.push((Value::String("x".into()), Value::Integer((p.x as i64).into())));
                     pmap.push((Value::String("y".into()), Value::Integer((p.y as i64).into())));
                     pmap.push((

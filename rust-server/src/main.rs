@@ -1358,13 +1358,39 @@ async fn handle_enter_portal(
                 info!("Found exit portal '{}' targeting '{}' at ({}, {})",
                     portal.id, portal.target_map, portal.target_x, portal.target_y);
 
-                // Remove player from current instance
+                // Remove player from current instance and notify others
                 if let Some(instance) = state.instance_manager.find_player_instance(player_id).await {
+                    // Get other players in the instance BEFORE removing this player
+                    let other_players: Vec<String> = instance.get_player_ids().await
+                        .into_iter()
+                        .filter(|id| id != player_id)
+                        .collect();
+
                     let remaining = instance.remove_player(player_id).await;
                     if remaining == 0 && instance.instance_type == InstanceType::Private {
                         if let Some(owner_id) = &instance.owner_id {
                             state.instance_manager.remove_private(owner_id, &instance.map_id);
                         }
+                    }
+
+                    // Notify other players in the instance that this player left
+                    // AND notify the exiting player that those players "left" their view
+                    for other_id in &other_players {
+                        // Tell players still in instance that this player left
+                        room.send_to_player(
+                            other_id,
+                            ServerMessage::PlayerLeft {
+                                id: player_id.to_string(),
+                            },
+                        ).await;
+
+                        // Tell the exiting player that the instance players are gone from their view
+                        room.send_to_player(
+                            player_id,
+                            ServerMessage::PlayerLeft {
+                                id: other_id.clone(),
+                            },
+                        ).await;
                     }
                 }
 
@@ -1505,11 +1531,60 @@ async fn handle_enter_portal(
         player_instances.insert(player_id.to_string(), instance.id.clone());
     }
 
+    // Get other players already in the instance BEFORE adding this player
+    let other_players_in_instance: Vec<String> = instance.get_player_ids().await;
+
     // Add player to instance
     instance.add_player(player_id).await;
 
     // Update player position to spawn point
     room.set_player_position(player_id, spawn.x as i32, spawn.y as i32).await;
+
+    // Notify other players in the instance that this player joined
+    if !other_players_in_instance.is_empty() {
+        let player_name = room.get_player_name(player_id).await.unwrap_or_default();
+        let (gender, skin) = room.get_player_appearance(player_id).await.unwrap_or_else(|| ("male".to_string(), "tan".to_string()));
+        let (hair_style, hair_color) = room.get_player_hair(player_id).await.unwrap_or((None, None));
+
+        for other_id in &other_players_in_instance {
+            room.send_to_player(
+                other_id,
+                ServerMessage::PlayerJoined {
+                    id: player_id.to_string(),
+                    name: player_name.clone(),
+                    x: spawn.x as i32,
+                    y: spawn.y as i32,
+                    gender: gender.clone(),
+                    skin: skin.clone(),
+                    hair_style,
+                    hair_color,
+                },
+            ).await;
+        }
+
+        // Also send existing instance players to the joining player
+        for other_id in &other_players_in_instance {
+            if let Some(other_name) = room.get_player_name(other_id).await {
+                let (other_x, other_y) = room.get_player_position(other_id).await.unwrap_or((spawn.x as i32, spawn.y as i32));
+                let (other_gender, other_skin) = room.get_player_appearance(other_id).await.unwrap_or_else(|| ("male".to_string(), "tan".to_string()));
+                let (other_hair_style, other_hair_color) = room.get_player_hair(other_id).await.unwrap_or((None, None));
+
+                room.send_to_player(
+                    player_id,
+                    ServerMessage::PlayerJoined {
+                        id: other_id.clone(),
+                        name: other_name,
+                        x: other_x,
+                        y: other_y,
+                        gender: other_gender,
+                        skin: other_skin,
+                        hair_style: other_hair_style,
+                        hair_color: other_hair_color,
+                    },
+                ).await;
+            }
+        }
+    }
 
     info!(
         "Player {} entered instance {} (map: {}) at ({}, {})",

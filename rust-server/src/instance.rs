@@ -40,6 +40,11 @@ impl Instance {
         self.players.read().await.contains(player_id)
     }
 
+    /// Get all player IDs in this instance
+    pub async fn get_player_ids(&self) -> Vec<String> {
+        self.players.read().await.iter().cloned().collect()
+    }
+
     /// Spawn NPCs from entity definitions (call once when instance is created)
     pub async fn spawn_npcs(
         &self,
