@@ -731,8 +731,15 @@ impl GameState {
         // Update area banner timer
         self.area_banner.update(delta);
 
-        // Update XP globes (fade timers)
-        self.xp_globes.update();
+        // Update XP globes (fade timers, hover detection)
+        // Calculate globe position to match renderer
+        let margin = 12.0;
+        let base_y = 25.0;
+        let tag_height = 22.0;
+        let bar_width = 120.0_f32.max(140.0);
+        let bar_x = (macroquad::window::screen_width() - bar_width - margin).floor();
+        let globe_stats_y = base_y + tag_height / 2.0 + 8.0;
+        self.xp_globes.update(bar_x, globe_stats_y);
     }
 
     pub fn get_local_player(&self) -> Option<&Player> {

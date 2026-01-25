@@ -11,7 +11,7 @@ pub const GLOBE_SIZE: f32 = 40.0;
 pub const GLOBE_SPACING: f32 = 4.0;
 const ICON_SIZE: f32 = 24.0;
 const RING_THICKNESS: f32 = 3.0;
-const VISIBLE_DURATION: f64 = 3.0;  // Seconds before fade starts
+const VISIBLE_DURATION: f64 = 6.0;  // Seconds before fade starts
 const FADE_OUT_DURATION: f64 = 0.5; // Seconds to fully fade
 
 // UI icons sprite sheet: 24x24 icons in 10 columns
@@ -103,8 +103,30 @@ impl XpGlobesManager {
     }
 
     /// Update globes, removing expired ones
-    pub fn update(&mut self) {
+    /// If mouse is hovering over any globe, keep it alive
+    pub fn update(&mut self, stats_left_x: f32, stats_center_y: f32) {
         let current_time = macroquad::time::get_time();
+        let (mouse_x, mouse_y) = mouse_position();
+
+        // Check each globe for hover and reset timer if hovered
+        let mut x = stats_left_x - GLOBE_SPACING - GLOBE_SIZE;
+        for globe in self.globes.iter_mut().rev() {
+            let center_x = x + GLOBE_SIZE / 2.0;
+            let center_y = stats_center_y;
+            let radius = GLOBE_SIZE / 2.0;
+
+            // Check if mouse is within this globe
+            let dx = mouse_x - center_x;
+            let dy = mouse_y - center_y;
+            if dx * dx + dy * dy <= radius * radius {
+                // Mouse is hovering - reset timer to keep it visible
+                globe.last_updated = current_time;
+            }
+
+            x -= GLOBE_SIZE + GLOBE_SPACING;
+        }
+
+        // Remove expired globes
         self.globes.retain(|globe| !globe.is_expired(current_time));
     }
 }
