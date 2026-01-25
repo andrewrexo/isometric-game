@@ -1,6 +1,34 @@
 id = "blacksmith"
 display_name = "Blacksmith's Wares"
 
+# Tier 0 - Starting gear replacements
+[[stock]]
+item_id = "worn_pitchfork"
+max_quantity = 5
+restock_rate = 1
+
+[[stock]]
+item_id = "torn_clothes"
+max_quantity = 5
+restock_rate = 1
+
+[[stock]]
+item_id = "worn_sandals"
+max_quantity = 5
+restock_rate = 1
+
+# Tier 1 - Salvaged gear (fallback for unlucky drops)
+[[stock]]
+item_id = "salvaged_sword"
+max_quantity = 2
+restock_rate = 1
+
+[[stock]]
+item_id = "salvaged_tunic"
+max_quantity = 3
+restock_rate = 1
+
+# Existing items
 [[stock]]
 item_id = "goblin_spear"
 max_quantity = 3
