@@ -72,6 +72,21 @@ attack_bonus = 0
 strength_bonus = 4
 defence_bonus = 10
 
+[worn_sandals]
+display_name = "Worn Sandals"
+sprite = "worn_sandals"
+description = "Flimsy sandals that barely protect your feet."
+category = "equipment"
+max_stack = 1
+base_price = 5
+sellable = true
+[worn_sandals.equipment]
+slot_type = "feet"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 0
+
 # =============================================================================
 # BODY ARMOR (Defence requirement)
 # =============================================================================
@@ -258,6 +273,21 @@ defence_level_required = 50
 attack_bonus = -2
 strength_bonus = 10
 defence_bonus = 45
+
+[torn_clothes]
+display_name = "Torn Clothes"
+sprite = "torn_clothes"
+description = "Ragged clothing barely holding together."
+category = "equipment"
+max_stack = 1
+base_price = 5
+sellable = true
+[torn_clothes.equipment]
+slot_type = "body"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 1
 
 
 # =============================================================================
@@ -476,6 +506,21 @@ range = 10
 attack_level_required = 50
 attack_bonus = 48
 strength_bonus = 55
+defence_bonus = 0
+
+[worn_pitchfork]
+display_name = "Worn Pitchfork"
+sprite = "worn_pitchfork"
+description = "A rusty farm tool. Better than nothing."
+category = "equipment"
+max_stack = 1
+base_price = 10
+sellable = true
+[worn_pitchfork.equipment]
+slot_type = "weapon"
+attack_level_required = 1
+attack_bonus = 2
+strength_bonus = 3
 defence_bonus = 0
 
 # =============================================================================
