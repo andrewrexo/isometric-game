@@ -328,6 +328,7 @@ pub enum ServerMessage {
     /// Full interior map data sent when entering an interior
     InteriorData {
         map_id: String,
+        name: String,
         instance_id: String,
         width: u32,
         height: u32,
@@ -1494,6 +1495,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
         }
         ServerMessage::InteriorData {
             map_id,
+            name,
             instance_id,
             width,
             height,
@@ -1507,6 +1509,7 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
         } => {
             let mut map = Vec::new();
             map.push((Value::String("mapId".into()), Value::String(map_id.clone().into())));
+            map.push((Value::String("name".into()), Value::String(name.clone().into())));
             map.push((Value::String("instanceId".into()), Value::String(instance_id.clone().into())));
             map.push((Value::String("width".into()), Value::Integer((*width as i64).into())));
             map.push((Value::String("height".into()), Value::Integer((*height as i64).into())));

@@ -1570,6 +1570,7 @@ async fn handle_enter_portal(
         player_id,
         ServerMessage::InteriorData {
             map_id: interior.id.clone(),
+            name: interior.name.clone(),
             instance_id: instance.id.clone(),
             width: interior.size.width,
             height: interior.size.height,
