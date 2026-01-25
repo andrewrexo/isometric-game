@@ -977,10 +977,16 @@ impl NetworkClient {
                             state.skill_xp_events.push(SkillXpEvent {
                                 x: player.x,
                                 y: player.y,
-                                skill: skill_name,
+                                skill: skill_name.clone(),
                                 xp_gained,
                                 time: macroquad::time::get_time(),
                             });
+
+                            // Update XP globes
+                            if let Some(skill_type) = SkillType::from_str(&skill_name) {
+                                let xp_for_next = crate::game::skills::total_xp_for_level(level + 1);
+                                state.xp_globes.on_xp_gain(skill_type, total_xp, xp_for_next, level);
+                            }
                         }
                     }
                 }
