@@ -2961,8 +2961,9 @@ impl Renderer {
 
         // Tiles are centered on their world_to_screen position, so
         // bottom vertex is at center + half tile height (not full height)
-        let bottom_vertex_x = screen_x;
-        let bottom_vertex_y = screen_y + (TILE_HEIGHT / 2.0) * zoom;
+        // Round to pixel grid to avoid subpixel jitter
+        let bottom_vertex_x = screen_x.round();
+        let bottom_vertex_y = (screen_y + (TILE_HEIGHT / 2.0) * zoom).round();
 
         // Try to get the wall sprite for this gid
         if let Some(texture) = self.get_wall_sprite(wall.gid) {
