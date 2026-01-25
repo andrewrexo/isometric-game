@@ -492,6 +492,7 @@ fn run_game_frame(
     let update_start = get_time();
     let (input_dx, input_dy) = input_handler.get_movement();
     game_state.update(delta, input_dx, input_dy);
+    game_state.update_transition(delta);
     let update_ms = (get_time() - update_start) * 1000.0;
 
     // 4b. Request chunks around player position
@@ -586,4 +587,7 @@ fn run_game_frame(
         renderer.draw_text_sharp(&format!("Smoothing: {} [F7] (smoothed: {:.1}ms)",
             smooth_str, t.smoothed_delta * 1000.0), 10.0, 430.0, 16.0, timing_color);
     }
+
+    // 6. Render transition overlay (must be last, covers everything)
+    renderer.render_transition_overlay(game_state);
 }

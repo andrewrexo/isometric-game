@@ -712,4 +712,45 @@ impl GameState {
     pub fn get_local_player(&self) -> Option<&Player> {
         self.local_player_id.as_ref().and_then(|id| self.players.get(id))
     }
+
+    /// Update map transition animation
+    pub fn update_transition(&mut self, delta: f32) {
+        const FADE_DURATION: f32 = 0.25;
+
+        match self.map_transition.state {
+            TransitionState::FadingOut => {
+                self.map_transition.progress += delta / FADE_DURATION;
+                if self.map_transition.progress >= 1.0 {
+                    self.map_transition.progress = 1.0;
+                    self.map_transition.state = TransitionState::Loading;
+                }
+            }
+            TransitionState::FadingIn => {
+                self.map_transition.progress -= delta / FADE_DURATION;
+                if self.map_transition.progress <= 0.0 {
+                    self.map_transition.progress = 0.0;
+                    self.map_transition.state = TransitionState::None;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Start a map transition
+    pub fn start_transition(&mut self, map_type: String, map_id: String, spawn_x: f32, spawn_y: f32, instance_id: String) {
+        self.map_transition = MapTransition {
+            state: TransitionState::FadingOut,
+            progress: 0.0,
+            target_map_type: map_type,
+            target_map_id: map_id,
+            target_spawn_x: spawn_x,
+            target_spawn_y: spawn_y,
+            instance_id,
+        };
+    }
+
+    /// Check if input should be blocked due to transition
+    pub fn is_transitioning(&self) -> bool {
+        self.map_transition.state != TransitionState::None
+    }
 }

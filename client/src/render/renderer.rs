@@ -3668,6 +3668,21 @@ impl Renderer {
         lines
     }
 
+    /// Render transition fade overlay
+    pub fn render_transition_overlay(&self, state: &GameState) {
+        use crate::game::state::TransitionState;
 
+        if state.map_transition.state == TransitionState::None {
+            return;
+        }
 
+        let alpha = state.map_transition.progress;
+        draw_rectangle(
+            0.0,
+            0.0,
+            screen_width(),
+            screen_height(),
+            Color::new(0.0, 0.0, 0.0, alpha),
+        );
+    }
 }
