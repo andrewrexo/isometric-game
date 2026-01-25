@@ -1,13 +1,13 @@
 # Village NPCs - Quest Givers and Friendly NPCs
 
 # ============================================================================
-# Village Elder - Tutorial Quest Giver
+# Elder Mara - Cursed Lands Quest Giver (Ruined Village)
 # ============================================================================
 [elder_villager]
-display_name = "Village Elder"
+display_name = "Elder Mara"
 sprite = "village_elder"
 animation_type = "humanoid"
-description = "The wise elder of the village. He knows much about the dangers lurking in the nearby forest."
+description = "The weary elder of the ruined village. She carries the weight of her people's suffering."
 
 [elder_villager.stats]
 max_hp = 200
@@ -29,12 +29,12 @@ hostile = false
 quest_giver = true
 
 [elder_villager.quest_giver]
-available_quests = ["first_hunt", "forest_dangers"]
+available_quests = ["what_happened_here", "spreading_rot"]
 
 [elder_villager.dialogue]
-greeting = "Welcome, traveler. The village could use someone with your abilities."
-quest_available = "I have a task that needs completing, if you're willing."
-quest_complete = "You've done well. The village thanks you."
+greeting = "You survived... thank the light. The corruption came without warning. Our village lies in ruins."
+quest_available = "I have a task that might help us understand what happened here."
+quest_complete = "You've done well. Perhaps there is hope for us yet."
 
 # ============================================================================
 # Blacksmith - Future merchant/craftsman
