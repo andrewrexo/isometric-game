@@ -487,6 +487,11 @@ fn run_game_frame(
         network.send(&msg);
     }
 
+    // Process pending portal trigger (auto-triggered by walking onto portal)
+    if let Some(portal_id) = game_state.pending_portal_id.take() {
+        network.send(&network::messages::ClientMessage::EnterPortal { portal_id });
+    }
+
     // Record delta for diagnostics
     game_state.frame_timings.record_delta(delta as f64 * 1000.0);
 

@@ -580,6 +580,10 @@ pub struct GameState {
     pub current_interior: Option<String>,
     /// Current instance ID if in an instance
     pub current_instance: Option<String>,
+    /// Pending portal to enter (set when player walks onto a portal)
+    pub pending_portal_id: Option<String>,
+    /// Last tile position checked for portal (to avoid triggering on spawn)
+    pub last_portal_check_pos: Option<(i32, i32)>,
 }
 
 impl GameState {
@@ -620,6 +624,8 @@ impl GameState {
             map_transition: MapTransition::default(),
             current_interior: None,
             current_instance: None,
+            pending_portal_id: None,
+            last_portal_check_pos: None,
         }
     }
 

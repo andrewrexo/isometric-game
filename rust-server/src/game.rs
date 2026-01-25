@@ -807,6 +807,14 @@ impl GameRoom {
         players.get(player_id).map(|p| (p.x, p.y))
     }
 
+    pub async fn set_player_position(&self, player_id: &str, x: i32, y: i32) {
+        let mut players = self.players.write().await;
+        if let Some(player) = players.get_mut(player_id) {
+            player.x = x;
+            player.y = y;
+        }
+    }
+
     pub async fn get_player_appearance(&self, player_id: &str) -> Option<(String, String)> {
         let players = self.players.read().await;
         players.get(player_id).map(|p| (p.gender.clone(), p.skin.clone()))
@@ -3395,12 +3403,23 @@ impl GameRoom {
                 .collect()
         };
 
+        // Get players in instances to skip world collision for them
+        let players_in_instances: std::collections::HashSet<String> = {
+            let instances = self.player_instances.read().await;
+            instances.keys().cloned().collect()
+        };
+
         // Check walkability and entity collision for each pending move
         let mut valid_moves: Vec<(String, i32, i32)> = Vec::new();
         for (id, target_x, target_y) in pending_moves {
-            // Check static tile collision
-            if !self.world.is_tile_walkable(target_x, target_y).await {
-                continue;
+            // Skip world collision check for players in interiors
+            // Interior collision is handled client-side for now
+            // TODO: Add server-side interior collision checking
+            if !players_in_instances.contains(&id) {
+                // Check static tile collision (only for overworld players)
+                if !self.world.is_tile_walkable(target_x, target_y).await {
+                    continue;
+                }
             }
             // Check if another player is on the target tile
             if player_positions.contains(&(target_x, target_y)) {

@@ -11,13 +11,20 @@ use crate::audio::AudioManager;
 fn build_occupied_set(state: &GameState) -> HashSet<(i32, i32)> {
     let mut occupied = HashSet::new();
 
+    // When in interior mode, don't count overworld players as obstacles
+    // (they shouldn't be in our instance anyway)
+    let in_interior = state.current_interior.is_some();
+
     // Add other players (not local player)
-    for (id, player) in &state.players {
-        if state.local_player_id.as_ref() == Some(id) {
-            continue;
-        }
-        if !player.is_dead {
-            occupied.insert((player.x.round() as i32, player.y.round() as i32));
+    // Skip if in interior - we'll only see players in our instance from server updates
+    if !in_interior {
+        for (id, player) in &state.players {
+            if state.local_player_id.as_ref() == Some(id) {
+                continue;
+            }
+            if !player.is_dead {
+                occupied.insert((player.x.round() as i32, player.y.round() as i32));
+            }
         }
     }
 
@@ -2009,43 +2016,34 @@ impl InputHandler {
             }
         }
 
-        // Interact with nearest NPC or portal (E key)
+        // Interact with nearest NPC (E key)
         if is_key_pressed(KeyCode::E) {
-            log::info!("E key pressed!");
             if let Some(local_id) = &state.local_player_id {
                 if let Some(player) = state.players.get(local_id) {
-                    log::info!("E pressed - checking for portal at player pos ({}, {})", player.x, player.y);
-                    // First check if player is standing on a portal
-                    if let Some(portal) = state.chunk_manager.get_portal_at(player.x, player.y) {
-                        log::info!("Entering portal: {} -> {}", portal.id, portal.target_map);
-                        commands.push(InputCommand::EnterPortal { portal_id: portal.id.clone() });
-                    } else {
-                        log::info!("No portal found at player position");
-                        // Find nearest NPC within interaction range (2.5 tiles)
-                        const INTERACT_RANGE: f32 = 2.5;
-                        let mut nearest_npc: Option<(String, f32)> = None;
+                    // Find nearest NPC within interaction range (2.5 tiles)
+                    const INTERACT_RANGE: f32 = 2.5;
+                    let mut nearest_npc: Option<(String, f32)> = None;
 
-                        for (id, npc) in &state.npcs {
-                            // Only interact with alive NPCs
-                            if !npc.is_alive() {
-                                continue;
-                            }
-
-                            let dx = npc.x - player.x;
-                            let dy = npc.y - player.y;
-                            let dist = (dx * dx + dy * dy).sqrt();
-
-                            if dist < INTERACT_RANGE {
-                                if nearest_npc.is_none() || dist < nearest_npc.as_ref().unwrap().1 {
-                                    nearest_npc = Some((id.clone(), dist));
-                                }
-                            }
+                    for (id, npc) in &state.npcs {
+                        // Only interact with alive NPCs
+                        if !npc.is_alive() {
+                            continue;
                         }
 
-                        if let Some((npc_id, _)) = nearest_npc {
-                            log::info!("Interacting with NPC: {}", npc_id);
-                            commands.push(InputCommand::Interact { npc_id });
+                        let dx = npc.x - player.x;
+                        let dy = npc.y - player.y;
+                        let dist = (dx * dx + dy * dy).sqrt();
+
+                        if dist < INTERACT_RANGE {
+                            if nearest_npc.is_none() || dist < nearest_npc.as_ref().unwrap().1 {
+                                nearest_npc = Some((id.clone(), dist));
+                            }
                         }
+                    }
+
+                    if let Some((npc_id, _)) = nearest_npc {
+                        log::info!("Interacting with NPC: {}", npc_id);
+                        commands.push(InputCommand::Interact { npc_id });
                     }
                 }
             }

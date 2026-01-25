@@ -323,7 +323,6 @@ impl ChunkManager {
         // Store chunk
         self.chunks.insert(coord, chunk);
 
-        log::info!("Loaded chunk ({}, {}) with {} objects, {} portals", chunk_x, chunk_y, object_count, portal_count);
     }
 
     /// Check if a world position is walkable
@@ -335,19 +334,14 @@ impl ChunkManager {
         if let Some((width, height)) = self.interior_size {
             // In interior mode, chunk is at (0,0) and coords are direct
             if x < 0 || y < 0 || x >= width as i32 || y >= height as i32 {
-                log::info!("Interior bounds BLOCKED at ({}, {}): outside {}x{}", x, y, width, height);
                 return false; // Out of bounds
             }
             let coord = ChunkCoord::new(0, 0);
             if let Some(chunk) = self.chunks.get(&coord) {
                 let idx = (y as u32 * width + x as u32) as usize;
                 let blocked = chunk.collision.get(idx).copied().unwrap_or(true);
-                if blocked {
-                    log::info!("Interior collision BLOCKED at ({}, {}): idx={}", x, y, idx);
-                }
                 return !blocked;
             }
-            log::info!("Interior chunk NOT FOUND at (0,0) - {} chunks loaded", self.chunks.len());
             return false;
         }
 
@@ -355,15 +349,8 @@ impl ChunkManager {
         let coord = ChunkCoord::from_world(x, y);
         if let Some(chunk) = self.chunks.get(&coord) {
             let (local_x, local_y) = world_to_local(x, y);
-            let walkable = chunk.is_walkable_local(local_x, local_y);
-            if !walkable {
-                log::info!("World collision BLOCKED at ({}, {}) chunk ({}, {}) local ({}, {})",
-                    x, y, coord.x, coord.y, local_x, local_y);
-            }
-            walkable
+            chunk.is_walkable_local(local_x, local_y)
         } else {
-            log::info!("World chunk NOT LOADED at ({}, {}) -> chunk ({}, {}), interior_size={:?}",
-                x, y, coord.x, coord.y, self.interior_size);
             false // Unloaded chunks are impassable
         }
     }
@@ -409,15 +396,7 @@ impl ChunkManager {
     /// Find a portal at the given world position
     pub fn get_portal_at(&self, x: f32, y: f32) -> Option<&Portal> {
         let coord = ChunkCoord::from_world_f32(x, y);
-        log::info!("get_portal_at: world ({}, {}) -> chunk ({}, {})", x, y, coord.x, coord.y);
-
-        let chunk = match self.chunks.get(&coord) {
-            Some(c) => c,
-            None => {
-                log::info!("get_portal_at: chunk not loaded");
-                return None;
-            }
-        };
+        let chunk = self.chunks.get(&coord)?;
 
         let tile_x = x.floor() as i32;
         let tile_y = y.floor() as i32;
@@ -425,16 +404,6 @@ impl ChunkManager {
         // Portal x/y are LOCAL coords (0-31), need to convert to WORLD coords
         let chunk_base_x = coord.x * CHUNK_SIZE as i32;
         let chunk_base_y = coord.y * CHUNK_SIZE as i32;
-
-        log::info!("get_portal_at: chunk has {} portals, tile ({}, {}), chunk_base ({}, {})",
-            chunk.portals.len(), tile_x, tile_y, chunk_base_x, chunk_base_y);
-
-        for p in &chunk.portals {
-            let world_px = chunk_base_x + p.x;
-            let world_py = chunk_base_y + p.y;
-            log::info!("  portal '{}': local ({}, {}) -> world ({}, {}) to ({}, {})",
-                p.id, p.x, p.y, world_px, world_py, world_px + p.width, world_py + p.height);
-        }
 
         chunk.portals.iter().find(|p| {
             let world_px = chunk_base_x + p.x;
@@ -464,9 +433,6 @@ impl ChunkManager {
         }).collect();
 
         let collision_data = Chunk::unpack_collision_sized(collision, (width * height) as usize);
-        let blocked_count = collision_data.iter().filter(|&&b| b).count();
-        log::info!("Interior collision: {} bytes packed, {} tiles total, {} blocked",
-            collision.len(), collision_data.len(), blocked_count);
 
         let chunk = Chunk {
             coord,
@@ -477,13 +443,8 @@ impl ChunkManager {
             portals,
         };
 
-        let portal_count = chunk.portals.len();
-        let object_count = chunk.objects.len();
-        let wall_count = chunk.walls.len();
         self.chunks.insert(coord, chunk);
         self.current_chunk = coord;
-
-        log::info!("Loaded interior map: {}x{} with {} portals, {} objects, {} walls", width, height, portal_count, object_count, wall_count);
     }
 
     /// Clear interior and prepare for overworld

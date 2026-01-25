@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use serde::{Deserialize, Serialize};
-use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType, Wall, WallEdge, Portal};
+use crate::game::{GameState, ConnectionStatus, Player, Direction, ChatChannel, ChatMessage, ChatBubble, DamageEvent, LevelUpEvent, SkillXpEvent, GroundItem, InventorySlot, ActiveDialogue, DialogueChoice, ActiveQuest, QuestObjective, QuestCompletedEvent, RecipeDefinition, RecipeIngredient, RecipeResult, ItemDefinition, EquipmentStats, MapObject, ShopData, ShopStockItem, SkillType, Wall, WallEdge, Portal, TransitionState};
 use crate::game::npc::{Npc, NpcState};
 use super::messages::ClientMessage;
 use super::protocol::{self, DecodedMessage, extract_string, extract_f32, extract_i32, extract_u32, extract_u64, extract_array, extract_u8, extract_bool};
@@ -563,6 +563,29 @@ impl NetworkClient {
                                     state.inventory.gold = gold;
                                 }
                             }
+                        }
+                    }
+
+                    // Check if local player walked onto a portal (auto-trigger)
+                    // Only triggers when player moves to a new tile, not when spawning on one
+                    if let Some(local_id) = &state.local_player_id {
+                        if let Some(player) = state.players.get(local_id) {
+                            let current_tile = (player.x.floor() as i32, player.y.floor() as i32);
+                            let prev_tile = state.last_portal_check_pos;
+
+                            // Only check for portal if we moved to a different tile
+                            let moved_tiles = prev_tile.map_or(false, |prev| prev != current_tile);
+
+                            if moved_tiles &&
+                               state.pending_portal_id.is_none() &&
+                               matches!(state.map_transition.state, TransitionState::None) {
+                                if let Some(portal) = state.chunk_manager.get_portal_at(player.x, player.y) {
+                                    state.pending_portal_id = Some(portal.id.clone());
+                                }
+                            }
+
+                            // Always update last checked position
+                            state.last_portal_check_pos = Some(current_tile);
                         }
                     }
 
@@ -1617,8 +1640,36 @@ impl NetworkClient {
                     let spawn_y = extract_f32(value, "spawnY").unwrap_or(0.0);
                     let instance_id = extract_string(value, "instanceId").unwrap_or_default();
 
-                    log::info!("Map transition to {} ({}) at ({}, {})", map_id, map_type, spawn_x, spawn_y);
-                    state.start_transition(map_type, map_id, spawn_x, spawn_y, instance_id);
+                    if map_type == "overworld" {
+                        // Returning to overworld from interior
+
+                        // Clear interior mode
+                        state.chunk_manager.clear_interior();
+                        state.current_interior = None;
+                        state.current_instance = None;
+
+                        // Clear interior NPCs and ground items (will be repopulated by stateSync)
+                        state.npcs.clear();
+                        state.ground_items.clear();
+
+                        // Reset portal check position to prevent immediate re-trigger
+                        state.last_portal_check_pos = None;
+
+                        // Update player position
+                        if let Some(local_id) = &state.local_player_id {
+                            if let Some(player) = state.players.get_mut(local_id) {
+                                player.x = spawn_x;
+                                player.y = spawn_y;
+                            }
+                        }
+
+                        // Start fade-in transition directly (no loading needed)
+                        state.map_transition.state = crate::game::state::TransitionState::FadingIn;
+                        state.map_transition.progress = 1.0;
+                    } else {
+                        // Transitioning to interior - wait for interiorData
+                        state.start_transition(map_type, map_id, spawn_x, spawn_y, instance_id);
+                    }
                 }
             }
 
@@ -1630,8 +1681,6 @@ impl NetworkClient {
                     let height = extract_u32(value, "height").unwrap_or(32);
                     let spawn_x = extract_f32(value, "spawnX").unwrap_or(0.0);
                     let spawn_y = extract_f32(value, "spawnY").unwrap_or(0.0);
-
-                    log::info!("Received interior data: {} ({}x{}) instance {}", map_id, width, height, instance_id);
 
                     // Parse layers
                     let mut layers: Vec<(u8, Vec<u32>)> = Vec::new();
@@ -1698,16 +1747,28 @@ impl NetworkClient {
                         }
                     }
 
-                    log::info!("Interior data: {} objects, {} walls, {} portals", objects.len(), walls.len(), portals.len());
-
                     // Clear world data when entering interior
                     state.npcs.clear();
                     state.ground_items.clear();
+
+                    // Clear other players (keep only local player) to avoid ghost collisions
+                    if let Some(local_id) = &state.local_player_id {
+                        let local_player = state.players.remove(local_id);
+                        state.players.clear();
+                        if let Some(player) = local_player {
+                            state.players.insert(local_id.clone(), player);
+                        }
+                    } else {
+                        state.players.clear();
+                    }
 
                     // Load the interior
                     state.chunk_manager.load_interior(width, height, layers, &collision, portals, objects, walls);
                     state.current_interior = Some(map_id.clone());
                     state.current_instance = Some(instance_id);
+
+                    // Reset portal check position to prevent immediate re-trigger
+                    state.last_portal_check_pos = None;
 
                     // Update player position to spawn point
                     if let Some(local_id) = &state.local_player_id {

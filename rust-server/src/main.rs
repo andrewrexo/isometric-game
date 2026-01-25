@@ -88,6 +88,8 @@ struct AppState {
     instance_manager: Arc<InstanceManager>,
     /// Tracks which instance each player is currently in (None = overworld)
     player_instances: Arc<RwLock<HashMap<String, String>>>,
+    /// Tracks where each player entered their current interior from (for return teleport)
+    player_entrance_positions: Arc<RwLock<HashMap<String, (i32, i32)>>>,
 }
 
 impl AppState {
@@ -175,6 +177,7 @@ impl AppState {
             interior_registry,
             instance_manager,
             player_instances: Arc::new(RwLock::new(HashMap::new())),
+            player_entrance_positions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -1310,7 +1313,117 @@ async fn handle_enter_portal(
 
     info!("Player {} attempting to enter portal '{}'", player_id, portal_id);
 
-    // Find portal at player position
+    // Check if player is currently in an interior
+    let current_instance_id = {
+        let instances = state.player_instances.read().await;
+        instances.get(player_id).cloned()
+    };
+
+    // If player is in an interior, handle exit portal
+    if let Some(instance_id) = current_instance_id {
+        info!("Player {} is in instance '{}', checking for interior exit portal", player_id, instance_id);
+
+        // Find the interior this instance belongs to
+        let interior_id = instance_id.strip_prefix("pub_")
+            .or_else(|| instance_id.split('_').nth(1))
+            .unwrap_or(&instance_id);
+
+        let interior = match state.interior_registry.get(interior_id) {
+            Some(i) => i,
+            None => {
+                error!("Could not find interior definition for instance '{}'", instance_id);
+                return;
+            }
+        };
+
+        // Get player position
+        let (player_x, player_y) = match room.get_player_position(player_id).await {
+            Some(pos) => pos,
+            None => {
+                warn!("Player {} not found in room", player_id);
+                return;
+            }
+        };
+
+        // Find the portal in the interior's portal list
+        let exit_portal = interior.portals.iter().find(|p| {
+            p.id == portal_id &&
+            player_x >= p.x && player_x < p.x + p.width &&
+            player_y >= p.y && player_y < p.y + p.height
+        });
+
+        match exit_portal {
+            Some(portal) => {
+                info!("Found exit portal '{}' targeting '{}' at ({}, {})",
+                    portal.id, portal.target_map, portal.target_x, portal.target_y);
+
+                // Remove player from current instance
+                if let Some(instance) = state.instance_manager.find_player_instance(player_id).await {
+                    let remaining = instance.remove_player(player_id).await;
+                    if remaining == 0 && instance.instance_type == InstanceType::Private {
+                        if let Some(owner_id) = &instance.owner_id {
+                            state.instance_manager.remove_private(owner_id, &instance.map_id);
+                        }
+                    }
+                }
+
+                // Remove from player_instances tracking
+                {
+                    let mut instances = state.player_instances.write().await;
+                    instances.remove(player_id);
+                }
+
+                if portal.target_map == "overworld" {
+                    // Return to overworld - use stored entrance position, or portal target, or default
+                    let (spawn_x, spawn_y) = {
+                        // First try to get the stored entrance position
+                        let mut entrance_positions = state.player_entrance_positions.write().await;
+                        if let Some((x, y)) = entrance_positions.remove(player_id) {
+                            info!("Using stored entrance position ({}, {}) for player {}", x, y, player_id);
+                            (x as f32, y as f32)
+                        } else if portal.target_x != 0.0 || portal.target_y != 0.0 {
+                            // Fall back to portal's target coordinates
+                            (portal.target_x, portal.target_y)
+                        } else {
+                            // Default spawn if nothing specified
+                            (0.0, 0.0)
+                        }
+                    };
+
+                    info!("Player {} exiting to overworld at ({}, {})", player_id, spawn_x, spawn_y);
+
+                    // Update player position in room
+                    room.set_player_position(player_id, spawn_x as i32, spawn_y as i32).await;
+
+                    // Send transition back to overworld
+                    room.send_to_player(
+                        player_id,
+                        ServerMessage::MapTransition {
+                            map_type: "overworld".to_string(),
+                            map_id: "world_0".to_string(),
+                            spawn_x,
+                            spawn_y,
+                            instance_id: String::new(),
+                        },
+                    ).await;
+
+                    return;
+                } else {
+                    // Portal leads to another interior - fall through to normal handling
+                    // (would need to update portal struct to work with interior->interior)
+                    info!("Portal leads to another interior '{}' - not yet supported", portal.target_map);
+                    return;
+                }
+            }
+            None => {
+                warn!("Player {} tried to use portal '{}' but no matching exit portal found at ({}, {})",
+                    player_id, portal_id, player_x, player_y);
+                return;
+            }
+        }
+    }
+
+    // Player is in overworld - find portal in world chunks
     let portal = match room.find_portal_at_player(player_id).await {
         Some(p) => {
             info!("Found portal at player position: id='{}', target_map='{}', target_spawn='{}'",
@@ -1372,6 +1485,13 @@ async fn handle_enter_portal(
         instance.spawn_npcs(&interior.entities, &state.entity_registry).await;
     }
 
+    // Store player's entrance position (where they came from) for return teleport
+    if let Some((entrance_x, entrance_y)) = room.get_player_position(player_id).await {
+        let mut entrance_positions = state.player_entrance_positions.write().await;
+        entrance_positions.insert(player_id.to_string(), (entrance_x, entrance_y));
+        info!("Stored entrance position ({}, {}) for player {}", entrance_x, entrance_y, player_id);
+    }
+
     // Track player's instance
     {
         let mut player_instances = state.player_instances.write().await;
@@ -1380,6 +1500,9 @@ async fn handle_enter_portal(
 
     // Add player to instance
     instance.add_player(player_id).await;
+
+    // Update player position to spawn point
+    room.set_player_position(player_id, spawn.x as i32, spawn.y as i32).await;
 
     info!(
         "Player {} entered instance {} (map: {}) at ({}, {})",
