@@ -164,10 +164,10 @@ impl Renderer {
             Color::new(0.2, 0.18, 0.15, opacity)
         );
 
-        // Progress arc
+        // Progress arc (draw in the ring area between outer border and inner circle)
         let progress = globe.progress();
         if progress > 0.0 {
-            self.draw_progress_arc(center_x, center_y, radius - 2.0, inner_radius + 1.0, progress, skill_color, opacity);
+            self.draw_progress_arc(center_x, center_y, radius - 1.5, inner_radius + 0.5, progress, skill_color, opacity);
         }
 
         // Inner dark circle (behind icon)
