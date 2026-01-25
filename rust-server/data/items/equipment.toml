@@ -821,6 +821,21 @@ defence_bonus = 1
 # BACK (Defence requirement - quivers, capes, shields)
 # =============================================================================
 
+[backpack]
+display_name = "Backpack"
+sprite = "backpack"
+description = "A sturdy backpack - doesn't provide much protection but at least it's something."
+category = "equipment"
+max_stack = 1
+base_price = 40
+sellable = true
+[backpack.equipment]
+slot_type = "back"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 1
+
 [normal_quiver]
 display_name = "Quiver"
 sprite = "normal_quiver"

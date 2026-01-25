@@ -27,7 +27,9 @@
       "Bash(identify:*)",
       "Skill(superpowers:systematic-debugging)",
       "Bash(wc:*)",
-      "Skill(superpowers:brainstorming)"
+      "Skill(superpowers:brainstorming)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
