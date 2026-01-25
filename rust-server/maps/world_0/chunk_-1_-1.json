@@ -3085,8 +3085,15 @@
       0
     ]
   },
-  "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-  "entities": [],
+  "collision": "AAAAAAAAAAAAAAAAQAAAAQgAAAQAAAAAAAAAAAAAAAAAAAACAAAAAJAAAAAAAAAACAAABCAAAAAAAAAAoACAAAAAAAAAAAAAAAAAABAAAIAAAAAAAAAABAgAgBAAAAAAAAAAAIAAAAAAAAAEAAAAAEAAAAAAAAAAAgAAAAAAAAQ=",
+  "entities": [
+    {
+      "entityId": "pig",
+      "x": 25,
+      "y": 14,
+      "level": 1
+    }
+  ],
   "mapObjects": [
     {
       "gid": 2202,
@@ -3243,6 +3250,13 @@
       "height": 116
     },
     {
+      "gid": 1264,
+      "x": 26,
+      "y": 31,
+      "width": 195,
+      "height": 255
+    },
+    {
       "gid": 1263,
       "x": 26,
       "y": 12,
@@ -3312,5 +3326,6 @@
       "width": 29,
       "height": 31
     }
-  ]
+  ],
+  "walls": []
 }

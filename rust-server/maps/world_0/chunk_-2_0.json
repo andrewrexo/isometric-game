@@ -3085,7 +3085,7 @@
       0
     ]
   },
-  "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   "entities": [],
   "mapObjects": [
     {
@@ -3227,146 +3227,7 @@
       "y": 7,
       "width": 29,
       "height": 31
-    },
-    {
-      "gid": 1264,
-      "x": 31,
-      "y": 23,
-      "width": 195,
-      "height": 255
-    },
-    {
-      "gid": 2204,
-      "x": 15,
-      "y": 14,
-      "width": 109,
-      "height": 196
-    },
-    {
-      "gid": 2204,
-      "x": 18,
-      "y": 23,
-      "width": 109,
-      "height": 196
-    },
-    {
-      "gid": 2163,
-      "x": 17,
-      "y": 22,
-      "width": 108,
-      "height": 161
-    },
-    {
-      "gid": 2163,
-      "x": 9,
-      "y": 12,
-      "width": 108,
-      "height": 161
-    },
-    {
-      "gid": 2163,
-      "x": 14,
-      "y": 14,
-      "width": 108,
-      "height": 161
-    },
-    {
-      "gid": 2163,
-      "x": 20,
-      "y": 6,
-      "width": 108,
-      "height": 161
-    },
-    {
-      "gid": 2163,
-      "x": 7,
-      "y": 18,
-      "width": 108,
-      "height": 161
-    },
-    {
-      "gid": 2153,
-      "x": 17,
-      "y": 16,
-      "width": 80,
-      "height": 138
-    },
-    {
-      "gid": 2162,
-      "x": 17,
-      "y": 26,
-      "width": 76,
-      "height": 142
-    },
-    {
-      "gid": 2167,
-      "x": 12,
-      "y": 28,
-      "width": 108,
-      "height": 185
-    },
-    {
-      "gid": 1263,
-      "x": 11,
-      "y": 21,
-      "width": 108,
-      "height": 161
-    },
-    {
-      "gid": 1263,
-      "x": 19,
-      "y": 7,
-      "width": 108,
-      "height": 161
-    },
-    {
-      "gid": 1263,
-      "x": 7,
-      "y": 3,
-      "width": 108,
-      "height": 161
-    },
-    {
-      "gid": 1263,
-      "x": 14,
-      "y": 9,
-      "width": 108,
-      "height": 161
-    },
-    {
-      "gid": 1264,
-      "x": 20,
-      "y": 7,
-      "width": 195,
-      "height": 255
-    },
-    {
-      "gid": 1264,
-      "x": 16,
-      "y": 6,
-      "width": 195,
-      "height": 255
-    },
-    {
-      "gid": 1264,
-      "x": 17,
-      "y": 7,
-      "width": 195,
-      "height": 255
-    },
-    {
-      "gid": 1264,
-      "x": 17,
-      "y": 27,
-      "width": 195,
-      "height": 255
-    },
-    {
-      "gid": 1264,
-      "x": 6,
-      "y": 23,
-      "width": 195,
-      "height": 255
     }
-  ]
+  ],
+  "walls": []
 }
