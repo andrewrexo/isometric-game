@@ -30,6 +30,7 @@ mod data;
 mod db;
 mod entity;
 mod game;
+mod instance;
 mod interior;
 mod interior_registry;
 mod item;
@@ -45,6 +46,7 @@ use crafting::CraftingRegistry;
 use data::ItemRegistry;
 use db::Database;
 use entity::EntityRegistry;
+use instance::InstanceManager;
 use interior_registry::InteriorRegistry;
 use quest::QuestRegistry;
 use game::{GameRoom, Player, PlayerUpdate};
@@ -83,6 +85,7 @@ struct AppState {
     quest_registry: Arc<QuestRegistry>,
     crafting_registry: Arc<CraftingRegistry>,
     interior_registry: Arc<InteriorRegistry>,
+    instance_manager: Arc<InstanceManager>,
 }
 
 impl AppState {
@@ -122,6 +125,9 @@ impl AppState {
             InteriorRegistry::load_from_directory("maps/interiors")
                 .expect("Failed to load interior registry")
         );
+
+        // Initialize instance manager
+        let instance_manager = Arc::new(InstanceManager::new());
 
         // Start hot-reload watcher for quest files (dev mode)
         #[cfg(debug_assertions)]
@@ -165,6 +171,7 @@ impl AppState {
             quest_registry,
             crafting_registry: Arc::new(crafting_registry),
             interior_registry,
+            instance_manager,
         }
     }
 
