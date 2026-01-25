@@ -3283,6 +3283,11 @@ impl Renderer {
         // Note: Interactive UI (inventory, crafting, dialogue, quick slots) is rendered
         // by render_interactive_ui() which is called by the main render loop
 
+        // Area banner (location name during transitions)
+        if state.area_banner.is_visible() {
+            self.render_area_banner(&state.area_banner.text, state.area_banner.opacity());
+        }
+
         // Chat input box (when open)
         if state.ui_state.chat_open {
             let input_x = 10.0;
