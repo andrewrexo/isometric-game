@@ -97,51 +97,55 @@ impl Renderer {
 
         // Colors
         let text_color = Color::new(0.96, 0.94, 0.88, opacity); // Off-white/cream
-        let flourish_color = Color::new(0.96, 0.94, 0.88, opacity * 0.7);
-        let shadow_color = Color::new(0.1, 0.08, 0.05, opacity * 0.5);
-        let bg_color = Color::new(0.0, 0.0, 0.0, opacity * 0.3);
-
-        // Position: 18% down from top
-        let banner_y = screen_h * 0.18;
+        let corner_color = Color::new(0.96, 0.94, 0.88, opacity * 0.8);
+        let shadow_color = Color::new(0.1, 0.08, 0.05, opacity * 0.6);
+        let bg_color = Color::new(0.0, 0.0, 0.0, opacity * 0.4);
 
         // Measure text
-        let font_size = 28.0;
+        let font_size = 32.0;
         let text_dims = self.measure_text_sharp(text, font_size);
 
         // Banner dimensions
-        let padding_x = 40.0;
-        let padding_y = 16.0;
+        let padding_x = 24.0;
+        let padding_y = 12.0;
         let banner_width = text_dims.width + padding_x * 2.0;
         let banner_height = text_dims.height + padding_y * 2.0;
-        let banner_x = (screen_w - banner_width) / 2.0;
+        let banner_x = ((screen_w - banner_width) / 2.0).floor();
+        let banner_y = (screen_h * 0.18).floor();
+
+        // Frame bounds (for corners)
+        let frame_left = banner_x;
+        let frame_right = banner_x + banner_width;
+        let frame_top = banner_y;
+        let frame_bottom = banner_y + banner_height;
 
         // Draw semi-transparent background
-        draw_rectangle(
-            banner_x,
-            banner_y - padding_y,
-            banner_width,
-            banner_height,
-            bg_color,
-        );
+        draw_rectangle(frame_left, frame_top, banner_width, banner_height, bg_color);
 
-        // Draw flourishes (decorative lines)
-        let flourish_width = text_dims.width * 0.8;
-        let flourish_x = (screen_w - flourish_width) / 2.0;
+        // Corner size
+        let corner_len = 10.0;
+        let thickness = 2.0;
 
-        // Top flourish (thicker)
-        let top_y = banner_y - 4.0;
-        draw_line(flourish_x, top_y, flourish_x + flourish_width, top_y, 2.0, flourish_color);
+        // Top-left corner
+        draw_rectangle(frame_left, frame_top, corner_len, thickness, corner_color);
+        draw_rectangle(frame_left, frame_top, thickness, corner_len, corner_color);
 
-        // Bottom flourish (thinner, slightly shorter)
-        let bottom_flourish_width = flourish_width * 0.9;
-        let bottom_flourish_x = (screen_w - bottom_flourish_width) / 2.0;
-        let bottom_y = banner_y + text_dims.height + 8.0;
-        draw_line(bottom_flourish_x, bottom_y, bottom_flourish_x + bottom_flourish_width, bottom_y, 1.0, flourish_color);
+        // Top-right corner
+        draw_rectangle(frame_right - corner_len, frame_top, corner_len, thickness, corner_color);
+        draw_rectangle(frame_right - thickness, frame_top, thickness, corner_len, corner_color);
+
+        // Bottom-left corner
+        draw_rectangle(frame_left, frame_bottom - thickness, corner_len, thickness, corner_color);
+        draw_rectangle(frame_left, frame_bottom - corner_len, thickness, corner_len, corner_color);
+
+        // Bottom-right corner
+        draw_rectangle(frame_right - corner_len, frame_bottom - thickness, corner_len, thickness, corner_color);
+        draw_rectangle(frame_right - thickness, frame_bottom - corner_len, thickness, corner_len, corner_color);
 
         // Draw text shadow
-        let text_x = (screen_w - text_dims.width) / 2.0;
-        let text_y = banner_y + text_dims.height * 0.8;
-        self.draw_text_sharp(text, text_x + 2.0, text_y + 2.0, font_size, shadow_color);
+        let text_x = ((screen_w - text_dims.width) / 2.0).floor();
+        let text_y = (banner_y + padding_y + text_dims.height * 0.8).floor();
+        self.draw_text_sharp(text, text_x + 1.0, text_y + 1.0, font_size, shadow_color);
 
         // Draw text
         self.draw_text_sharp(text, text_x, text_y, font_size, text_color);
