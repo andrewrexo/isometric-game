@@ -109,6 +109,22 @@ category = "material"
 max_stack = 99
 base_price = 50
 
+[spoiled_meat]
+display_name = "Spoiled Meat"
+sprite = "spoiled_meat"
+description = "Tainted meat from a corrupted pig. Inedible but proof of the kill."
+category = "material"
+max_stack = 99
+base_price = 3
+
+[tainted_hide]
+display_name = "Tainted Hide"
+sprite = "tainted_hide"
+description = "Corrupted pig hide. Can be used for basic crafting."
+category = "material"
+max_stack = 99
+base_price = 5
+
 # =============================================================================
 # Fishing & Gathering
 # =============================================================================
