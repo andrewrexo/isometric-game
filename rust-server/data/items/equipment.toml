@@ -91,6 +91,21 @@ defence_bonus = 0
 # BODY ARMOR (Defence requirement)
 # =============================================================================
 
+[salvaged_tunic]
+display_name = "Salvaged Tunic"
+sprite = "salvaged_tunic"
+description = "A scavenged tunic. Stained but sturdy."
+category = "equipment"
+max_stack = 1
+base_price = 60
+sellable = true
+[salvaged_tunic.equipment]
+slot_type = "body"
+defence_level_required = 1
+attack_bonus = 0
+strength_bonus = 0
+defence_bonus = 5
+
 [peasant_suit]
 display_name = "Peasant Suit"
 sprite = "peasant_suit"
@@ -293,6 +308,21 @@ defence_bonus = 1
 # =============================================================================
 # WEAPONS (Attack requirement)
 # =============================================================================
+
+[salvaged_sword]
+display_name = "Salvaged Sword"
+sprite = "salvaged_sword"
+description = "A battered but functional blade recovered from the ruins."
+category = "equipment"
+max_stack = 1
+base_price = 75
+sellable = true
+[salvaged_sword.equipment]
+slot_type = "weapon"
+attack_level_required = 1
+attack_bonus = 6
+strength_bonus = 8
+defence_bonus = 0
 
 [goblin_spear]
 display_name = "Goblin Spear"
