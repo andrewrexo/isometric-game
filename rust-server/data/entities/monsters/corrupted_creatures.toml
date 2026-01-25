@@ -1,0 +1,52 @@
+# Corrupted Creatures - Twisted by the corruption spreading across the land
+
+# =============================================================================
+# Tier 1 - Farm Creatures (Combat 3-10)
+# =============================================================================
+
+[corrupted_pig]
+display_name = "Corrupted Pig"
+sprite = "corrupted_pig"
+animation_type = "standard"
+description = "A farm pig twisted by the corruption. Its eyes glow with malice."
+
+[corrupted_pig.stats]
+level = 1
+max_hp = 20
+damage = 2
+attack_range = 1
+aggro_range = 5
+chase_range = 5
+move_cooldown_ms = 600
+attack_cooldown_ms = 2000
+respawn_time_ms = 30000
+
+[corrupted_pig.rewards]
+exp_base = 35
+gold_min = 3
+gold_max = 8
+
+[[corrupted_pig.loot]]
+item_id = "spoiled_meat"
+drop_chance = 0.80
+quantity_min = 1
+quantity_max = 1
+
+[[corrupted_pig.loot]]
+item_id = "tainted_hide"
+drop_chance = 0.30
+quantity_min = 1
+quantity_max = 2
+
+[[corrupted_pig.loot]]
+item_id = "salvaged_tunic"
+drop_chance = 0.05
+quantity_min = 1
+quantity_max = 1
+
+[corrupted_pig.behaviors]
+hostile = true
+wander_enabled = true
+wander_radius = 4
+wander_pause_min_ms = 2000
+wander_pause_max_ms = 5000
