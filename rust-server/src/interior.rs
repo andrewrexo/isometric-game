@@ -65,3 +65,5 @@ impl InteriorMapDef {
         })
     }
 }
+
+pub use crate::interior_registry::InteriorRegistry;
