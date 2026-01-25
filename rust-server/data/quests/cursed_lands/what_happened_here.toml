@@ -1,0 +1,47 @@
+# What Happened Here - First quest in the Cursed Lands chain
+# Given by Elder Mara in the Ruined Village
+
+[quest]
+id = "what_happened_here"
+name = "What Happened Here"
+description = "The corruption has twisted the farm animals into hostile creatures. Elder Mara needs you to investigate and thin their numbers."
+giver_npc = "elder_villager"
+level_required = 1
+repeatable = false
+
+[quest.chain]
+next = "spreading_rot"
+
+[[quest.objectives]]
+id = "kill_corrupted_pigs"
+type = "kill_monster"
+target = "corrupted_pig"
+count = 15
+description = "Slay 15 Corrupted Pigs"
+
+[[quest.objectives]]
+id = "collect_spoiled_meat"
+type = "collect_item"
+target = "spoiled_meat"
+count = 10
+description = "Collect 10 Spoiled Meat"
+
+[[quest.objectives]]
+id = "return_to_elder"
+type = "talk_to"
+target = "elder_villager"
+description = "Return to Elder Mara"
+sequential = true
+
+[quest.rewards]
+exp = 150
+gold = 75
+items = [
+    { id = "salvaged_sword", count = 1 }
+]
+
+[quest.dialogue]
+offer = "The pigs... they've changed. Their eyes glow with that terrible corruption. They attack anyone who comes near the old farms. We need to know how deep this sickness runs. Can you investigate?"
+accept = "Be careful out there. Kill the corrupted pigs and bring me proof - their tainted meat will tell us much about this corruption. Return when you've gathered enough evidence."
+progress = "Have you learned anything about the corruption? The village grows more fearful each day."
+complete = "This meat... the corruption runs deep. But you've proven yourself capable. Take this blade - I salvaged it from the ruins. You'll need it for what lies ahead."
