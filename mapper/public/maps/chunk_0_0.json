@@ -1128,6 +1128,236 @@
                                    "width": 64,
                                    "x": 1664,
                                    "y": 332
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 25,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1200,
+                                   "y": 200
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 26,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1450,
+                                   "y": 350
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 27,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1700,
+                                   "y": 500
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 28,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1100,
+                                   "y": 600
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 29,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1550,
+                                   "y": 700
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 30,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1300,
+                                   "y": 450
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 31,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1750,
+                                   "y": 300
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 32,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1400,
+                                   "y": 800
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 33,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1650,
+                                   "y": 550
+                            },
+                            {
+                                   "height": 32,
+                                   "id": 34,
+                                   "name": "Corrupted Pig",
+                                   "properties": [
+                                          {
+                                                 "name": "entity_id",
+                                                 "type": "string",
+                                                 "value": "corrupted_pig"
+                                          },
+                                          {
+                                                 "name": "level",
+                                                 "type": "int",
+                                                 "value": 1
+                                          }
+                                   ],
+                                   "rotation": 0,
+                                   "type": "",
+                                   "visible": true,
+                                   "width": 32,
+                                   "x": 1250,
+                                   "y": 750
                             }
                      ],
                      "opacity": 1,
@@ -1138,7 +1368,7 @@
               }
        ],
        "nextlayerid": 3,
-       "nextobjectid": 25,
+       "nextobjectid": 35,
        "orientation": "isometric",
        "renderorder": "right-down",
        "tiledversion": "1.11.2",
