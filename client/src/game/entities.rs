@@ -252,6 +252,9 @@ impl Player {
     /// Set server state - simple server-authoritative model
     /// Server is single source of truth, client just animates smoothly
     pub fn set_server_state(&mut self, x: f32, y: f32, vel_x: f32, vel_y: f32, dir: Direction) {
+        let old_server_x = self.server_x;
+        let old_server_y = self.server_y;
+
         self.server_x = x;
         self.server_y = y;
         self.vel_x = vel_x;
@@ -263,16 +266,32 @@ impl Player {
         if dist > 2.0 {
             self.x = x;
             self.y = y;
-        }
-
-        // Target = next tile if moving, current tile if stopped
-        if vel_x != 0.0 || vel_y != 0.0 {
-            self.target_x = x + vel_x;
-            self.target_y = y + vel_y;
-        } else {
             self.target_x = x;
             self.target_y = y;
+            return;
         }
+
+        // Server position changed = we moved on server, always update target
+        let server_moved = (x - old_server_x).abs() > 0.01 || (y - old_server_y).abs() > 0.01;
+
+        // Stopped = always update target to server position
+        let stopped = vel_x == 0.0 && vel_y == 0.0;
+
+        // At tile center = safe to update target
+        let at_tile_center = (self.x - self.x.round()).abs() < 0.1
+                          && (self.y - self.y.round()).abs() < 0.1;
+
+        if server_moved || stopped || at_tile_center {
+            if vel_x != 0.0 || vel_y != 0.0 {
+                self.target_x = x + vel_x;
+                self.target_y = y + vel_y;
+            } else {
+                self.target_x = x;
+                self.target_y = y;
+            }
+        }
+        // If mid-tile with same server pos and new velocity direction,
+        // keep current target - finish current move first
     }
 
     /// Smooth visual interpolation toward target position
