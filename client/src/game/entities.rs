@@ -328,9 +328,14 @@ impl Player {
                     self.has_pending_prediction = false;
                 }
             }
+        } else if is_local_player {
+            // Local player following server: just track server position, no velocity prediction
+            // This avoids diagonal corrections on direction changes
+            // First move from stop is already handled by apply_local_input
+            self.target_x = new_x;
+            self.target_y = new_y;
         } else {
-            // Remote player OR local player following server
-            // When server has velocity, predict next tile; otherwise target is server position
+            // Remote player: predict based on velocity for smooth movement
             if vel_x != 0.0 || vel_y != 0.0 {
                 self.target_x = new_x + vel_x;
                 self.target_y = new_y + vel_y;
@@ -361,20 +366,8 @@ impl Player {
             self.x = self.target_x;
             self.y = self.target_y;
             actually_moving = false;
-
-            // Check if we're at the server position
-            let at_server = (self.x - self.server_x).abs() < 0.01
-                         && (self.y - self.server_y).abs() < 0.01;
-
-            if at_server && (self.vel_x != 0.0 || self.vel_y != 0.0) {
-                // At server position with velocity - predict next tile
-                self.target_x = self.server_x + self.vel_x;
-                self.target_y = self.server_y + self.vel_y;
-                self.is_moving = true;
-            } else {
-                // Either no velocity, or waiting for server to catch up
-                self.is_moving = false;
-            }
+            // Wait for next target update from server or input
+            self.is_moving = false;
         } else {
             // Linear interpolation - constant speed movement
             let move_dist = VISUAL_SPEED * delta;

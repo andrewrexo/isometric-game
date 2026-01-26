@@ -504,23 +504,12 @@ impl NetworkClient {
                                     player.set_server_position_with_velocity(x as f32, y as f32, vel_x, vel_y, is_local_player);
                                 }
                                 if let Some(dir) = direction {
-                                    // For local player: only update direction from server when stationary
-                                    // and enough time has passed since a Face command
-                                    let should_update_direction = if is_local_player {
-                                        let current_time = macroquad::time::get_time();
-                                        let time_since_face = current_time - state.last_face_command_time;
-                                        vel_x == 0.0 && vel_y == 0.0 && time_since_face > 0.2
-                                    } else {
-                                        true // Always update other players from server
-                                    };
-
-                                    if should_update_direction {
+                                    // For local player: never update direction from server
+                                    // Local input controls direction entirely to avoid jitter
+                                    // For remote players: always update from server
+                                    if !is_local_player {
                                         let new_dir = Direction::from_u8(dir as u8);
                                         player.direction = new_dir;
-                                        // For local player: also update animation.direction directly
-                                        if is_local_player {
-                                            player.animation.direction = new_dir;
-                                        }
                                     }
                                 }
                                 if let Some(hp) = hp {
