@@ -246,12 +246,13 @@ impl Player {
 
     /// Set server-authoritative position (convenience method for stopped state)
     pub fn set_server_position(&mut self, new_x: f32, new_y: f32) {
-        self.set_server_state(new_x, new_y, 0.0, 0.0, self.direction);
+        self.set_server_state(new_x, new_y, 0.0, 0.0, self.direction, false);
     }
 
     /// Set server state - simple server-authoritative model
     /// Server is single source of truth, client just animates smoothly
-    pub fn set_server_state(&mut self, x: f32, y: f32, vel_x: f32, vel_y: f32, dir: Direction) {
+    /// is_local_player: if true, only update direction when moving (stationary direction controlled locally)
+    pub fn set_server_state(&mut self, x: f32, y: f32, vel_x: f32, vel_y: f32, dir: Direction, is_local_player: bool) {
         let old_server_x = self.server_x;
         let old_server_y = self.server_y;
 
@@ -259,7 +260,15 @@ impl Player {
         self.server_y = y;
         self.vel_x = vel_x;
         self.vel_y = vel_y;
-        self.direction = dir;
+
+        // Direction handling:
+        // - Remote players: always accept server direction
+        // - Local player when moving: accept server direction (confirms movement)
+        // - Local player when stationary: keep local direction (Face commands control it)
+        let is_moving = vel_x != 0.0 || vel_y != 0.0;
+        if !is_local_player || is_moving {
+            self.direction = dir;
+        }
 
         // Teleport detection (>2 tiles = snap immediately)
         let dist = ((self.x - x).powi(2) + (self.y - y).powi(2)).sqrt();

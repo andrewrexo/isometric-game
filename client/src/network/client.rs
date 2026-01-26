@@ -492,18 +492,21 @@ impl NetworkClient {
                             let equipped_belt = extract_string(player_value, "equipped_belt").filter(|s| !s.is_empty());
                             let is_admin = extract_bool(player_value, "is_admin").unwrap_or(false);
 
+                            let is_local_player = state.local_player_id.as_ref() == Some(&id);
+
                             if let Some(player) = state.players.get_mut(&id) {
                                 // Read velocity (movement intent) from server
                                 let vel_x = extract_i32(player_value, "velX").unwrap_or(0) as f32;
                                 let vel_y = extract_i32(player_value, "velY").unwrap_or(0) as f32;
-                                // Direction from server for all players
+                                // Direction from server
                                 let dir = direction.map(|d| Direction::from_u8(d as u8)).unwrap_or(player.direction);
 
                                 if let (Some(x), Some(y)) = (x, y) {
-                                    // Set server state - simple server-authoritative model
-                                    player.set_server_state(x as f32, y as f32, vel_x, vel_y, dir);
-                                } else if direction.is_some() {
-                                    // Direction-only update (Face command)
+                                    // Set server state - local player direction only updates when moving
+                                    player.set_server_state(x as f32, y as f32, vel_x, vel_y, dir, is_local_player);
+                                } else if direction.is_some() && !is_local_player {
+                                    // Direction-only update for remote players
+                                    // Local player direction is controlled locally when stationary
                                     player.direction = dir;
                                 }
                                 if let Some(hp) = hp {
