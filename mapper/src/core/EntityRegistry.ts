@@ -63,6 +63,7 @@ export class EntityRegistryLoader {
       `${basePath}/monsters/pig.toml`,
       `${basePath}/monsters/forest_creatures.toml`,
       `${basePath}/monsters/dangerous_creatures.toml`,
+      `${basePath}/monsters/corrupted_creatures.toml`,
       `${basePath}/monsters/creatures.toml`,
       `${basePath}/monsters/enemies.toml`,
     ];

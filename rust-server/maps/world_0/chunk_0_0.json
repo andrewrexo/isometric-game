@@ -3086,16 +3086,7 @@
     ]
   },
   "collision": "Bx/g+wEfIIBBHyCAYR0ggAEQIICQAAAAAAAggAAAIIAF4CGAASAhgAAg4fsBOgEAAQgDAAAKHAAACBAAAApwAAAIQAAACkAAADhAAABAQAAAwEEAAABCAAAAQgAAADQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-  "entities": [
-    {
-      "id": "entity_1769298605028_syqtk77dn",
-      "entityId": "pig",
-      "name": "pig",
-      "x": 31,
-      "y": 28,
-      "level": 1
-    }
-  ],
+  "entities": [],
   "mapObjects": [
     {
       "id": "obj_1769035636547_p7iusc4ds",

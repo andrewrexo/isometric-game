@@ -3086,24 +3086,7 @@
     ]
   },
   "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAHAAA=",
-  "entities": [
-    {
-      "id": "entity_1769298606749_u5ia6g64j",
-      "entityId": "pig",
-      "name": "pig",
-      "x": 16,
-      "y": 26,
-      "level": 1
-    },
-    {
-      "id": "entity_1769298608214_hhg048br5",
-      "entityId": "pig",
-      "name": "pig",
-      "x": 5,
-      "y": 14,
-      "level": 1
-    }
-  ],
+  "entities": [],
   "mapObjects": [],
   "walls": [
     {

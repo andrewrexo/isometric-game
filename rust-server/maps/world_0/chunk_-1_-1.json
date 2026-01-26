@@ -3086,16 +3086,7 @@
     ]
   },
   "collision": "AAAAAAAAAAAAAAAAQAAAAQgAAAQAAAAAAAAAAAAAAAAAAAACAAAAAJAAAAAAAAAACAAABCAAAAAAAAAAoACAAAAAAAAAAAAAAAAAABAAAIAAAAAAAAAABAgAgBAAAAAAAAAAAIAAAAAAAAAEAAAAAEAAAAAAAAAAAgAAAAAAAAQ=",
-  "entities": [
-    {
-      "id": "entity_1769298611869_x4kyomcan",
-      "entityId": "pig",
-      "name": "pig",
-      "x": 25,
-      "y": 14,
-      "level": 1
-    }
-  ],
+  "entities": [],
   "mapObjects": [
     {
       "id": "obj_60",
