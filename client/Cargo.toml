@@ -4,6 +4,17 @@ version = "0.1.0"
 edition = "2021"
 description = "Isometric MMORPG client"
 
+# For Android builds, we need a cdylib
+# Desktop builds use the default binary
+[lib]
+name = "isometric_client"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "isometric-client"
+path = "src/main.rs"
+
 [dependencies]
 # Game engine
 macroquad = { version = "0.4", features = ["audio"] }
@@ -19,14 +30,17 @@ rmpv = { version = "1.3", features = ["with-serde"] }
 # Logging
 log = "0.4"
 
-# Native-only dependencies
+# Native-only dependencies (non-WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = "0.11"
-dirs = "5.0"
 # HTTP client for matchmaking
 ureq = { version = "2.10", features = ["json"] }
 # WebSocket (uses wasm-bindgen on WASM which conflicts with miniquad)
 ewebsock = "0.6"
+
+# Desktop-only dependencies (not Android, not WASM)
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+dirs = "5.0"
 
 # WASM dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]

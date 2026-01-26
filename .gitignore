@@ -34,3 +34,12 @@ Thumbs.db
 
 # Worktrees
 .worktrees/
+
+# Android build artifacts
+client/android/.gradle/
+client/android/build/
+client/android/app/build/
+client/android/app/src/main/jniLibs/
+client/android/local.properties
+*.apk
+*.aab

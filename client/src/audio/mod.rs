@@ -200,12 +200,19 @@ impl AudioManager {
 
 // Platform-specific settings persistence
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn settings_path() -> Option<std::path::PathBuf> {
     dirs::config_dir().map(|p| p.join("new-aeven").join("audio.toml"))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "android")]
+fn settings_path() -> Option<std::path::PathBuf> {
+    // On Android, we use a simple path in the app's internal storage
+    // The actual path will be relative to where the app runs
+    Some(std::path::PathBuf::from("audio_settings.toml"))
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn load_settings() -> AudioSettings {
     let Some(path) = settings_path() else {
         return AudioSettings::default();
@@ -217,7 +224,7 @@ fn load_settings() -> AudioSettings {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn save_settings(settings: &AudioSettings) {
     let Some(path) = settings_path() else {
         return;
@@ -226,6 +233,30 @@ fn save_settings(settings: &AudioSettings) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+
+    if let Ok(contents) = toml::to_string_pretty(settings) {
+        let _ = std::fs::write(&path, contents);
+    }
+}
+
+#[cfg(target_os = "android")]
+fn load_settings() -> AudioSettings {
+    // On Android, settings file is in the app's current directory
+    let Some(path) = settings_path() else {
+        return AudioSettings::default();
+    };
+
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => toml::from_str(&contents).unwrap_or_default(),
+        Err(_) => AudioSettings::default(),
+    }
+}
+
+#[cfg(target_os = "android")]
+fn save_settings(settings: &AudioSettings) {
+    let Some(path) = settings_path() else {
+        return;
+    };
 
     if let Ok(contents) = toml::to_string_pretty(settings) {
         let _ = std::fs::write(&path, contents);
