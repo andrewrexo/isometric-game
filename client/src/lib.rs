@@ -4,6 +4,12 @@ use macroquad::prelude::*;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
+pub mod util;
+pub use util::asset_path;
+
+pub mod mobile_scale;
+pub use mobile_scale::MobileScaler;
+
 pub mod game;
 pub mod render;
 #[cfg(not(target_arch = "wasm32"))]
@@ -64,6 +70,7 @@ async fn async_main() {
 
     let renderer = Renderer::new().await;
     let mut audio = AudioManager::new().await;
+    let scaler = MobileScaler::new();
 
     // Native build with auth flow
     #[cfg(not(target_arch = "wasm32"))]
@@ -71,13 +78,16 @@ async fn async_main() {
         // Start menu music
         audio.play_music("assets/audio/menu.ogg").await;
 
-        let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+        let mut login_screen = LoginScreen::new(SERVER_URL);
         login_screen.load_font().await;
         let mut app_state = AppState::Login(login_screen);
         let mut last_next_frame_ms: f64 = 0.0;
 
         loop {
             let frame_start = Instant::now();
+
+            // Begin scaled rendering for mobile
+            scaler.begin_frame();
 
             // Record last frame's next_frame() time into game state
             if let AppState::Playing { game_state, .. } | AppState::GuestMode { game_state, .. } = &mut app_state {
@@ -150,7 +160,7 @@ async fn async_main() {
                             app_state = AppState::CharacterCreate(create_screen);
                         }
                         ScreenState::ToLogin => {
-                            let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+                            let mut login_screen = LoginScreen::new(SERVER_URL);
                             login_screen.load_font().await;
                             app_state = AppState::Login(login_screen);
                         }
@@ -179,7 +189,7 @@ async fn async_main() {
                     if game_state.disconnect_requested {
                         audio.play_music("assets/audio/menu.ogg").await;
                         network.disconnect();
-                        let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+                        let mut login_screen = LoginScreen::new(SERVER_URL);
                         login_screen.load_font().await;
                         app_state = AppState::Login(login_screen);
                         continue;
@@ -189,13 +199,16 @@ async fn async_main() {
                         log::info!("Reconnection failed, returning to login screen");
                         audio.play_music("assets/audio/menu.ogg").await;
                         network.disconnect();
-                        let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+                        let mut login_screen = LoginScreen::new(SERVER_URL);
                         login_screen.load_font().await;
                         app_state = AppState::Login(login_screen);
                         continue;
                     }
                 }
             }
+
+            // End scaled rendering for mobile (draws scaled result to screen)
+            scaler.end_frame();
 
             // Apply optional FPS cap
             let fps_cap = match &app_state {

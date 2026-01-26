@@ -3,19 +3,22 @@
 use macroquad::prelude::*;
 use crate::game::GoldDropDialog;
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 
 impl Renderer {
     /// Render the gold drop amount dialog
     pub(crate) fn render_gold_drop_dialog(&self, dialog: &GoldDropDialog, player_gold: i32, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
+        let (sw, sh) = virtual_screen_size();
+
         // Semi-transparent overlay to focus attention
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.45));
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
 
         let box_width = 280.0;
         let box_height = 140.0;
-        let box_x = (screen_width() - box_width) / 2.0;
-        let box_y = (screen_height() - box_height) / 2.0;
+        let box_x = (sw - box_width) / 2.0;
+        let box_y = (sh - box_height) / 2.0;
 
         // Draw themed panel frame with corner accents
         self.draw_panel_frame(box_x, box_y, box_width, box_height);

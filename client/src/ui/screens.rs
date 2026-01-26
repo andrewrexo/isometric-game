@@ -1,14 +1,54 @@
 use macroquad::prelude::*;
+use macroquad::miniquad::window::show_keyboard;
 use std::collections::HashMap;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::auth::{AuthClient, AuthSession, CharacterInfo};
 use crate::audio::AudioManager;
 use crate::render::BitmapFont;
+use crate::util::{asset_path, virtual_screen_size};
 
 // Sprite sheet constants for character preview
 const SPRITE_WIDTH: f32 = 34.0;
 const SPRITE_HEIGHT: f32 = 78.0;
+
+/// Convert screen coordinates to virtual coordinates (for Android scaling)
+fn screen_to_virtual(x: f32, y: f32) -> (f32, f32) {
+    let (vw, vh) = virtual_screen_size();
+    let screen_w = screen_width();
+    let screen_h = screen_height();
+
+    // On desktop, virtual == screen, so this is a no-op
+    let vx = x * vw / screen_w;
+    let vy = y * vh / screen_h;
+    (vx, vy)
+}
+
+/// Get input position and click state from either mouse or touch
+/// Returns (position, just_clicked, is_touching)
+fn get_input_state() -> (Vec2, bool, bool) {
+    let touches: Vec<Touch> = touches();
+
+    // Check for touch input first (mobile)
+    for touch in &touches {
+        if touch.phase == TouchPhase::Started {
+            let (vx, vy) = screen_to_virtual(touch.position.x, touch.position.y);
+            return (vec2(vx, vy), true, true);
+        }
+    }
+
+    // Check for any active touch (for position tracking)
+    if let Some(touch) = touches.first() {
+        let (vx, vy) = screen_to_virtual(touch.position.x, touch.position.y);
+        return (vec2(vx, vy), false, true);
+    }
+
+    // Fall back to mouse input (desktop)
+    let (mx, my) = mouse_position();
+    let (vx, vy) = screen_to_virtual(mx, my);
+    let clicked = is_mouse_button_pressed(MouseButton::Left);
+    (vec2(vx, vy), clicked, false)
+}
 
 /// Load all player sprite textures (gender x skin combinations)
 async fn load_player_sprites() -> HashMap<String, Texture2D> {
@@ -18,7 +58,7 @@ async fn load_player_sprites() -> HashMap<String, Texture2D> {
 
     for gender in &genders {
         for skin in &skins {
-            let path = format!("assets/sprites/players/player_{}_{}.png", gender, skin);
+            let path = asset_path(&format!("assets/sprites/players/player_{}_{}.png", gender, skin));
             if let Ok(texture) = load_texture(&path).await {
                 texture.set_filter(FilterMode::Nearest);
                 let key = format!("{}_{}", gender, skin);
@@ -154,7 +194,6 @@ pub struct LoginScreen {
     error_message: Option<String>,
     #[cfg(not(target_arch = "wasm32"))]
     auth_client: AuthClient,
-    dev_mode: bool,
     font: BitmapFont,
     logo: Option<Texture2D>,
 }
@@ -172,7 +211,7 @@ enum LoginMode {
 }
 
 impl LoginScreen {
-    pub fn new(server_url: &str, dev_mode: bool) -> Self {
+    pub fn new(server_url: &str) -> Self {
         Self {
             username: String::new(),
             password: String::new(),
@@ -181,7 +220,6 @@ impl LoginScreen {
             error_message: None,
             #[cfg(not(target_arch = "wasm32"))]
             auth_client: AuthClient::new(server_url),
-            dev_mode,
             font: BitmapFont::default(),
             logo: None,
         }
@@ -192,7 +230,7 @@ impl LoginScreen {
         self.font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
 
         // Load logo texture
-        if let Ok(texture) = load_texture("assets/ui/logo.png").await {
+        if let Ok(texture) = load_texture(&asset_path("assets/ui/logo.png")).await {
             texture.set_filter(FilterMode::Nearest);
             self.logo = Some(texture);
         }
@@ -234,6 +272,85 @@ impl LoginScreen {
 
 impl Screen for LoginScreen {
     fn update(&mut self, audio: &AudioManager) -> ScreenState {
+        let (sw, sh) = virtual_screen_size();
+        let (input_pos, clicked, _is_touch) = get_input_state();
+        let mx = input_pos.x;
+        let my = input_pos.y;
+
+        // Layout constants (must match render)
+        let box_width = sw.min(340.0);  // Wider inputs
+        let box_height = 40.0;          // Taller inputs
+        let box_x = (sw - box_width) / 2.0;
+        let btn_height = 36.0;          // Taller buttons
+        let spacing = 10.0;             // More spacing
+
+        // Calculate positions flowing from top (must match render)
+        let logo_h = 50.0;
+        let start_y = logo_h + 20.0;
+        let username_y = start_y;
+        let username_field_y = username_y + 16.0;  // Box position (after label)
+        let password_y = username_field_y + box_height + spacing;
+        let password_field_y = password_y + 16.0;  // Box position (after label)
+        let buttons_y = password_field_y + box_height + spacing + 24.0;
+
+        // Handle touch/click on input fields and buttons
+        if clicked {
+            // Username field (clickable box area)
+            if point_in_rect(mx, my, box_x, username_field_y, box_width, box_height) {
+                self.active_field = LoginField::Username;
+                show_keyboard(true);
+            }
+
+            // Password field (clickable box area)
+            else if point_in_rect(mx, my, box_x, password_field_y, box_width, box_height) {
+                self.active_field = LoginField::Password;
+                show_keyboard(true);
+            }
+
+            // Tapped elsewhere - hide keyboard
+            else {
+                show_keyboard(false);
+            }
+
+            // Login/Register button (left side)
+            let login_btn_w = (box_width - spacing) / 2.0;
+            if point_in_rect(mx, my, box_x, buttons_y, login_btn_w, btn_height) {
+                show_keyboard(false);
+                if self.username.len() >= 3 && self.password.len() >= 6 {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let result = match self.mode {
+                            LoginMode::Login => self.auth_client.login(&self.username, &self.password),
+                            LoginMode::Register => self.auth_client.register(&self.username, &self.password),
+                        };
+
+                        match result {
+                            Ok(session) => {
+                                return ScreenState::ToCharacterSelect(session);
+                            }
+                            Err(e) => {
+                                self.error_message = Some(e.to_string());
+                            }
+                        }
+                    }
+                } else if self.username.len() < 3 {
+                    self.error_message = Some("Username min 3 chars".to_string());
+                } else {
+                    self.error_message = Some("Password min 6 chars".to_string());
+                }
+            }
+
+            // Toggle mode button (right side, same row)
+            let toggle_x = box_x + login_btn_w + spacing;
+            if point_in_rect(mx, my, toggle_x, buttons_y, login_btn_w, btn_height) {
+                self.mode = match self.mode {
+                    LoginMode::Login => LoginMode::Register,
+                    LoginMode::Register => LoginMode::Login,
+                };
+                self.error_message = None;
+            }
+        }
+
         // Tab to switch fields (check before handle_text_input consumes it)
         if is_key_pressed(KeyCode::Tab) {
             audio.play_sfx("enter");
@@ -257,11 +374,6 @@ impl Screen for LoginScreen {
                 LoginMode::Register => LoginMode::Login,
             };
             self.error_message = None;
-        }
-
-        // Guest login (dev mode only)
-        if self.dev_mode && is_key_pressed(KeyCode::F2) {
-            return ScreenState::StartGuestMode;
         }
 
         // Submit on Enter
@@ -303,67 +415,73 @@ impl Screen for LoginScreen {
     }
 
     fn render(&self) {
-        let sw = screen_width();
-        let sh = screen_height();
+        let (sw, sh) = virtual_screen_size();
 
         // Background
         clear_background(Color::from_rgba(25, 25, 35, 255));
 
-        // Draw decorative grid lines
-        for i in 0..20 {
+        // Draw decorative grid lines (fewer for performance)
+        for i in 0..10 {
             let alpha = 0.05 + (i as f32 * 0.01);
             let color = Color::new(0.3, 0.4, 0.5, alpha);
-            draw_line(0.0, i as f32 * 40.0, sw, i as f32 * 40.0, 1.0, color);
+            draw_line(0.0, i as f32 * 30.0, sw, i as f32 * 30.0, 1.0, color);
             draw_line(i as f32 * 70.0, 0.0, i as f32 * 70.0, sh, 1.0, color);
         }
 
-        // Logo
+        // Layout constants (must match update)
+        let box_width = sw.min(340.0);  // Wider inputs
+        let box_height = 40.0;          // Taller inputs
+        let box_x = (sw - box_width) / 2.0;
+        let btn_height = 36.0;          // Taller buttons
+        let spacing = 10.0;             // More spacing
+        let font_size = 16.0;           // Native font size for crisp rendering
+
+        // Calculate positions flowing from top
+        let logo_h = 50.0;
+        let start_y = logo_h + 20.0;
+
+        // Logo (smaller for compact layout)
         if let Some(logo) = &self.logo {
-            let logo_scale = 0.25; // Scale down the logo
+            let logo_scale = 0.15;
             let logo_w = logo.width() * logo_scale;
-            let logo_h = logo.height() * logo_scale;
+            let logo_actual_h = logo.height() * logo_scale;
             let logo_x = (sw - logo_w) / 2.0;
-            let logo_y = sh * 0.08;
+            let logo_y: f32 = 8.0;
             draw_texture_ex(
                 logo,
                 logo_x.floor(),
                 logo_y.floor(),
                 WHITE,
                 DrawTextureParams {
-                    dest_size: Some(vec2(logo_w.floor(), logo_h.floor())),
+                    dest_size: Some(vec2(logo_w.floor(), logo_actual_h.floor())),
                     ..Default::default()
                 },
             );
         } else {
-            // Fallback to text if logo not loaded
+            // Fallback title (native 16pt for crisp rendering)
             let title = "NEW AEVEN";
-            let title_size = 32.0;
-            let title_width = self.measure_text_sharp(title, title_size).width;
-            self.draw_text_sharp(title, (sw - title_width) / 2.0, sh * 0.18, title_size, WHITE);
+            let title_width = self.measure_text_sharp(title, 16.0).width;
+            self.draw_text_sharp(title, (sw - title_width) / 2.0, 30.0, 16.0, WHITE);
         }
 
-        // Subtitle
+        // Subtitle (use native 16pt for crisp rendering)
         let subtitle = match self.mode {
-            LoginMode::Login => "Login to start playing",
-            LoginMode::Register => "Create new account",
+            LoginMode::Login => "Login",
+            LoginMode::Register => "Register",
         };
-        let sub_size = 16.0;
-        let sub_width = self.measure_text_sharp(subtitle, sub_size).width;
-        self.draw_text_sharp(subtitle, (sw - sub_width) / 2.0, sh * 0.18 + 40.0, sub_size, GRAY);
-
-        // Input box dimensions
-        let box_width = 350.0;
-        let box_height = 50.0;
-        let box_x = (sw - box_width) / 2.0;
-        let start_y = sh * 0.38;
+        let sub_width = self.measure_text_sharp(subtitle, 16.0).width;
+        self.draw_text_sharp(subtitle, (sw - sub_width) / 2.0, logo_h + 8.0, 16.0, GRAY);
 
         // Username field
+        let username_y = start_y;
         let username_active = self.active_field == LoginField::Username;
         let username_color = if username_active { Color::from_rgba(80, 120, 180, 255) } else { Color::from_rgba(60, 60, 80, 255) };
-        draw_rectangle(box_x, start_y, box_width, box_height, username_color);
-        draw_rectangle_lines(box_x, start_y, box_width, box_height, 2.0, if username_active { WHITE } else { GRAY });
 
-        self.draw_text_sharp("Username", box_x, start_y - 8.0, 16.0, LIGHTGRAY);
+        self.draw_text_sharp("Username", box_x, username_y, font_size, LIGHTGRAY);
+        let field_y = username_y + 16.0;
+        draw_rectangle(box_x, field_y, box_width, box_height, username_color);
+        draw_rectangle_lines(box_x, field_y, box_width, box_height, 2.0, if username_active { WHITE } else { GRAY });
+
         let username_display = if self.username.is_empty() && !username_active {
             "Enter username...".to_string()
         } else {
@@ -371,16 +489,18 @@ impl Screen for LoginScreen {
             format!("{}{}", self.username, cursor)
         };
         let text_color = if self.username.is_empty() && !username_active { DARKGRAY } else { WHITE };
-        self.draw_text_sharp(&username_display, box_x + 12.0, start_y + 30.0, 16.0, text_color);
+        self.draw_text_sharp(&username_display, box_x + 10.0, field_y + 27.0, font_size, text_color);
 
         // Password field
-        let password_y = start_y + 85.0;
+        let password_y = field_y + box_height + spacing;
         let password_active = self.active_field == LoginField::Password;
         let password_color = if password_active { Color::from_rgba(80, 120, 180, 255) } else { Color::from_rgba(60, 60, 80, 255) };
-        draw_rectangle(box_x, password_y, box_width, box_height, password_color);
-        draw_rectangle_lines(box_x, password_y, box_width, box_height, 2.0, if password_active { WHITE } else { GRAY });
 
-        self.draw_text_sharp("Password", box_x, password_y - 8.0, 16.0, LIGHTGRAY);
+        self.draw_text_sharp("Password", box_x, password_y, font_size, LIGHTGRAY);
+        let pass_field_y = password_y + 16.0;
+        draw_rectangle(box_x, pass_field_y, box_width, box_height, password_color);
+        draw_rectangle_lines(box_x, pass_field_y, box_width, box_height, 2.0, if password_active { WHITE } else { GRAY });
+
         let password_display = if self.password.is_empty() && !password_active {
             "Enter password...".to_string()
         } else {
@@ -389,39 +509,41 @@ impl Screen for LoginScreen {
             format!("{}{}", masked, cursor)
         };
         let text_color = if self.password.is_empty() && !password_active { DARKGRAY } else { WHITE };
-        self.draw_text_sharp(&password_display, box_x + 12.0, password_y + 30.0, 16.0, text_color);
+        self.draw_text_sharp(&password_display, box_x + 10.0, pass_field_y + 27.0, font_size, text_color);
 
-        // Error message
+        // Error message (use native 16pt for crisp rendering)
         if let Some(ref error) = self.error_message {
-            let error_y = password_y + 70.0;
-            let error_width = self.measure_text_sharp(error, 16.0).width;
-            self.draw_text_sharp(error, (sw - error_width) / 2.0, error_y, 16.0, RED);
+            let error_y = pass_field_y + box_height + 4.0;
+            self.draw_text_sharp(error, box_x, error_y + 14.0, 16.0, RED);
         }
 
-        // Instructions
-        let inst_y = sh * 0.72;
-        let inst_size = 16.0;
+        // Buttons row - Login and Toggle side by side
+        let buttons_y = pass_field_y + box_height + spacing + 24.0;
+        let btn_w = (box_width - spacing) / 2.0;
 
+        // Login/Register button (left)
         let enter_text = match self.mode {
-            LoginMode::Login => "[Enter] Login",
-            LoginMode::Register => "[Enter] Register",
+            LoginMode::Login => "Login",
+            LoginMode::Register => "Register",
         };
-        self.draw_text_sharp(enter_text, box_x, inst_y, inst_size, GREEN);
+        draw_rectangle(box_x, buttons_y, btn_w, btn_height, Color::from_rgba(40, 100, 60, 255));
+        draw_rectangle_lines(box_x, buttons_y, btn_w, btn_height, 2.0, GREEN);
+        let enter_w = self.measure_text_sharp(enter_text, font_size).width;
+        self.draw_text_sharp(enter_text, box_x + (btn_w - enter_w) / 2.0, buttons_y + 24.0, font_size, WHITE);
 
+        // Toggle mode button (right)
         let toggle_text = match self.mode {
-            LoginMode::Login => "[F1] Switch to Register",
-            LoginMode::Register => "[F1] Switch to Login",
+            LoginMode::Login => "Register",
+            LoginMode::Register => "Login",
         };
-        self.draw_text_sharp(toggle_text, box_x, inst_y + 24.0, inst_size, YELLOW);
+        let toggle_x = box_x + btn_w + spacing;
+        draw_rectangle(toggle_x, buttons_y, btn_w, btn_height, Color::from_rgba(80, 80, 40, 255));
+        draw_rectangle_lines(toggle_x, buttons_y, btn_w, btn_height, 2.0, YELLOW);
+        let toggle_w = self.measure_text_sharp(toggle_text, font_size).width;
+        self.draw_text_sharp(toggle_text, toggle_x + (btn_w - toggle_w) / 2.0, buttons_y + 24.0, font_size, WHITE);
 
-        self.draw_text_sharp("[Tab] Switch fields", box_x, inst_y + 48.0, inst_size, LIGHTGRAY);
-
-        if self.dev_mode {
-            self.draw_text_sharp("[F2] Guest Login (Dev Mode)", box_x, inst_y + 72.0, inst_size, ORANGE);
-        }
-
-        // Version
-        self.draw_text_sharp("v0.1.0", sw - 60.0, sh - 20.0, 12.0, DARKGRAY);
+        // Version (bottom right, native 16pt for crisp rendering)
+        self.draw_text_sharp("v0.1.0", sw - 60.0, sh - 10.0, 16.0, DARKGRAY);
     }
 }
 
@@ -473,7 +595,7 @@ impl CharacterSelectScreen {
         self.player_sprites = load_player_sprites().await;
         // Load hair sprites
         for style in 0..3i32 {
-            let path = format!("assets/sprites/hair/hair_{}.png", style);
+            let path = asset_path(&format!("assets/sprites/hair/hair_{}.png", style));
             if let Ok(tex) = load_texture(&path).await {
                 tex.set_filter(FilterMode::Nearest);
                 self.hair_sprites.insert(style, tex);
@@ -504,10 +626,10 @@ impl CharacterSelectScreen {
 #[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterSelectScreen {
     fn update(&mut self, _audio: &AudioManager) -> ScreenState {
-        let sw = screen_width();
-        let sh = screen_height();
-        let (mx, my) = mouse_position();
-        let clicked = is_mouse_button_pressed(MouseButton::Left);
+        let (sw, sh) = virtual_screen_size();
+        let (input_pos, clicked, _is_touch) = get_input_state();
+        let mx = input_pos.x;
+        let my = input_pos.y;
 
         // Layout constants (must match render)
         let list_x = (sw - 500.0) / 2.0;
@@ -667,8 +789,7 @@ impl Screen for CharacterSelectScreen {
     }
 
     fn render(&self) {
-        let sw = screen_width();
-        let sh = screen_height();
+        let (sw, sh) = virtual_screen_size();
 
         // Background
         clear_background(Color::from_rgba(25, 25, 35, 255));
@@ -773,20 +894,52 @@ impl Screen for CharacterSelectScreen {
                 self.draw_text_sharp(&delete_text, box_x + (box_w - delete_width) / 2.0, box_y + 50.0, 16.0, WHITE);
             }
 
-            self.draw_text_sharp("[Y] Yes, delete    [N] No, cancel", box_x + 70.0, box_y + 100.0, 16.0, LIGHTGRAY);
+            // Touch-friendly Yes/No buttons
+            let button_w = 100.0;
+            let button_h = 30.0;
+            let yes_x = box_x + 70.0;
+            let yes_y = box_y + 85.0;
+            let no_x = box_x + 250.0;
+
+            // Yes button
+            draw_rectangle(yes_x, yes_y, button_w, button_h, Color::from_rgba(100, 40, 40, 255));
+            draw_rectangle_lines(yes_x, yes_y, button_w, button_h, 2.0, RED);
+            self.draw_text_sharp("Yes, delete", yes_x + 8.0, yes_y + 20.0, 16.0, WHITE);
+
+            // No button
+            draw_rectangle(no_x, yes_y, button_w, button_h, Color::from_rgba(60, 60, 80, 255));
+            draw_rectangle_lines(no_x, yes_y, button_w, button_h, 2.0, LIGHTGRAY);
+            self.draw_text_sharp("No, cancel", no_x + 8.0, yes_y + 20.0, 16.0, WHITE);
             return;
         }
 
-        // Instructions at bottom
+        // Buttons at bottom
         let inst_y = sh - 70.0;
-        self.draw_text_sharp("[Enter] Play", list_x, inst_y, 16.0, GREEN);
-        if self.characters.len() < MAX_CHARACTERS {
-            self.draw_text_sharp("[N] New", list_x + 120.0, inst_y, 16.0, YELLOW);
-        }
-        self.draw_text_sharp("[X] Delete", list_x + 210.0, inst_y, 16.0, RED);
-        self.draw_text_sharp("[Esc] Logout", list_x + 330.0, inst_y, 16.0, LIGHTGRAY);
+        let button_height = 30.0;
 
-        self.draw_text_sharp("[W/S] Navigate", list_x, inst_y + 24.0, 16.0, DARKGRAY);
+        // Play button
+        draw_rectangle(list_x, inst_y - 10.0, 100.0, button_height, Color::from_rgba(40, 100, 60, 255));
+        draw_rectangle_lines(list_x, inst_y - 10.0, 100.0, button_height, 2.0, GREEN);
+        self.draw_text_sharp("Play", list_x + 10.0, inst_y + 10.0, 16.0, WHITE);
+
+        // New button
+        if self.characters.len() < MAX_CHARACTERS {
+            draw_rectangle(list_x + 120.0, inst_y - 10.0, 70.0, button_height, Color::from_rgba(80, 80, 40, 255));
+            draw_rectangle_lines(list_x + 120.0, inst_y - 10.0, 70.0, button_height, 2.0, YELLOW);
+            self.draw_text_sharp("New", list_x + 130.0, inst_y + 10.0, 16.0, WHITE);
+        }
+
+        // Delete button
+        draw_rectangle(list_x + 210.0, inst_y - 10.0, 90.0, button_height, Color::from_rgba(100, 40, 40, 255));
+        draw_rectangle_lines(list_x + 210.0, inst_y - 10.0, 90.0, button_height, 2.0, RED);
+        self.draw_text_sharp("Delete", list_x + 220.0, inst_y + 10.0, 16.0, WHITE);
+
+        // Logout button
+        draw_rectangle(list_x + 330.0, inst_y - 10.0, 100.0, button_height, Color::from_rgba(60, 60, 80, 255));
+        draw_rectangle_lines(list_x + 330.0, inst_y - 10.0, 100.0, button_height, 2.0, LIGHTGRAY);
+        self.draw_text_sharp("Logout", list_x + 340.0, inst_y + 10.0, 16.0, WHITE);
+
+        self.draw_text_sharp("[W/S] Navigate", list_x, inst_y + 28.0, 16.0, DARKGRAY);
     }
 }
 
@@ -853,7 +1006,7 @@ impl CharacterCreateScreen {
         self.player_sprites = load_player_sprites().await;
         // Load hair sprites
         for style in 0..HAIR_STYLES as i32 {
-            let path = format!("assets/sprites/hair/hair_{}.png", style);
+            let path = asset_path(&format!("assets/sprites/hair/hair_{}.png", style));
             match load_texture(&path).await {
                 Ok(tex) => {
                     tex.set_filter(FilterMode::Nearest);
@@ -894,10 +1047,10 @@ impl CharacterCreateScreen {
 #[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterCreateScreen {
     fn update(&mut self, audio: &AudioManager) -> ScreenState {
-        let sw = screen_width();
-        let _sh = screen_height();
-        let (mx, my) = mouse_position();
-        let clicked = is_mouse_button_pressed(MouseButton::Left);
+        let (sw, _sh) = virtual_screen_size();
+        let (input_pos, clicked, _is_touch) = get_input_state();
+        let mx = input_pos.x;
+        let my = input_pos.y;
 
         // Layout constants (must match render)
         let total_width = 460.0;
@@ -920,12 +1073,14 @@ impl Screen for CharacterCreateScreen {
             let name_box_y = content_y + 20.0;
             if point_in_rect(mx, my, form_x, name_box_y, form_w, 36.0) {
                 self.active_field = CreateField::Name;
+                show_keyboard(true);
             }
 
             // Gender field box
             let gender_box_y = content_y + field_height + 20.0;
             if point_in_rect(mx, my, form_x, gender_box_y, form_w, 36.0) {
                 self.active_field = CreateField::Gender;
+                show_keyboard(false);
 
                 // Check if clicked on left arrow area
                 if point_in_rect(mx, my, form_x, gender_box_y, 50.0, 36.0) {
@@ -945,6 +1100,7 @@ impl Screen for CharacterCreateScreen {
             let skin_box_y = content_y + field_height * 2.0 + 20.0;
             if point_in_rect(mx, my, form_x, skin_box_y, form_w, 36.0) {
                 self.active_field = CreateField::Skin;
+                show_keyboard(false);
 
                 // Check if clicked on left arrow area
                 if point_in_rect(mx, my, form_x, skin_box_y, 50.0, 36.0) {
@@ -964,6 +1120,7 @@ impl Screen for CharacterCreateScreen {
             let hair_box_y = content_y + field_height * 3.0 + 20.0;
             if point_in_rect(mx, my, form_x, hair_box_y, half_width, 36.0) {
                 self.active_field = CreateField::HairStyle;
+                show_keyboard(false);
 
                 // Check if clicked on left arrow area
                 if point_in_rect(mx, my, form_x, hair_box_y, 35.0, 36.0) {
@@ -987,6 +1144,7 @@ impl Screen for CharacterCreateScreen {
             let hair_color_x = form_x + half_width + 10.0;
             if self.hair_style_index.is_some() && point_in_rect(mx, my, hair_color_x, hair_box_y, half_width, 36.0) {
                 self.active_field = CreateField::HairColor;
+                show_keyboard(false);
 
                 // Check if clicked on left arrow area
                 if point_in_rect(mx, my, hair_color_x, hair_box_y, 35.0, 36.0) {
@@ -1008,6 +1166,7 @@ impl Screen for CharacterCreateScreen {
 
             // Create button
             if point_in_rect(mx, my, form_x, buttons_y, button_w, 36.0) {
+                show_keyboard(false);
                 let name = self.name.trim();
                 if name.len() < 2 {
                     self.error_message = Some("Name must be at least 2 characters".to_string());
@@ -1036,6 +1195,7 @@ impl Screen for CharacterCreateScreen {
             // Cancel button
             let cancel_x = form_x + button_w + 10.0;
             if point_in_rect(mx, my, cancel_x, buttons_y, button_w, 36.0) {
+                show_keyboard(false);
                 return ScreenState::ToCharacterSelect(self.session.clone());
             }
         }
@@ -1132,6 +1292,7 @@ impl Screen for CharacterCreateScreen {
 
         // Keyboard: Cancel
         if is_key_pressed(KeyCode::Escape) {
+            show_keyboard(false);
             return ScreenState::ToCharacterSelect(self.session.clone());
         }
 
@@ -1167,8 +1328,7 @@ impl Screen for CharacterCreateScreen {
     }
 
     fn render(&self) {
-        let sw = screen_width();
-        let sh = screen_height();
+        let (sw, sh) = virtual_screen_size();
 
         // Background
         clear_background(Color::from_rgba(25, 25, 35, 255));

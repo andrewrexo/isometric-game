@@ -6,6 +6,16 @@ use crate::render::isometric::screen_to_world;
 use crate::ui::{UiElementId, UiLayout};
 use crate::network::messages::ClientMessage;
 use crate::audio::AudioManager;
+use crate::util::virtual_screen_size;
+use super::touch::TouchControls;
+
+/// Convert screen coordinates to virtual coordinates for UI hit detection
+fn screen_to_virtual_coords(x: f32, y: f32) -> (f32, f32) {
+    let (vw, vh) = virtual_screen_size();
+    let screen_w = screen_width();
+    let screen_h = screen_height();
+    (x * vw / screen_w, y * vh / screen_h)
+}
 
 /// Build set of tiles occupied by entities (other players + NPCs) for pathfinding
 fn build_occupied_set(state: &GameState) -> HashSet<(i32, i32)> {
@@ -113,6 +123,8 @@ pub struct InputHandler {
     dir_press_time: f64,
     // Track if we've sent a move command for the current key press
     move_sent: bool,
+    // Touch controls for mobile devices
+    pub touch_controls: TouchControls,
 }
 
 impl InputHandler {
@@ -128,6 +140,7 @@ impl InputHandler {
             attack_cooldown: 0.8, // 800 ms (matches server ATTACK_COOLDOWN_MS)
             dir_press_time: 0.0,
             move_sent: false,
+            touch_controls: TouchControls::new(),
         }
     }
 
@@ -135,16 +148,21 @@ impl InputHandler {
         let mut commands = Vec::new();
         let current_time = get_time();
 
-        // Get current mouse position
-        let (mx, my) = mouse_position();
+        // Update touch controls (for mobile)
+        self.touch_controls.update();
+
+        // Get current mouse/touch position in virtual coordinates (for UI hit detection)
+        let (raw_mx, raw_my) = mouse_position();
+        let (mx, my) = screen_to_virtual_coords(raw_mx, raw_my);
 
         // Update hover state for visual feedback (used by renderer next frame)
         state.ui_state.hovered_element = layout.hit_test(mx, my).cloned();
 
-        // Update hovered tile based on mouse position (only when not hovering UI)
+        // Update hovered tile based on mouse position (only when not hovering UI or using touch controls)
         // Use round() instead of floor() because tile sprites are visually centered
         // at integer world coordinates, forming diamonds that span [-0.5, 0.5) around each point
-        if state.ui_state.hovered_element.is_none() {
+        let touch_active = self.touch_controls.consumed_touch();
+        if state.ui_state.hovered_element.is_none() && !touch_active {
             let (world_x, world_y) = screen_to_world(mx, my, &state.camera);
             let tile_x = world_x.round() as i32;
             let tile_y = world_y.round() as i32;
@@ -188,9 +206,11 @@ impl InputHandler {
 
         // For click detection, do a fresh hit-test at the moment of click
         // This ensures we detect what's actually under the mouse when clicked
-        let mouse_clicked = is_mouse_button_pressed(MouseButton::Left);
+        // On mobile, don't count touches that were consumed by touch controls as map clicks
+        let touch_consumed = self.touch_controls.consumed_touch();
+        let mouse_clicked = is_mouse_button_pressed(MouseButton::Left) && !touch_consumed;
         let mouse_right_clicked = is_mouse_button_pressed(MouseButton::Right);
-        let mouse_released = is_mouse_button_released(MouseButton::Left);
+        let mouse_released = is_mouse_button_released(MouseButton::Left) && !touch_consumed;
         let clicked_element = if mouse_clicked || mouse_right_clicked || mouse_released {
             layout.hit_test(mx, my).cloned()
         } else {
@@ -585,20 +605,6 @@ impl InputHandler {
         if mouse_clicked {
             if let Some(ref element) = clicked_element {
                 match element {
-                    UiElementId::MenuButtonCharacter => {
-                        audio.play_sfx("enter");
-                        // Toggle character panel, close others if opening
-                        if state.ui_state.character_open {
-                            state.ui_state.character_open = false;
-                        } else {
-                            state.ui_state.character_open = true;
-                            state.ui_state.inventory_open = false;
-                            state.ui_state.character_panel_open = false;
-                            state.ui_state.social_open = false;
-                            state.ui_state.skills_open = false;
-                        }
-                        return commands;
-                    }
                     UiElementId::MenuButtonInventory => {
                         audio.play_sfx("enter");
                         // Toggle inventory panel, close others if opening
@@ -607,7 +613,6 @@ impl InputHandler {
                         } else {
                             state.ui_state.inventory_open = true;
                             state.ui_state.character_panel_open = false;
-                            state.ui_state.character_open = false;
                             state.ui_state.social_open = false;
                             state.ui_state.skills_open = false;
                         }
@@ -621,7 +626,6 @@ impl InputHandler {
                         } else {
                             state.ui_state.character_panel_open = true;
                             state.ui_state.inventory_open = false;
-                            state.ui_state.character_open = false;
                             state.ui_state.social_open = false;
                             state.ui_state.skills_open = false;
                         }
@@ -636,8 +640,7 @@ impl InputHandler {
                             state.ui_state.social_open = true;
                             state.ui_state.inventory_open = false;
                             state.ui_state.character_panel_open = false;
-                            state.ui_state.character_open = false;
-                            state.ui_state.skills_open = false;
+                                                        state.ui_state.skills_open = false;
                         }
                         return commands;
                     }
@@ -650,8 +653,7 @@ impl InputHandler {
                             state.ui_state.skills_open = true;
                             state.ui_state.inventory_open = false;
                             state.ui_state.character_panel_open = false;
-                            state.ui_state.character_open = false;
-                            state.ui_state.social_open = false;
+                                                        state.ui_state.social_open = false;
                         }
                         return commands;
                     }
@@ -703,6 +705,17 @@ impl InputHandler {
                                 let volume = (relative_x / slider_elem.bounds.w).clamp(0.0, 1.0);
                                 state.ui_state.audio_sfx_volume = volume;
                                 audio.set_sfx_volume(volume);
+                            }
+                            return commands;
+                        }
+                        UiElementId::EscapeMenuUiScaleSlider => {
+                            // Calculate UI scale from click position (0.5x to 1.5x range)
+                            if let Some(slider_elem) = layout.elements.iter().find(|e| e.id == UiElementId::EscapeMenuUiScaleSlider) {
+                                let (mouse_x, _) = mouse_position();
+                                let relative_x = mouse_x - slider_elem.bounds.x;
+                                let normalized = (relative_x / slider_elem.bounds.w).clamp(0.0, 1.0);
+                                // Convert 0.0-1.0 to 0.5-1.5 range
+                                state.ui_state.ui_scale = 0.5 + normalized * 1.0;
                             }
                             return commands;
                         }
@@ -1392,8 +1405,12 @@ impl InputHandler {
         let left = is_key_down(KeyCode::A) || is_key_down(KeyCode::Left);
         let right = is_key_down(KeyCode::D) || is_key_down(KeyCode::Right);
 
-        // Cancel auto-path if any movement key is pressed
-        if up || down || left || right {
+        // Get touch joystick input (for mobile)
+        let (touch_dx, touch_dy) = self.touch_controls.get_movement();
+        let has_touch_input = touch_dx.abs() > 0.1 || touch_dy.abs() > 0.1;
+
+        // Cancel auto-path if any movement input (keyboard or touch)
+        if up || down || left || right || has_touch_input {
             state.clear_auto_path();
         }
 
@@ -1465,27 +1482,40 @@ impl InputHandler {
         self.prev_dir = new_dir;
         self.current_dir = new_dir;
 
-        // Convert direction to velocity
-        let (dx, dy): (f32, f32) = match new_dir {
-            CardinalDir::Up => (0.0, -1.0),
-            CardinalDir::Down => (0.0, 1.0),
-            CardinalDir::Left => (-1.0, 0.0),
-            CardinalDir::Right => (1.0, 0.0),
-            CardinalDir::None => (0.0, 0.0),
+        // Convert direction to velocity - prefer touch input if available
+        let (dx, dy): (f32, f32) = if has_touch_input {
+            // Use touch joystick input directly (analog control)
+            (touch_dx, touch_dy)
+        } else {
+            // Use keyboard input (cardinal directions)
+            match new_dir {
+                CardinalDir::Up => (0.0, -1.0),
+                CardinalDir::Down => (0.0, 1.0),
+                CardinalDir::Left => (-1.0, 0.0),
+                CardinalDir::Right => (1.0, 0.0),
+                CardinalDir::None => (0.0, 0.0),
+            }
         };
 
         // Only send Move commands if held past the threshold
-        // Don't move while attacking - check both Space key and animation state
-        let is_attacking = is_key_down(KeyCode::Space) || state.get_local_player().map_or(false, |p| {
+        // Don't move while attacking - check both Space key/touch button and animation state
+        let is_attacking = is_key_down(KeyCode::Space) || self.touch_controls.attack_pressed() || state.get_local_player().map_or(false, |p| {
             matches!(
                 p.animation.state,
                 AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
             )
         });
-        if new_dir != CardinalDir::None && !is_attacking {
+
+        // Check if we have any movement input (keyboard or touch)
+        let has_movement_input = new_dir != CardinalDir::None || has_touch_input;
+
+        if has_movement_input && !is_attacking {
+            // For touch input, skip the face threshold (move immediately)
+            // For keyboard, respect the threshold for tap-to-face behavior
             let hold_duration = current_time - self.dir_press_time;
-            if hold_duration >= FACE_THRESHOLD {
-                // Past threshold - check if target tile is walkable before sending movement
+            let past_threshold = has_touch_input || hold_duration >= FACE_THRESHOLD;
+            if past_threshold {
+                // Past threshold (or touch input) - check if target tile is walkable before sending movement
                 let can_move = if let Some(player) = state.get_local_player() {
                     let player_x = player.x.round() as i32;
                     let player_y = player.y.round() as i32;
@@ -1524,13 +1554,28 @@ impl InputHandler {
                         self.move_sent = false;
                     }
                     if should_send {
-                        commands.push(InputCommand::Face { direction: new_dir.to_direction_u8() });
+                        // Derive direction from dx/dy for both keyboard and touch
+                        let face_dir = if dy < -0.5 { 0 }      // Up/North
+                            else if dy > 0.5 { 1 }             // Down/South
+                            else if dx < -0.5 { 2 }            // Left/West
+                            else if dx > 0.5 { 3 }             // Right/East
+                            else { new_dir.to_direction_u8() }; // Fallback to keyboard direction
+                        commands.push(InputCommand::Face { direction: face_dir });
                         self.last_dx = dx;
                         self.last_dy = dy;
                         self.last_send_time = current_time;
                     }
                 }
             }
+        }
+
+        // Handle touch joystick release - send stop command
+        if self.touch_controls.enabled && !has_touch_input && self.move_sent && new_dir == CardinalDir::None {
+            commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
+            self.last_dx = 0.0;
+            self.last_dy = 0.0;
+            self.last_send_time = current_time;
+            self.move_sent = false;
         }
 
         // Path following - generate movement commands when auto-pathing
@@ -1609,9 +1654,10 @@ impl InputHandler {
             }
         }
 
-        // Attack (Space key) - holding space continues attacking with cooldown
+        // Attack (Space key or touch attack button) - holding continues attacking with cooldown
         // Also stop movement when attacking (player must stand still)
-        if is_key_down(KeyCode::Space) {
+        let attack_input = is_key_down(KeyCode::Space) || self.touch_controls.attack_pressed();
+        if attack_input {
             // Send stop command if we were moving via keyboard or auto-path
             let was_pathing = state.auto_path.is_some();
             if self.last_dx != 0.0 || self.last_dy != 0.0 || was_pathing {
@@ -1920,13 +1966,11 @@ impl InputHandler {
         if is_key_pressed(KeyCode::Escape) {
             // Check if any panel is open and close it
             if state.ui_state.inventory_open || state.ui_state.character_panel_open
-                || state.ui_state.character_open || state.ui_state.social_open
-                || state.ui_state.skills_open {
+                || state.ui_state.social_open || state.ui_state.skills_open {
                 audio.play_sfx("enter");
                 state.ui_state.inventory_open = false;
                 state.ui_state.character_panel_open = false;
-                state.ui_state.character_open = false;
-                state.ui_state.social_open = false;
+                                state.ui_state.social_open = false;
                 state.ui_state.skills_open = false;
             } else if state.selected_entity_id.is_some() {
                 commands.push(InputCommand::ClearTarget);
@@ -1945,8 +1989,7 @@ impl InputHandler {
             } else {
                 state.ui_state.inventory_open = true;
                 state.ui_state.character_panel_open = false;
-                state.ui_state.character_open = false;
-                state.ui_state.social_open = false;
+                                state.ui_state.social_open = false;
                 state.ui_state.skills_open = false;
             }
         }
@@ -1959,8 +2002,7 @@ impl InputHandler {
             } else {
                 state.ui_state.character_panel_open = true;
                 state.ui_state.inventory_open = false;
-                state.ui_state.character_open = false;
-                state.ui_state.social_open = false;
+                                state.ui_state.social_open = false;
                 state.ui_state.skills_open = false;
             }
         }
@@ -1988,8 +2030,9 @@ impl InputHandler {
             }
         }
 
-        // Pickup nearest item (F key)
-        if is_key_pressed(KeyCode::F) {
+        // Pickup nearest item (F key or touch interact when no NPC nearby)
+        let pickup_pressed = is_key_pressed(KeyCode::F);
+        if pickup_pressed {
             // Get local player position
             if let Some(local_id) = &state.local_player_id {
                 if let Some(player) = state.players.get(local_id) {
@@ -2016,8 +2059,10 @@ impl InputHandler {
             }
         }
 
-        // Interact with nearest NPC (E key)
-        if is_key_pressed(KeyCode::E) {
+        // Interact with nearest NPC (E key or touch interact button)
+        // Touch interact button also picks up items if no NPC nearby
+        let interact_pressed = is_key_pressed(KeyCode::E) || self.touch_controls.interact_pressed();
+        if interact_pressed {
             if let Some(local_id) = &state.local_player_id {
                 if let Some(player) = state.players.get(local_id) {
                     // Find nearest NPC within interaction range (2.5 tiles)
@@ -2044,6 +2089,23 @@ impl InputHandler {
                     if let Some((npc_id, _)) = nearest_npc {
                         log::info!("Interacting with NPC: {}", npc_id);
                         commands.push(InputCommand::Interact { npc_id });
+                    } else if self.touch_controls.interact_pressed() {
+                        // Touch interact fallback: pickup item if no NPC nearby
+                        const PICKUP_RANGE: f32 = 2.0;
+                        let mut nearest_item: Option<(String, f32)> = None;
+                        for (id, item) in &state.ground_items {
+                            let dx = item.x - player.x;
+                            let dy = item.y - player.y;
+                            let dist = (dx * dx + dy * dy).sqrt();
+                            if dist < PICKUP_RANGE {
+                                if nearest_item.is_none() || dist < nearest_item.as_ref().unwrap().1 {
+                                    nearest_item = Some((id.clone(), dist));
+                                }
+                            }
+                        }
+                        if let Some((item_id, _)) = nearest_item {
+                            commands.push(InputCommand::Pickup { item_id });
+                        }
                     }
                 }
             }
@@ -2060,5 +2122,10 @@ impl InputHandler {
     /// Get current movement direction (for client-side prediction)
     pub fn get_movement(&self) -> (f32, f32) {
         (self.last_dx, self.last_dy)
+    }
+
+    /// Render touch controls overlay (call after all other rendering)
+    pub fn render_touch_controls(&self) {
+        self.touch_controls.render();
     }
 }

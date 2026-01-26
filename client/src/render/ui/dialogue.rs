@@ -3,13 +3,16 @@
 use macroquad::prelude::*;
 use crate::game::ActiveDialogue;
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 
 impl Renderer {
     pub(crate) fn render_dialogue(&self, dialogue: &ActiveDialogue, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
+        let (sw, sh) = virtual_screen_size();
+
         // Semi-transparent overlay to focus attention
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.45));
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
 
         let box_width = 620.0;
         let choice_area_height = if dialogue.choices.is_empty() {
@@ -18,8 +21,8 @@ impl Renderer {
             dialogue.choices.len() as f32 * 32.0 + 36.0
         };
         let box_height = 120.0 + choice_area_height;
-        let box_x = (screen_width() - box_width) / 2.0;
-        let box_y = screen_height() - box_height - 60.0;
+        let box_x = (sw - box_width) / 2.0;
+        let box_y = sh - box_height - 60.0;
 
         // Draw themed panel frame with corner accents
         self.draw_panel_frame(box_x, box_y, box_width, box_height);

@@ -3,6 +3,7 @@
 use macroquad::prelude::*;
 use crate::game::{GameState, DragSource};
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 
@@ -22,44 +23,57 @@ impl Renderer {
             return;
         }
 
-        let screen_w = screen_width();
-        let screen_h = screen_height();
+        let (screen_w, screen_h) = virtual_screen_size();
+        let scale = state.ui_state.ui_scale;
+
+        // Scaled dimensions
+        let panel_width = CHARACTER_PANEL_WIDTH * scale;
+        let panel_height = CHARACTER_PANEL_HEIGHT * scale;
+        let frame_thickness = FRAME_THICKNESS * scale;
+        let header_height = CHARACTER_HEADER_HEIGHT * scale;
+        let panel_padding = CHARACTER_PANEL_PADDING * scale;
+        let slot_size = EQUIP_SLOT_SIZE * scale;
+        let slot_spacing = EQUIP_SLOT_SPACING * scale;
+        let button_size = MENU_BUTTON_SIZE * scale;
+        let exp_bar_gap = EXP_BAR_GAP * scale;
+        let stats_gap = STATS_SECTION_GAP * scale;
+        let grid_width = CHARACTER_GRID_WIDTH * scale;
 
         // Position panel on right side, above the menu buttons (align with button right edge)
-        let panel_x = screen_w - CHARACTER_PANEL_WIDTH - 8.0;
-        let button_area_height = MENU_BUTTON_SIZE + EXP_BAR_GAP;
-        let panel_y = screen_h - button_area_height - CHARACTER_PANEL_HEIGHT - 8.0;
+        let panel_x = screen_w - panel_width - 8.0;
+        let button_area_height = button_size + exp_bar_gap;
+        let panel_y = screen_h - button_area_height - panel_height - 8.0;
 
         // Draw panel frame
-        self.draw_panel_frame(panel_x, panel_y, CHARACTER_PANEL_WIDTH, CHARACTER_PANEL_HEIGHT);
-        self.draw_corner_accents(panel_x, panel_y, CHARACTER_PANEL_WIDTH, CHARACTER_PANEL_HEIGHT);
+        self.draw_panel_frame(panel_x, panel_y, panel_width, panel_height);
+        self.draw_corner_accents(panel_x, panel_y, panel_width, panel_height);
 
         // Header
-        let header_x = panel_x + FRAME_THICKNESS;
-        let header_y = panel_y + FRAME_THICKNESS;
-        let header_w = CHARACTER_PANEL_WIDTH - FRAME_THICKNESS * 2.0;
+        let header_x = panel_x + frame_thickness;
+        let header_y = panel_y + frame_thickness;
+        let header_w = panel_width - frame_thickness * 2.0;
 
-        draw_rectangle(header_x, header_y, header_w, CHARACTER_HEADER_HEIGHT, HEADER_BG);
+        draw_rectangle(header_x, header_y, header_w, header_height, HEADER_BG);
         draw_line(
-            header_x + 6.0,
-            header_y + CHARACTER_HEADER_HEIGHT,
-            header_x + header_w - 6.0,
-            header_y + CHARACTER_HEADER_HEIGHT,
+            header_x + 6.0 * scale,
+            header_y + header_height,
+            header_x + header_w - 6.0 * scale,
+            header_y + header_height,
             1.0,
             HEADER_BORDER,
         );
 
-        // Header text
+        // Header text (native font size for crisp rendering)
         let header_text = "CHARACTER";
         let text_dims = self.measure_text_sharp(header_text, 16.0);
         let text_x = header_x + (header_w - text_dims.width) / 2.0;
-        self.draw_text_sharp(header_text, text_x, header_y + 17.0, 16.0, TEXT_TITLE);
+        self.draw_text_sharp(header_text, text_x, header_y + (header_height + 12.0) / 2.0, 16.0, TEXT_TITLE);
 
         // Grid area
-        let grid_x = panel_x + FRAME_THICKNESS + CHARACTER_PANEL_PADDING;
-        let grid_y = header_y + CHARACTER_HEADER_HEIGHT + CHARACTER_PANEL_PADDING;
+        let grid_x = panel_x + frame_thickness + panel_padding;
+        let grid_y = header_y + header_height + panel_padding;
 
-        let slot_step = EQUIP_SLOT_SIZE + EQUIP_SLOT_SPACING;
+        let slot_step = slot_size + slot_spacing;
 
         // Equipment slots - arranged in body-shaped layout
         // Same layout as was in inventory.rs
@@ -79,7 +93,7 @@ impl Renderer {
             let slot_x = grid_x + (*col as f32) * slot_step;
             let slot_y = grid_y + (*row as f32) * slot_step;
 
-            let bounds = Rect::new(slot_x, slot_y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE);
+            let bounds = Rect::new(slot_x, slot_y, slot_size, slot_size);
             layout.add(UiElementId::EquipmentSlot(slot_type.to_string()), bounds);
 
             let is_hovered = matches!(hovered, Some(UiElementId::EquipmentSlot(s)) if s == *slot_type);
@@ -100,7 +114,7 @@ impl Renderer {
                 }
             }).unwrap_or(false);
 
-            self.draw_equipment_slot(slot_x, slot_y, EQUIP_SLOT_SIZE, slot_type, has_item, is_hovered, is_dragging);
+            self.draw_equipment_slot(slot_x, slot_y, slot_size, slot_type, has_item, is_hovered, is_dragging);
 
             if !is_dragging {
                 if let Some(local_player) = state.get_local_player() {
@@ -117,28 +131,28 @@ impl Renderer {
                         _ => None,
                     };
                     if let Some(id) = item_id {
-                        self.draw_item_icon(id, slot_x, slot_y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, state, false);
+                        self.draw_item_icon(id, slot_x, slot_y, slot_size, slot_size, state, false);
                     }
                 }
             }
         }
 
         // Stats section - to the right of equipment grid
-        let stats_x = grid_x + CHARACTER_GRID_WIDTH + STATS_SECTION_GAP;
+        let stats_x = grid_x + grid_width + stats_gap;
         let stats_y = grid_y;
 
-        // Get player stats
+        // Get player stats (native font size for crisp rendering)
         if let Some(player) = state.get_local_player() {
-            let line_height = 24.0;
-            let text_x = stats_x + 4.0;
-            let mut text_y = stats_y + 18.0;
+            let line_height = 24.0 * scale;
+            let text_x = stats_x + 4.0 * scale;
+            let mut text_y = stats_y + 18.0 * scale;
 
             // Equipment bonuses
             let atk_bonus = player.attack_bonus(&state.item_registry);
             let str_bonus = player.strength_bonus(&state.item_registry);
             let def_bonus = player.defence_bonus(&state.item_registry);
 
-            // Stats list
+            // Stats list (font stays at native 16.0 for crisp text)
             let hp_text = format!("HP  {}/{}", player.hp, player.max_hp);
             self.draw_text_sharp(&hp_text, text_x, text_y, 16.0, HEALTH_GREEN_MID);
             text_y += line_height;

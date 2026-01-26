@@ -3,6 +3,7 @@
 use macroquad::prelude::*;
 use crate::game::{GameState, ContextMenu, ContextMenuTarget};
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 
@@ -42,14 +43,15 @@ impl Renderer {
         let menu_height = header_height + content_height + padding;
 
         // Position menu at cursor, but keep on screen (pixel-aligned)
+        let (sw, sh) = virtual_screen_size();
         let mut menu_x = menu.x.floor();
         let mut menu_y = menu.y.floor();
 
-        if menu_x + menu_width > screen_width() {
-            menu_x = (screen_width() - menu_width - 5.0).floor();
+        if menu_x + menu_width > sw {
+            menu_x = (sw - menu_width - 5.0).floor();
         }
-        if menu_y + menu_height > screen_height() {
-            menu_y = (screen_height() - menu_height - 5.0).floor();
+        if menu_y + menu_height > sh {
+            menu_y = (sh - menu_height - 5.0).floor();
         }
 
         // ===== PANEL FRAME =====

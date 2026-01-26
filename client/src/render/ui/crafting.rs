@@ -3,19 +3,22 @@
 use macroquad::prelude::*;
 use crate::game::{GameState, RecipeDefinition};
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 use super::shop;
 
 impl Renderer {
     pub(crate) fn render_crafting(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
+        let (sw, sh) = virtual_screen_size();
+
         let panel_width = 650.0;
         let panel_height = 450.0;
-        let panel_x = (screen_width() - panel_width) / 2.0;
-        let panel_y = (screen_height() - panel_height) / 2.0;
+        let panel_x = (sw - panel_width) / 2.0;
+        let panel_y = (sh - panel_height) / 2.0;
 
         // Semi-transparent overlay
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.588));
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.588));
 
         // Draw themed panel frame with corner accents
         self.draw_panel_frame(panel_x, panel_y, panel_width, panel_height);

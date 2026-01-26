@@ -2,6 +2,41 @@
 // Provides virtual joystick and touch buttons
 
 use macroquad::prelude::*;
+use crate::mobile_scale::VIRTUAL_WIDTH;
+
+/// Convert screen coordinates to virtual coordinates (for Android scaling)
+#[cfg(target_os = "android")]
+fn to_virtual_coords(x: f32, y: f32) -> (f32, f32) {
+    let screen_w = screen_width();
+    let screen_h = screen_height();
+    let (vw, vh) = virtual_screen_size();
+
+    let vx = x * vw / screen_w;
+    let vy = y * vh / screen_h;
+    (vx, vy)
+}
+
+#[cfg(not(target_os = "android"))]
+fn to_virtual_coords(x: f32, y: f32) -> (f32, f32) {
+    (x, y)
+}
+
+/// Get virtual screen dimensions
+fn virtual_screen_size() -> (f32, f32) {
+    #[cfg(target_os = "android")]
+    {
+        // Calculate virtual height to match screen aspect ratio
+        let screen_w = screen_width();
+        let screen_h = screen_height();
+        let aspect = screen_h / screen_w;
+        let virtual_height = (VIRTUAL_WIDTH * aspect).round();
+        (VIRTUAL_WIDTH, virtual_height)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        (screen_width(), screen_height())
+    }
+}
 
 /// Virtual joystick state
 pub struct VirtualJoystick {
@@ -45,9 +80,8 @@ impl VirtualJoystick {
 
     /// Update joystick state based on touch input
     /// Returns true if this joystick consumed the touch
-    pub fn update(&mut self, touches: &[TouchPoint]) -> bool {
-        let screen_w = screen_width();
-        let screen_h = screen_height();
+    pub fn update(&mut self, touches: &[Touch]) -> bool {
+        let (screen_w, screen_h) = virtual_screen_size();
 
         // Define the active zone for this joystick (left or right half of screen)
         let zone_start = match self.side {
@@ -68,7 +102,8 @@ impl VirtualJoystick {
                 Some(touch) => {
                     match touch.phase {
                         TouchPhase::Moved | TouchPhase::Stationary => {
-                            self.current = Some(vec2(touch.position.x, touch.position.y));
+                            let (vx, vy) = to_virtual_coords(touch.position.x, touch.position.y);
+                            self.current = Some(vec2(vx, vy));
                         }
                         TouchPhase::Ended | TouchPhase::Cancelled => {
                             self.release();
@@ -87,8 +122,7 @@ impl VirtualJoystick {
         // Look for a new touch in our zone
         for touch in touches {
             if touch.phase == TouchPhase::Started {
-                let x = touch.position.x;
-                let y = touch.position.y;
+                let (x, y) = to_virtual_coords(touch.position.x, touch.position.y);
 
                 // Check if touch is in our zone and in the lower portion of screen
                 if x >= zone_start && x < zone_end && y > screen_h * 0.3 {
@@ -225,7 +259,7 @@ impl TouchButton {
 
     /// Update button state based on touch input
     /// Returns true if this button consumed the touch
-    pub fn update(&mut self, touches: &[TouchPoint]) -> bool {
+    pub fn update(&mut self, touches: &[Touch]) -> bool {
         self.just_pressed = false;
 
         // If we're tracking a touch, check if it's still valid
@@ -253,7 +287,8 @@ impl TouchButton {
         // Look for a new touch on this button
         for touch in touches {
             if touch.phase == TouchPhase::Started {
-                let touch_pos = vec2(touch.position.x, touch.position.y);
+                let (vx, vy) = to_virtual_coords(touch.position.x, touch.position.y);
+                let touch_pos = vec2(vx, vy);
                 let distance = (touch_pos - self.position).length();
 
                 if distance <= self.radius {
@@ -312,49 +347,66 @@ pub struct TouchControls {
     pub interact_button: TouchButton,
     /// Whether touch controls are enabled (typically only on Android)
     pub enabled: bool,
+    /// Whether any touch was consumed by controls this frame
+    touch_consumed: bool,
 }
 
 impl TouchControls {
     pub fn new() -> Self {
-        let screen_w = screen_width();
-        let screen_h = screen_height();
+        let (screen_w, screen_h) = virtual_screen_size();
 
-        // Position buttons on the right side of the screen
-        let attack_x = screen_w - 100.0;
-        let attack_y = screen_h - 150.0;
-        let interact_x = screen_w - 180.0;
-        let interact_y = screen_h - 80.0;
+        // Position buttons on the right side of the screen, above menu buttons
+        // Smaller buttons to avoid overlap with bottom UI
+        let attack_x = screen_w - 55.0;
+        let attack_y = screen_h - 130.0;
+        let interact_x = screen_w - 115.0;
+        let interact_y = screen_h - 85.0;
 
         Self {
             joystick: VirtualJoystick::new(JoystickSide::Left),
-            attack_button: TouchButton::new(attack_x, attack_y, 50.0, "ATK"),
-            interact_button: TouchButton::new(interact_x, interact_y, 40.0, "USE"),
+            attack_button: TouchButton::new(attack_x, attack_y, 40.0, "ATK"),
+            interact_button: TouchButton::new(interact_x, interact_y, 32.0, "USE"),
             #[cfg(target_os = "android")]
             enabled: true,
             #[cfg(not(target_os = "android"))]
             enabled: false,
+            touch_consumed: false,
         }
     }
 
     /// Update all touch controls
     pub fn update(&mut self) {
+        self.touch_consumed = false;
+
         if !self.enabled {
             return;
         }
 
-        // Update button positions for current screen size
-        let screen_w = screen_width();
-        let screen_h = screen_height();
-        self.attack_button.set_position(screen_w - 100.0, screen_h - 150.0);
-        self.interact_button.set_position(screen_w - 180.0, screen_h - 80.0);
+        // Update button positions for current virtual screen size (above menu buttons)
+        let (screen_w, screen_h) = virtual_screen_size();
+        self.attack_button.set_position(screen_w - 55.0, screen_h - 130.0);
+        self.interact_button.set_position(screen_w - 115.0, screen_h - 85.0);
 
         // Get all current touches
-        let touches: Vec<TouchPoint> = touches().collect();
+        let touches: Vec<Touch> = touches();
 
         // Update each control (order matters - buttons first to consume their touches)
-        self.attack_button.update(&touches);
-        self.interact_button.update(&touches);
-        self.joystick.update(&touches);
+        // Track if any control consumed a touch
+        let attack_consumed = self.attack_button.update(&touches);
+        let interact_consumed = self.interact_button.update(&touches);
+        let joystick_consumed = self.joystick.update(&touches);
+
+        // Mark touch as consumed if any control is active or just received input
+        self.touch_consumed = attack_consumed || interact_consumed || joystick_consumed
+            || self.joystick.is_active()
+            || self.attack_button.is_pressed()
+            || self.interact_button.is_pressed();
+    }
+
+    /// Check if touch input was consumed by controls this frame
+    /// Use this to prevent touch from triggering map clicks
+    pub fn consumed_touch(&self) -> bool {
+        self.touch_consumed
     }
 
     /// Render all touch controls

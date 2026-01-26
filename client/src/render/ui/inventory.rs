@@ -3,6 +3,7 @@
 use macroquad::prelude::*;
 use crate::game::{GameState, DragState, DragSource};
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 
@@ -114,56 +115,64 @@ impl Renderer {
     }
 
     pub(crate) fn render_inventory(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let screen_w = screen_width();
-        let screen_h = screen_height();
+        let (screen_w, screen_h) = virtual_screen_size();
+        let scale = state.ui_state.ui_scale;
+
+        // Scaled dimensions (keep font at native size for crisp rendering)
+        let inv_width = INV_WIDTH * scale;
+        let inv_height = INV_HEIGHT * scale;
+        let frame_thickness = FRAME_THICKNESS * scale;
+        let header_height = HEADER_HEIGHT * scale;
+        let button_size = MENU_BUTTON_SIZE * scale;
+        let exp_bar_gap = EXP_BAR_GAP * scale;
 
         // Position panel on right side, above the menu buttons (align with button right edge)
-        let inv_x = screen_w - INV_WIDTH - 8.0;
-        let button_area_height = MENU_BUTTON_SIZE + EXP_BAR_GAP;
-        let inv_y = screen_h - button_area_height - INV_HEIGHT - 8.0;
+        let inv_x = screen_w - inv_width - 8.0;
+        let button_area_height = button_size + exp_bar_gap;
+        let inv_y = screen_h - button_area_height - inv_height - 8.0;
 
         // Draw panel frame with corner accents
-        self.draw_panel_frame(inv_x, inv_y, INV_WIDTH, INV_HEIGHT);
-        self.draw_corner_accents(inv_x, inv_y, INV_WIDTH, INV_HEIGHT);
+        self.draw_panel_frame(inv_x, inv_y, inv_width, inv_height);
+        self.draw_corner_accents(inv_x, inv_y, inv_width, inv_height);
 
         // ===== HEADER SECTION =====
-        let header_x = inv_x + FRAME_THICKNESS;
-        let header_y = inv_y + FRAME_THICKNESS;
-        let header_w = INV_WIDTH - FRAME_THICKNESS * 2.0;
+        let header_x = inv_x + frame_thickness;
+        let header_y = inv_y + frame_thickness;
+        let header_w = inv_width - frame_thickness * 2.0;
 
         // Header background
-        draw_rectangle(header_x, header_y, header_w, HEADER_HEIGHT, HEADER_BG);
+        draw_rectangle(header_x, header_y, header_w, header_height, HEADER_BG);
 
         // Header bottom separator
-        draw_line(header_x + 10.0, header_y + HEADER_HEIGHT, header_x + header_w - 10.0, header_y + HEADER_HEIGHT, 2.0, HEADER_BORDER);
+        draw_line(header_x + 10.0 * scale, header_y + header_height, header_x + header_w - 10.0 * scale, header_y + header_height, 2.0, HEADER_BORDER);
 
         // Decorative dots on separator
-        let dot_spacing = 50.0;
-        let num_dots = ((header_w - 40.0) / dot_spacing) as i32;
-        let start_dot_x = header_x + 20.0;
+        let dot_spacing = 50.0 * scale;
+        let num_dots = ((header_w - 40.0 * scale) / dot_spacing).max(1.0) as i32;
+        let start_dot_x = header_x + 20.0 * scale;
         for i in 0..num_dots {
             let dot_x = start_dot_x + i as f32 * dot_spacing;
-            draw_rectangle(dot_x - 1.5, header_y + HEADER_HEIGHT - 1.5, 3.0, 3.0, FRAME_ACCENT);
+            draw_rectangle(dot_x - 1.5, header_y + header_height - 1.5, 3.0, 3.0, FRAME_ACCENT);
         }
 
-        // Title text
-        self.draw_text_sharp("INVENTORY", header_x + 12.0, header_y + 26.0, 16.0, TEXT_TITLE);
+        // Title text (native font size for crisp rendering)
+        self.draw_text_sharp("INVENTORY", header_x + 8.0, header_y + (header_height + 12.0) / 2.0, 16.0, TEXT_TITLE);
 
         // Gold display (right side)
         let gold_text = format!("{}g", state.inventory.gold);
         let gold_width = self.measure_text_sharp(&gold_text, 16.0).width;
 
         // Nugget icon size and spacing
-        let icon_size = 12.0;
-        let icon_margin = 4.0;
-        let coin_x = header_x + header_w - 12.0 - gold_width - icon_size - icon_margin;
+        let icon_size = 12.0 * scale;
+        let icon_margin = 4.0 * scale;
+        let coin_x = header_x + header_w - 8.0 - gold_width - icon_size - icon_margin;
 
         // Gold nugget icon
         if let Some(texture) = &self.gold_nugget_texture {
             draw_texture_ex(
                 texture,
                 coin_x,
-                header_y + (HEADER_HEIGHT - icon_size) / 2.0 + 2.0,
+                header_y + (header_height - icon_size) / 2.0,
                 WHITE,
                 DrawTextureParams {
                     dest_size: Some(vec2(icon_size, icon_size)),
@@ -172,26 +181,29 @@ impl Renderer {
             );
         }
 
-        self.draw_text_sharp(&gold_text, coin_x + icon_size + icon_margin, header_y + 26.0, 16.0, TEXT_GOLD);
+        self.draw_text_sharp(&gold_text, coin_x + icon_size + icon_margin, header_y + (header_height + 12.0) / 2.0, 16.0, TEXT_GOLD);
 
         // Register gold display bounds for right-click context menu
-        let gold_bounds = Rect::new(coin_x, header_y, icon_size + icon_margin + gold_width + 8.0, HEADER_HEIGHT);
+        let gold_bounds = Rect::new(coin_x, header_y, icon_size + icon_margin + gold_width + 8.0, header_height);
         layout.add(UiElementId::GoldDisplay, gold_bounds);
 
         // ===== INVENTORY GRID =====
-        let content_y = inv_y + FRAME_THICKNESS + HEADER_HEIGHT + 10.0;
-        let grid_x = inv_x + GRID_PADDING;
+        let grid_padding = GRID_PADDING * scale;
+        let slot_size = INV_SLOT_SIZE * scale;
+        let slot_spacing = SLOT_SPACING * scale;
+        let content_y = inv_y + frame_thickness + header_height + 10.0 * scale;
+        let grid_x = inv_x + grid_padding;
         let grid_y = content_y;
         let slots_per_row = 4;
 
         for i in 0..20 {
             let row = i / slots_per_row;
             let col = i % slots_per_row;
-            let x = grid_x + col as f32 * (INV_SLOT_SIZE + SLOT_SPACING);
-            let y = grid_y + row as f32 * (INV_SLOT_SIZE + SLOT_SPACING);
+            let x = grid_x + col as f32 * (slot_size + slot_spacing);
+            let y = grid_y + row as f32 * (slot_size + slot_spacing);
 
             // Register slot bounds for hit detection
-            let bounds = Rect::new(x, y, INV_SLOT_SIZE, INV_SLOT_SIZE);
+            let bounds = Rect::new(x, y, slot_size, slot_size);
             layout.add(UiElementId::InventorySlot(i), bounds);
 
             // Check if this slot is hovered
@@ -211,20 +223,20 @@ impl Renderer {
 
             // Draw the slot with bevel effect
             let has_item = state.inventory.slots[i].is_some();
-            self.draw_inventory_slot(x, y, INV_SLOT_SIZE, has_item, slot_state);
+            self.draw_inventory_slot(x, y, slot_size, has_item, slot_state);
 
             // Draw item if present (hide if being dragged)
             if let Some(slot) = &state.inventory.slots[i] {
                 if !is_dragging {
-                    self.draw_item_icon(&slot.item_id, x, y, INV_SLOT_SIZE, INV_SLOT_SIZE, state, false);
+                    self.draw_item_icon(&slot.item_id, x, y, slot_size, slot_size, state, false);
 
-                    // Quantity badge (bottom-left with shadow)
+                    // Quantity badge (bottom-left with shadow, native font size)
                     if slot.quantity > 1 {
                         let qty_text = slot.quantity.to_string();
                         // Shadow
-                        self.draw_text_sharp(&qty_text, x + 3.0, y + INV_SLOT_SIZE - 2.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.8));
+                        self.draw_text_sharp(&qty_text, x + 3.0, y + slot_size - 4.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.8));
                         // Text
-                        self.draw_text_sharp(&qty_text, x + 2.0, y + INV_SLOT_SIZE - 3.0, 16.0, TEXT_NORMAL);
+                        self.draw_text_sharp(&qty_text, x + 2.0, y + slot_size - 5.0, 16.0, TEXT_NORMAL);
                     }
                 }
             }
@@ -235,7 +247,7 @@ impl Renderer {
                 let text_w = self.measure_text_sharp(&num_text, 16.0).width;
                 let badge_w = text_w + 2.0;
                 let badge_h = 13.0;
-                let num_x = x + INV_SLOT_SIZE - badge_w - 1.0;
+                let num_x = x + slot_size - badge_w - 1.0;
                 let num_y = y + 1.0;
                 draw_rectangle(num_x, num_y, badge_w, badge_h, Color::new(0.0, 0.0, 0.0, 0.5));
                 self.draw_text_sharp(&num_text, num_x + 1.0, num_y + 11.0, 16.0, TEXT_DIM);
@@ -245,9 +257,9 @@ impl Renderer {
             let shift_held = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
             if shift_held && state.ui_state.shift_drop_enabled && has_item && is_hovered {
                 // Red-tinted overlay
-                draw_rectangle(x + 2.0, y + 2.0, INV_SLOT_SIZE - 4.0, INV_SLOT_SIZE - 4.0, Color::new(0.8, 0.2, 0.2, 0.35));
+                draw_rectangle(x + 2.0, y + 2.0, slot_size - 4.0, slot_size - 4.0, Color::new(0.8, 0.2, 0.2, 0.35));
                 // Red border highlight
-                draw_rectangle_lines(x + 1.0, y + 1.0, INV_SLOT_SIZE - 2.0, INV_SLOT_SIZE - 2.0, 2.0, Color::new(0.9, 0.3, 0.3, 0.9));
+                draw_rectangle_lines(x + 1.0, y + 1.0, slot_size - 2.0, slot_size - 2.0, 2.0, Color::new(0.9, 0.3, 0.3, 0.9));
             }
         }
 

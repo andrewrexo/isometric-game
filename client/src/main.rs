@@ -2,6 +2,8 @@ use macroquad::prelude::*;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
+mod util;
+mod mobile_scale;
 mod game;
 mod render;
 #[cfg(not(target_arch = "wasm32"))]
@@ -101,7 +103,7 @@ async fn main() {
         // Start menu music
         audio.play_music("assets/audio/menu.ogg").await;
 
-        let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+        let mut login_screen = LoginScreen::new(SERVER_URL);
         login_screen.load_font().await;
         let mut app_state = AppState::Login(login_screen);
         let mut last_next_frame_ms: f64 = 0.0;
@@ -186,7 +188,7 @@ async fn main() {
                             app_state = AppState::CharacterCreate(create_screen);
                         }
                         ScreenState::ToLogin => {
-                            let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+                            let mut login_screen = LoginScreen::new(SERVER_URL);
                             login_screen.load_font().await;
                             app_state = AppState::Login(login_screen);
                         }
@@ -217,7 +219,7 @@ async fn main() {
                         // Switch to menu music and disconnect from server
                         audio.play_music("assets/audio/menu.ogg").await;
                         network.disconnect();
-                        let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+                        let mut login_screen = LoginScreen::new(SERVER_URL);
                         login_screen.load_font().await;
                         app_state = AppState::Login(login_screen);
                         continue;
@@ -228,7 +230,7 @@ async fn main() {
                         log::info!("Reconnection failed, returning to login screen");
                         audio.play_music("assets/audio/menu.ogg").await;
                         network.disconnect();
-                        let mut login_screen = LoginScreen::new(SERVER_URL, DEV_MODE);
+                        let mut login_screen = LoginScreen::new(SERVER_URL);
                         login_screen.load_font().await;
                         app_state = AppState::Login(login_screen);
                         continue;

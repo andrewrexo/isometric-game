@@ -3,7 +3,9 @@
 //! Pre-loads a pixel font at multiple native sizes to avoid scaling artifacts.
 
 use macroquad::prelude::*;
+use macroquad::file::load_file;
 use std::collections::HashMap;
+use crate::util::asset_path;
 
 /// Available font sizes - these are pre-loaded at native resolution
 pub const FONT_SIZES: &[u16] = &[8, 10, 12, 16, 20, 24, 32];
@@ -19,10 +21,17 @@ impl BitmapFont {
     pub async fn load(path: &str) -> Self {
         let mut fonts = HashMap::new();
 
+        // Use macroquad's load_file for cross-platform asset loading (works on Android APK)
+        let font_bytes = match load_file(&asset_path(path)).await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                eprintln!("Failed to load font file {}: {}", path, e);
+                return Self { fonts };
+            }
+        };
+
         for &size in FONT_SIZES {
-            match load_ttf_font_from_bytes(
-                &std::fs::read(path).unwrap_or_default()
-            ) {
+            match load_ttf_font_from_bytes(&font_bytes) {
                 Ok(mut font) => {
                     font.set_filter(FilterMode::Nearest);
                     fonts.insert(size, font);
@@ -40,8 +49,8 @@ impl BitmapFont {
     pub async fn load_or_default(path: &str) -> Self {
         let mut fonts = HashMap::new();
 
-        // Try to read the font file once
-        let font_bytes = match std::fs::read(path) {
+        // Use macroquad's load_file for cross-platform asset loading (works on Android APK)
+        let font_bytes = match load_file(&asset_path(path)).await {
             Ok(bytes) => bytes,
             Err(e) => {
                 eprintln!("Failed to read font file {}: {}", path, e);

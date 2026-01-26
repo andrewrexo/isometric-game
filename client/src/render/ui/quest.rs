@@ -3,18 +3,21 @@
 use macroquad::prelude::*;
 use crate::game::GameState;
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 
 impl Renderer {
     pub(crate) fn render_quest_log(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
+        let (sw, sh) = virtual_screen_size();
+
         let panel_width = 380.0;
         let panel_height = 420.0;
-        let panel_x = (screen_width() - panel_width) / 2.0;
-        let panel_y = (screen_height() - panel_height) / 2.0;
+        let panel_x = (sw - panel_width) / 2.0;
+        let panel_y = (sh - panel_height) / 2.0;
 
         // Semi-transparent overlay
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.588));
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.588));
 
         // Draw themed panel frame with corner accents
         self.draw_panel_frame(panel_x, panel_y, panel_width, panel_height);
@@ -202,6 +205,7 @@ impl Renderer {
 
     pub(crate) fn render_quest_completed(&self, state: &GameState) {
         let current_time = macroquad::time::get_time();
+        let (sw, _sh) = virtual_screen_size();
 
         for event in &state.ui_state.quest_completed_events {
             let age = (current_time - event.time) as f32;
@@ -228,7 +232,7 @@ impl Renderer {
             if let Some(texture) = &self.quest_complete_texture {
                 let tex_width = texture.width() * scale;
                 let tex_height = texture.height() * scale;
-                let x = (screen_width() - tex_width) / 2.0;
+                let x = (sw - tex_width) / 2.0;
                 let y = base_y - tex_height / 2.0;
 
                 draw_texture_ex(
@@ -245,7 +249,7 @@ impl Renderer {
                 let name_width = self.measure_text_sharp(&event.quest_name, 16.0).width;
                 self.draw_text_sharp(
                     &event.quest_name,
-                    (screen_width() - name_width) / 2.0,
+                    (sw - name_width) / 2.0,
                     y + tex_height + 8.0,
                     16.0,
                     Color::from_rgba(255, 255, 255, alpha),
@@ -255,7 +259,7 @@ impl Renderer {
                 let rewards_width = self.measure_text_sharp(&rewards, 16.0).width;
                 self.draw_text_sharp(
                     &rewards,
-                    (screen_width() - rewards_width) / 2.0,
+                    (sw - rewards_width) / 2.0,
                     y + tex_height + 28.0,
                     16.0,
                     Color::from_rgba(100, 255, 100, alpha),
@@ -263,7 +267,7 @@ impl Renderer {
             } else {
                 let title = "QUEST COMPLETE!";
                 let title_width = self.measure_text_sharp(title, 32.0).width;
-                let x = (screen_width() - title_width) / 2.0;
+                let x = (sw - title_width) / 2.0;
 
                 let outline_color = Color::from_rgba(0, 0, 0, alpha);
                 for ox in [-2.0, 2.0] {
@@ -277,7 +281,7 @@ impl Renderer {
                 let name_width = self.measure_text_sharp(&event.quest_name, 16.0).width;
                 self.draw_text_sharp(
                     &event.quest_name,
-                    (screen_width() - name_width) / 2.0,
+                    (sw - name_width) / 2.0,
                     base_y + 25.0,
                     16.0,
                     Color::from_rgba(255, 255, 255, alpha),
@@ -287,7 +291,7 @@ impl Renderer {
                 let rewards_width = self.measure_text_sharp(&rewards, 16.0).width;
                 self.draw_text_sharp(
                     &rewards,
-                    (screen_width() - rewards_width) / 2.0,
+                    (sw - rewards_width) / 2.0,
                     base_y + 45.0,
                     16.0,
                     Color::from_rgba(100, 255, 100, alpha),

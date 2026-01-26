@@ -3,6 +3,7 @@
 use macroquad::prelude::*;
 use crate::game::GameState;
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 
@@ -25,7 +26,7 @@ impl Renderer {
 
     /// Render the experience bar at the top of the screen
     pub(crate) fn render_exp_bar(&self, state: &GameState) {
-        let screen_w = screen_width();
+        let (screen_w, _) = virtual_screen_size();
 
         // Bar fills full width, sits at very top
         let bar_height = EXP_BAR_HEIGHT;
@@ -72,16 +73,21 @@ impl Renderer {
 
     /// Render the menu buttons in the bottom-right corner
     pub(crate) fn render_menu_buttons(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        let screen_w = screen_width();
-        let screen_h = screen_height();
+        let (screen_w, screen_h) = virtual_screen_size();
+        let scale = state.ui_state.ui_scale;
+
+        // Scaled dimensions
+        let button_size = MENU_BUTTON_SIZE * scale;
+        let button_spacing = MENU_BUTTON_SPACING * scale;
+        let exp_bar_gap = EXP_BAR_GAP * scale;
 
         // Position at bottom of screen, aligned with quick slots
         // Floor to integer pixels for crisp pixel art
-        let button_y = (screen_h - EXP_BAR_GAP - MENU_BUTTON_SIZE).floor();
+        let button_y = (screen_h - exp_bar_gap - button_size).floor();
 
         // 5 buttons: Inventory, Character, Skills, Social, Settings
         let num_buttons = 5;
-        let total_width = num_buttons as f32 * MENU_BUTTON_SIZE + (num_buttons - 1) as f32 * MENU_BUTTON_SPACING;
+        let total_width = num_buttons as f32 * button_size + (num_buttons - 1) as f32 * button_spacing;
 
         // Right-aligned with padding, floor to integer pixels
         let start_x = (screen_w - total_width - 8.0).floor();
@@ -97,23 +103,23 @@ impl Renderer {
 
         for (i, (element_id, icon_frame, is_active)) in buttons.iter().enumerate() {
             // All sizes are integers so x stays on pixel boundaries
-            let x = start_x + i as f32 * (MENU_BUTTON_SIZE + MENU_BUTTON_SPACING);
+            let x = start_x + i as f32 * (button_size + button_spacing);
             let y = button_y;
 
             // Register bounds for hit detection
-            let bounds = Rect::new(x, y, MENU_BUTTON_SIZE, MENU_BUTTON_SIZE);
+            let bounds = Rect::new(x, y, button_size, button_size);
             layout.add(element_id.clone(), bounds);
 
             // Check if hovered
             let is_hovered = hovered.as_ref() == Some(element_id);
 
             // Draw button with icon
-            self.draw_menu_button_icon(x, y, MENU_BUTTON_SIZE, *icon_frame, is_hovered, *is_active);
+            self.draw_menu_button_icon_scaled(x, y, button_size, *icon_frame, is_hovered, *is_active, scale);
         }
     }
 
-    /// Draw a single menu button with an icon from the sprite sheet
-    fn draw_menu_button_icon(&self, x: f32, y: f32, size: f32, icon_frame: usize, is_hovered: bool, is_active: bool) {
+    /// Draw a single menu button with an icon from the sprite sheet (scaled)
+    fn draw_menu_button_icon_scaled(&self, x: f32, y: f32, size: f32, icon_frame: usize, is_hovered: bool, is_active: bool, scale: f32) {
         // Frame colors based on state
         let (bg_color, border_color) = if is_active {
             // Active state - brighter
@@ -145,15 +151,16 @@ impl Renderer {
             draw_line(x + size - 1.0, y + 2.0, x + size - 1.0, y + size - 2.0, 1.0, accent);
         }
 
-        // Draw icon from sprite sheet if available
+        // Draw icon from sprite sheet if available (scale icon with button)
+        let icon_size = ICON_SIZE * scale;
         if let Some(ref texture) = self.menu_button_icons {
             // Calculate source rectangle for this frame
             let src_x = icon_frame as f32 * ICON_SIZE;
             let src_rect = Rect::new(src_x, 0.0, ICON_SIZE, ICON_SIZE);
 
             // Center icon in button, floor to integer pixels for crisp pixel art
-            let icon_x = (x + (size - ICON_SIZE) / 2.0).floor();
-            let icon_y = (y + (size - ICON_SIZE) / 2.0).floor();
+            let icon_x = (x + (size - icon_size) / 2.0).floor();
+            let icon_y = (y + (size - icon_size) / 2.0).floor();
 
             // Tint based on state
             let tint = if is_active {
@@ -171,16 +178,16 @@ impl Renderer {
                 tint,
                 DrawTextureParams {
                     source: Some(src_rect),
-                    dest_size: Some(Vec2::new(ICON_SIZE, ICON_SIZE)),
+                    dest_size: Some(Vec2::new(icon_size, icon_size)),
                     ..Default::default()
                 },
             );
         } else {
-            // Fallback: draw text label if texture not loaded
+            // Fallback: draw text label if texture not loaded (native font size)
             let labels = ["I", "C", "K", "S", "O"]; // Inventory, Character, sKills, Social, Options
             let label = labels.get(icon_frame).unwrap_or(&"?");
 
-            let text_dims = self.measure_text_sharp(label, 18.0);
+            let text_dims = self.measure_text_sharp(label, 16.0);
             let text_x = x + (size - text_dims.width) / 2.0;
             let text_y = y + (size + 12.0) / 2.0;
 
@@ -192,7 +199,7 @@ impl Renderer {
                 TEXT_NORMAL
             };
 
-            self.draw_text_sharp(label, text_x, text_y, 18.0, text_color);
+            self.draw_text_sharp(label, text_x, text_y, 16.0, text_color);
         }
     }
 }

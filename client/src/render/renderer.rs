@@ -4,6 +4,7 @@ use macroquad::material::{load_material, gl_use_material, gl_use_default_materia
 use macroquad::miniquad::UniformDesc;
 use macroquad::miniquad::ShaderSource;
 use std::collections::HashMap;
+use crate::util::{asset_path, SpriteManifest, load_sprites_from_dir_or_manifest, virtual_screen_size};
 use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction, DragSource, Wall, WallEdge};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
@@ -150,7 +151,7 @@ pub struct Renderer {
 impl Renderer {
     pub async fn new() -> Self {
         // Try to load the tileset texture
-        let tileset = match load_texture("assets/sprites/tiles.png").await {
+        let tileset = match load_texture(&asset_path("assets/sprites/tiles.png")).await {
             Ok(tex) => {
                 tex.set_filter(FilterMode::Nearest);
                 log::info!("Loaded tileset: {}x{}", tex.width(), tex.height());
@@ -167,7 +168,7 @@ impl Renderer {
         for gender in GENDERS {
             for skin in SKINS {
                 let key = format!("{}_{}", gender, skin);
-                let path = format!("assets/sprites/players/player_{}_{}.png", gender, skin);
+                let path = asset_path(&format!("assets/sprites/players/player_{}_{}.png", gender, skin));
                 match load_texture(&path).await {
                     Ok(tex) => {
                         tex.set_filter(FilterMode::Nearest);
@@ -185,7 +186,7 @@ impl Renderer {
         // Load hair sprites from assets/sprites/hair/
         let mut hair_sprites = HashMap::new();
         for style in 0..3 {
-            let path = format!("assets/sprites/hair/hair_{}.png", style);
+            let path = asset_path(&format!("assets/sprites/hair/hair_{}.png", style));
             match load_texture(&path).await {
                 Ok(tex) => {
                     tex.set_filter(FilterMode::Nearest);
@@ -199,163 +200,55 @@ impl Renderer {
         }
         log::info!("Loaded {} hair sprite variants", hair_sprites.len());
 
-        // Load equipment sprites from assets/sprites/equipment/ (scan directory and subfolders)
-        let mut equipment_sprites = HashMap::new();
-        let mut equipment_dirs = vec![std::path::PathBuf::from("assets/sprites/equipment")];
-        while let Some(dir) = equipment_dirs.pop() {
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        // Add subdirectory to scan
-                        equipment_dirs.push(path);
-                    } else if path.extension().map_or(false, |ext| ext == "png") {
-                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            let item_id = stem.to_string();
-                            let path_str = path.to_string_lossy().to_string();
+        // Load sprite manifest (used on Android, ignored on desktop)
+        let manifest = SpriteManifest::load().await;
 
-                            match load_texture(&path_str).await {
-                                Ok(tex) => {
-                                    tex.set_filter(FilterMode::Nearest);
-                                    log::info!("Loaded equipment sprite: {} ({}x{})", item_id, tex.width(), tex.height());
-                                    equipment_sprites.insert(item_id, tex);
-                                }
-                                Err(e) => {
-                                    log::warn!("Failed to load equipment sprite {}: {}", path_str, e);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Load equipment sprites
+        let equipment_sprites = load_sprites_from_dir_or_manifest(
+            "assets/sprites/equipment",
+            &manifest.equipment,
+            "assets/sprites",
+        ).await;
         log::info!("Loaded {} equipment sprite variants", equipment_sprites.len());
 
-        // Load weapon sprites from assets/sprites/weapons/ (scan directory)
-        let mut weapon_sprites = HashMap::new();
-        if let Ok(entries) = std::fs::read_dir("assets/sprites/weapons") {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "png") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        let item_id = stem.to_string();
-                        let path_str = path.to_string_lossy().to_string();
-                        match load_texture(&path_str).await {
-                            Ok(tex) => {
-                                tex.set_filter(FilterMode::Nearest);
-                                log::info!("Loaded weapon sprite: {} ({}x{})", item_id, tex.width(), tex.height());
-                                weapon_sprites.insert(item_id, tex);
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to load weapon sprite {}: {}", path_str, e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Load weapon sprites
+        let weapon_sprites = load_sprites_from_dir_or_manifest(
+            "assets/sprites/weapons",
+            &manifest.weapons,
+            "assets/sprites/weapons",
+        ).await;
         log::info!("Loaded {} weapon sprite variants", weapon_sprites.len());
 
-        // Load item inventory sprites from assets/sprites/inventory/ (scan directory)
-        let mut item_sprites = HashMap::new();
-        if let Ok(entries) = std::fs::read_dir("assets/sprites/inventory") {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "png") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        let item_id = stem.to_string();
-                        let path_str = path.to_string_lossy().to_string();
-                        match load_texture(&path_str).await {
-                            Ok(tex) => {
-                                tex.set_filter(FilterMode::Nearest);
-                                log::info!("Loaded item sprite: {} ({}x{})", item_id, tex.width(), tex.height());
-                                item_sprites.insert(item_id, tex);
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to load item sprite {}: {}", path_str, e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Load item inventory sprites
+        let item_sprites = load_sprites_from_dir_or_manifest(
+            "assets/sprites/inventory",
+            &manifest.inventory,
+            "assets/sprites/inventory",
+        ).await;
         log::info!("Loaded {} item sprite variants", item_sprites.len());
 
-        // Load map object sprites from assets/sprites/objects/ (scan directory)
-        let mut object_sprites = HashMap::new();
-        if let Ok(entries) = std::fs::read_dir("assets/sprites/objects") {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "png") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        let sprite_key = stem.to_string();
-                        let path_str = path.to_string_lossy().to_string();
-                        match load_texture(&path_str).await {
-                            Ok(tex) => {
-                                tex.set_filter(FilterMode::Nearest);
-                                log::debug!("Loaded object sprite: {} ({}x{})", sprite_key, tex.width(), tex.height());
-                                object_sprites.insert(sprite_key, tex);
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to load object sprite {}: {}", path_str, e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Load map object sprites
+        let object_sprites = load_sprites_from_dir_or_manifest(
+            "assets/sprites/objects",
+            &manifest.objects,
+            "assets/sprites/objects",
+        ).await;
         log::info!("Loaded {} object sprite variants", object_sprites.len());
 
-        // Load wall sprites from assets/sprites/walls/ (separate HashMap)
-        let mut wall_sprites = HashMap::new();
-        if let Ok(entries) = std::fs::read_dir("assets/sprites/walls") {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "png") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        let sprite_key = stem.to_string();
-                        let path_str = path.to_string_lossy().to_string();
-                        match load_texture(&path_str).await {
-                            Ok(tex) => {
-                                tex.set_filter(FilterMode::Nearest);
-                                log::debug!("Loaded wall sprite: {} ({}x{})", sprite_key, tex.width(), tex.height());
-                                wall_sprites.insert(sprite_key, tex);
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to load wall sprite {}: {}", path_str, e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Load wall sprites
+        let wall_sprites = load_sprites_from_dir_or_manifest(
+            "assets/sprites/walls",
+            &manifest.walls,
+            "assets/sprites/walls",
+        ).await;
         log::info!("Loaded {} wall sprites", wall_sprites.len());
 
-        // Load NPC sprites from assets/sprites/enemies/ (scan directory)
-        let mut npc_sprites = HashMap::new();
-        if let Ok(entries) = std::fs::read_dir("assets/sprites/enemies") {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "png") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        let entity_type = stem.to_string();
-                        let path_str = path.to_string_lossy().to_string();
-                        match load_texture(&path_str).await {
-                            Ok(tex) => {
-                                tex.set_filter(FilterMode::Nearest);
-                                log::info!("Loaded NPC sprite: {} ({}x{}, frame: {}x{})",
-                                    entity_type, tex.width(), tex.height(),
-                                    tex.width() / 16.0, tex.height());
-                                npc_sprites.insert(entity_type, tex);
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to load NPC sprite {}: {}", path_str, e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Load NPC sprites
+        let npc_sprites = load_sprites_from_dir_or_manifest(
+            "assets/sprites/enemies",
+            &manifest.enemies,
+            "assets/sprites/enemies",
+        ).await;
         log::info!("Loaded {} NPC sprite variants", npc_sprites.len());
 
         // Load monogram pixel font at multiple sizes for crisp rendering
@@ -367,7 +260,7 @@ impl Renderer {
         }
 
         // Load quest complete banner texture
-        let quest_complete_texture = match load_texture("assets/ui/quest_complete.png").await {
+        let quest_complete_texture = match load_texture(&asset_path("assets/ui/quest_complete.png")).await {
             Ok(tex) => {
                 tex.set_filter(FilterMode::Nearest);
                 log::info!("Loaded quest complete texture: {}x{}", tex.width(), tex.height());
@@ -380,7 +273,7 @@ impl Renderer {
         };
 
         // Load gold nugget icon for inventory
-        let gold_nugget_texture = match load_texture("assets/ui/gold_nugget.png").await {
+        let gold_nugget_texture = match load_texture(&asset_path("assets/ui/gold_nugget.png")).await {
             Ok(tex) => {
                 tex.set_filter(FilterMode::Nearest);
                 log::info!("Loaded gold nugget texture: {}x{}", tex.width(), tex.height());
@@ -393,7 +286,7 @@ impl Renderer {
         };
 
         // Load circular stone backdrop for shop item icons
-        let circular_stone_texture = match load_texture("assets/ui/circular_stone.png").await {
+        let circular_stone_texture = match load_texture(&asset_path("assets/ui/circular_stone.png")).await {
             Ok(tex) => {
                 tex.set_filter(FilterMode::Nearest);
                 log::info!("Loaded circular stone texture: {}x{}", tex.width(), tex.height());
@@ -406,7 +299,7 @@ impl Renderer {
         };
 
         // Load menu button icons sprite sheet
-        let menu_button_icons = match load_texture("assets/ui/background_icons.png").await {
+        let menu_button_icons = match load_texture(&asset_path("assets/ui/background_icons.png")).await {
             Ok(tex) => {
                 tex.set_filter(FilterMode::Nearest);
                 log::info!("Loaded menu button icons: {}x{}", tex.width(), tex.height());
@@ -419,7 +312,7 @@ impl Renderer {
         };
 
         // Load UI icons sprite sheet (24x24 icons in 10x10 grid)
-        let ui_icons = match load_texture("assets/ui/ui_icons.png").await {
+        let ui_icons = match load_texture(&asset_path("assets/ui/ui_icons.png")).await {
             Ok(tex) => {
                 tex.set_filter(FilterMode::Nearest);
                 log::info!("Loaded UI icons: {}x{}", tex.width(), tex.height());
@@ -432,7 +325,7 @@ impl Renderer {
         };
 
         // Load small icons for NPC name tags
-        let chat_small_icon = match load_texture("assets/ui/chat_small.png").await {
+        let chat_small_icon = match load_texture(&asset_path("assets/ui/chat_small.png")).await {
             Ok(tex) => {
                 tex.set_filter(FilterMode::Nearest);
                 Some(tex)
@@ -443,7 +336,7 @@ impl Renderer {
             }
         };
 
-        let coin_small_icon = match load_texture("assets/ui/coin_small.png").await {
+        let coin_small_icon = match load_texture(&asset_path("assets/ui/coin_small.png")).await {
             Ok(tex) => {
                 tex.set_filter(FilterMode::Nearest);
                 Some(tex)
@@ -1305,9 +1198,8 @@ impl Renderer {
         // Try to render from chunks if any are loaded
         let chunks = state.chunk_manager.chunks();
         if !chunks.is_empty() {
-            // Screen bounds for culling
-            let screen_w = screen_width();
-            let screen_h = screen_height();
+            // Screen bounds for culling (use virtual size for mobile scaling)
+            let (screen_w, screen_h) = virtual_screen_size();
             let margin = TILE_WIDTH * 4.0; // Extra margin for chunk edges
 
             // Check if we're in interior mode
@@ -1404,6 +1296,7 @@ impl Renderer {
             }
 
             // Render in isometric order (back to front)
+            let (vw, vh) = virtual_screen_size();
             for y in 0..tilemap.height {
                 for x in 0..tilemap.width {
                     let idx = (y * tilemap.width + x) as usize;
@@ -1417,10 +1310,10 @@ impl Renderer {
 
                     // Culling: skip tiles outside viewport
                     let margin = TILE_WIDTH * 2.0;
-                    if screen_x < -margin || screen_x > screen_width() + margin {
+                    if screen_x < -margin || screen_x > vw + margin {
                         continue;
                     }
-                    if screen_y < -margin || screen_y > screen_height() + margin {
+                    if screen_y < -margin || screen_y > vh + margin {
                         continue;
                     }
 
@@ -3129,7 +3022,8 @@ impl Renderer {
             let font_size = 32.0;
             let text = format!("[ANNOUNCEMENT] {}", announcement.text);
             let text_dims = self.measure_text_sharp(&text, font_size);
-            let text_x = (screen_width() - text_dims.width) / 2.0;
+            let (sw, _) = virtual_screen_size();
+            let text_x = (sw - text_dims.width) / 2.0;
             let text_y = 50.0 + (i as f32 * 35.0);
 
             // Dark background for visibility
@@ -3157,15 +3051,16 @@ impl Renderer {
         // "You Died" overlay for local player
         if let Some(player) = state.get_local_player() {
             if player.is_dead {
+                let (sw, sh) = virtual_screen_size();
                 // Dark overlay
-                draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::from_rgba(0, 0, 0, 150));
+                draw_rectangle(0.0, 0.0, sw, sh, Color::from_rgba(0, 0, 0, 150));
 
                 // "YOU DIED" text
                 let text = "YOU DIED";
                 let font_size = 64.0;
                 let text_dims = self.measure_text_sharp(text, font_size);
-                let text_x = (screen_width() - text_dims.width) / 2.0;
-                let text_y = screen_height() / 2.0 - 20.0;
+                let text_x = (sw - text_dims.width) / 2.0;
+                let text_y = sh / 2.0 - 20.0;
 
                 // Red text with outline
                 for ox in [-2.0, 2.0] {
@@ -3183,7 +3078,7 @@ impl Renderer {
                     let countdown_dims = self.measure_text_sharp(&countdown_text, 16.0);
                     self.draw_text_sharp(
                         &countdown_text,
-                        (screen_width() - countdown_dims.width) / 2.0,
+                        (sw - countdown_dims.width) / 2.0,
                         text_y + 50.0,
                         24.0,
                         WHITE,
@@ -3194,7 +3089,8 @@ impl Renderer {
 
         // Chat messages (bottom-left) with text wrapping
         let chat_x = 10.0;
-        let chat_y = screen_height() - 20.0;
+        let (_, chat_sh) = virtual_screen_size();
+        let chat_y = chat_sh - 20.0;
         let line_height = 18.0;
         let max_chat_width = 400.0;
         let font_size = 16.0;
@@ -3236,7 +3132,8 @@ impl Renderer {
             let bar_height = 18.0;
 
             // Right-align in corner
-            let bar_x = (screen_width() - bar_width - margin).floor();
+            let (ui_sw, _) = virtual_screen_size();
+            let bar_x = (ui_sw - bar_width - margin).floor();
             let tag_y = base_y;
 
             // ===== NAME TAG =====
@@ -3294,8 +3191,9 @@ impl Renderer {
 
         // Chat input box (when open)
         if state.ui_state.chat_open {
+            let (_, input_sh) = virtual_screen_size();
             let input_x = 10.0;
-            let input_y = screen_height() - 50.0;
+            let input_y = input_sh - 50.0;
             let input_width = 400.0;
             let input_height = 24.0;
             let text_padding = 5.0;
@@ -3467,7 +3365,8 @@ impl Renderer {
                 let total_text_w = name_w + level_w;
                 let bar_width = (total_text_w + padding * 2.0).max(120.0);
 
-                let bar_x = (screen_width() - bar_width - margin).floor();
+                let (tooltip_sw, _) = virtual_screen_size();
+                let bar_x = (tooltip_sw - bar_width - margin).floor();
                 let globe_stats_y = base_y + tag_height / 2.0 + 8.0;
                 self.render_xp_globe_tooltip(&state.xp_globes, bar_x, globe_stats_y);
             }
@@ -3714,11 +3613,12 @@ impl Renderer {
         }
 
         let alpha = state.map_transition.progress;
+        let (trans_sw, trans_sh) = virtual_screen_size();
         draw_rectangle(
             0.0,
             0.0,
-            screen_width(),
-            screen_height(),
+            trans_sw,
+            trans_sh,
             Color::new(0.0, 0.0, 0.0, alpha),
         );
     }

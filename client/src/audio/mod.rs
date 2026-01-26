@@ -1,6 +1,7 @@
 use macroquad::audio::{load_sound, play_sound, stop_sound, set_sound_volume, PlaySoundParams, Sound};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::util::asset_path;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AudioSettings {
@@ -55,7 +56,7 @@ impl AudioManager {
         ];
 
         for (name, path) in sfx_files {
-            match load_sound(path).await {
+            match load_sound(&asset_path(path)).await {
                 Ok(sound) => {
                     self.sfx.insert(name.to_string(), sound);
                     log::debug!("Loaded SFX: {}", name);
@@ -68,7 +69,7 @@ impl AudioManager {
 
         // Load sword attack sounds for random selection
         for i in 1..=4 {
-            let path = format!("assets/audio/sfx/attack/sword_{}.wav", i);
+            let path = asset_path(&format!("assets/audio/sfx/attack/sword_{}.wav", i));
             match load_sound(&path).await {
                 Ok(sound) => {
                     self.sword_sounds.push(sound);
@@ -119,8 +120,9 @@ impl AudioManager {
         // Stop any currently playing music
         self.stop_music();
 
-        log::info!("Loading music from: {}", path);
-        match load_sound(path).await {
+        let actual_path = asset_path(path);
+        log::info!("Loading music from: {}", actual_path);
+        match load_sound(&actual_path).await {
             Ok(sound) => {
                 let volume = self.effective_music_volume();
                 log::info!("Playing music with volume: {} (muted: {})", volume, self.settings.muted);

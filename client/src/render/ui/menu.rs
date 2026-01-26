@@ -3,19 +3,22 @@
 use macroquad::prelude::*;
 use crate::game::GameState;
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 
 impl Renderer {
     /// Render the escape menu (settings and disconnect)
     pub(crate) fn render_escape_menu(&self, state: &GameState, layout: &mut UiLayout) {
+        let (sw, sh) = virtual_screen_size();
+
         // Semi-transparent overlay
-        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.5));
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.5));
 
         let menu_width = 260.0;
-        let menu_height = 470.0;
-        let menu_x = ((screen_width() - menu_width) / 2.0).floor();
-        let menu_y = ((screen_height() - menu_height) / 2.0).floor();
+        let menu_height = 530.0;
+        let menu_x = ((sw - menu_width) / 2.0).floor();
+        let menu_y = ((sh - menu_height) / 2.0).floor();
 
         // ===== PANEL FRAME =====
         self.draw_panel_frame(menu_x, menu_y, menu_width, menu_height);
@@ -176,8 +179,47 @@ impl Renderer {
         let mute_text = if state.ui_state.audio_muted { "Unmute" } else { "Mute" };
         draw_button(mute_btn_x, mute_btn_y, mute_btn_width, mute_btn_height, mute_text, state.ui_state.audio_muted, is_mute_hovered, self);
 
+        // ===== UI SCALE SECTION =====
+        let ui_scale_y = mute_btn_y + mute_btn_height + 16.0;
+        self.draw_text_sharp("UI Scale", content_x.floor(), (ui_scale_y + 12.0).floor(), 16.0, TEXT_DIM);
+
+        // UI Scale slider (0.5x to 1.5x)
+        let ui_scale_slider_y = (ui_scale_y + 28.0).floor();
+        let ui_scale_slider_bounds = Rect::new(slider_x, ui_scale_slider_y, slider_width, slider_height);
+        layout.add(UiElementId::EscapeMenuUiScaleSlider, ui_scale_slider_bounds);
+
+        // Draw UI scale slider (convert 0.5-1.5 range to 0.0-1.0 for display)
+        let scale_normalized = (state.ui_state.ui_scale - 0.5) / 1.0; // 0.5->0.0, 1.5->1.0
+        let is_scale_hovered = mouse_x >= slider_x && mouse_x <= slider_x + slider_width
+            && mouse_y >= ui_scale_slider_y && mouse_y <= ui_scale_slider_y + slider_height;
+
+        // Custom slider for UI scale (similar to audio slider but different colors)
+        {
+            let track_color = if is_scale_hovered { SLOT_HOVER_BG } else { SLOT_BG_EMPTY };
+            draw_rectangle(slider_x, ui_scale_slider_y, slider_width, slider_height, SLOT_BORDER);
+            draw_rectangle(slider_x + 1.0, ui_scale_slider_y + 1.0, slider_width - 2.0, slider_height - 2.0, track_color);
+
+            // Filled portion
+            let fill_width = (slider_width - 4.0) * scale_normalized;
+            let fill_color = Color::new(0.3, 0.45, 0.6, 1.0); // Blue tint for scale
+            draw_rectangle(slider_x + 2.0, ui_scale_slider_y + 2.0, fill_width, slider_height - 4.0, fill_color);
+
+            // Handle
+            let handle_x = slider_x + 2.0 + fill_width - 3.0;
+            draw_rectangle(handle_x.max(slider_x + 2.0), ui_scale_slider_y + 2.0, 6.0, slider_height - 4.0, FRAME_ACCENT);
+
+            // Scale text (show as multiplier)
+            let scale_text = format!("{:.1}x", state.ui_state.ui_scale);
+            self.draw_text_sharp(&scale_text, (slider_x + slider_width + 8.0).floor(), (ui_scale_slider_y + 14.0).floor(), 14.0, TEXT_NORMAL);
+
+            // Label
+            let label = "Scale";
+            let label_width = self.measure_text_sharp(label, 14.0).width;
+            self.draw_text_sharp(label, (slider_x - label_width - 8.0).floor(), (ui_scale_slider_y + 14.0).floor(), 14.0, TEXT_DIM);
+        }
+
         // ===== INVENTORY SECTION =====
-        let inventory_y = mute_btn_y + mute_btn_height + 16.0;
+        let inventory_y = ui_scale_slider_y + slider_height + 16.0;
         self.draw_text_sharp("Inventory", content_x.floor(), (inventory_y + 12.0).floor(), 16.0, TEXT_DIM);
 
         // Shift-Drop toggle button

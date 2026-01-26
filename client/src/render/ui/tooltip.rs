@@ -3,6 +3,7 @@
 use macroquad::prelude::*;
 use crate::game::GameState;
 use crate::ui::UiElementId;
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::common::*;
 
@@ -164,14 +165,15 @@ impl Renderer {
         let tooltip_height = total_h.ceil();
 
         // Position tooltip near cursor, but keep on screen
+        let (sw, sh) = virtual_screen_size();
         let mut tooltip_x = (mouse_x + 16.0).floor();
         let mut tooltip_y = (mouse_y + 16.0).floor();
 
         // Clamp to screen bounds
-        if tooltip_x + tooltip_width > screen_width() {
+        if tooltip_x + tooltip_width > sw {
             tooltip_x = (mouse_x - tooltip_width - 8.0).floor();
         }
-        if tooltip_y + tooltip_height > screen_height() {
+        if tooltip_y + tooltip_height > sh {
             tooltip_y = (mouse_y - tooltip_height - 8.0).floor();
         }
 

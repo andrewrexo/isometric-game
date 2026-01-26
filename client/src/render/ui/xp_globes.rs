@@ -2,6 +2,7 @@
 
 use macroquad::prelude::*;
 use crate::game::SkillType;
+use crate::util::virtual_screen_size;
 
 // ============================================================================
 // Constants
@@ -363,8 +364,9 @@ impl Renderer {
         let tooltip_height = padding * 2.0 + line_height * 5.0; // 5 lines of text
 
         // Position tooltip (offset from cursor, keep on screen)
-        let tooltip_x = (mouse_x + 16.0).min(screen_width() - tooltip_width - 8.0);
-        let tooltip_y = (mouse_y + 16.0).min(screen_height() - tooltip_height - 8.0);
+        let (sw, sh) = virtual_screen_size();
+        let tooltip_x = (mouse_x + 16.0).min(sw - tooltip_width - 8.0);
+        let tooltip_y = (mouse_y + 16.0).min(sh - tooltip_height - 8.0);
 
         // Draw tooltip background
         draw_rectangle(tooltip_x - 1.0, tooltip_y - 1.0, tooltip_width + 2.0, tooltip_height + 2.0, TOOLTIP_FRAME);

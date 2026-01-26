@@ -319,4 +319,7 @@ pub fn run_game_frame(
 
     // 6. Render transition overlay
     renderer.render_transition_overlay(game_state);
+
+    // 7. Render touch controls (mobile only)
+    input_handler.render_touch_controls();
 }

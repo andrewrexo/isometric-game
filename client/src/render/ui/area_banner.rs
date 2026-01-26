@@ -2,6 +2,7 @@
 
 use macroquad::prelude::*;
 use crate::render::Renderer;
+use crate::util::virtual_screen_size;
 
 /// Banner display phase
 #[derive(Debug, Clone, PartialEq)]
@@ -92,8 +93,7 @@ impl AreaBanner {
 impl Renderer {
     /// Render the area banner (called from main render loop)
     pub fn render_area_banner(&self, text: &str, opacity: f32) {
-        let screen_w = screen_width();
-        let screen_h = screen_height();
+        let (screen_w, screen_h) = virtual_screen_size();
 
         // Colors
         let text_color = Color::new(0.96, 0.94, 0.88, opacity); // Off-white/cream

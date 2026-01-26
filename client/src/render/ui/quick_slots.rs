@@ -3,20 +3,24 @@
 use macroquad::prelude::*;
 use crate::game::{GameState, DragSource};
 use crate::ui::{UiElementId, UiLayout};
+use crate::util::virtual_screen_size;
 use super::super::Renderer;
 use super::super::isometric::world_to_screen;
 use super::common::*;
 
 impl Renderer {
     pub(crate) fn render_quick_slots(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
-        // Quick slot size: 32px icon + 2px padding each side
-        let slot_size = QUICK_SLOT_SIZE;
-        let spacing = QUICK_SLOT_SPACING;
+        let scale = state.ui_state.ui_scale;
+
+        // Quick slot size: 32px icon + 2px padding each side (scaled)
+        let slot_size = QUICK_SLOT_SIZE * scale;
+        let spacing = QUICK_SLOT_SPACING * scale;
         let total_width = 5.0 * slot_size + 4.0 * spacing;
 
-        let start_x = (screen_width() - total_width) / 2.0;
+        let (sw, sh) = virtual_screen_size();
+        let start_x = (sw - total_width) / 2.0;
         // Position at the bottom of the screen, aligned with menu buttons
-        let start_y = screen_height() - EXP_BAR_GAP - slot_size;
+        let start_y = sh - EXP_BAR_GAP * scale - slot_size;
 
         for i in 0..5 {
             let x = start_x + i as f32 * (slot_size + spacing);
@@ -46,6 +50,7 @@ impl Renderer {
             self.draw_inventory_slot(x, y, slot_size, has_item, slot_state);
 
             // Draw item if present (hide if being dragged)
+            // Keep font at native size for crisp rendering
             if let Some(slot) = &state.inventory.slots[i] {
                 if !is_dragging {
                     self.draw_item_icon(&slot.item_id, x, y, slot_size, slot_size, state, false);
@@ -53,8 +58,8 @@ impl Renderer {
                     // Quantity badge (bottom-left with shadow)
                     if slot.quantity > 1 {
                         let qty_text = slot.quantity.to_string();
-                        self.draw_text_sharp(&qty_text, x + 3.0, y + slot_size - 2.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.8));
-                        self.draw_text_sharp(&qty_text, x + 2.0, y + slot_size - 3.0, 16.0, TEXT_NORMAL);
+                        self.draw_text_sharp(&qty_text, x + 3.0 * scale, y + slot_size - 4.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.8));
+                        self.draw_text_sharp(&qty_text, x + 2.0 * scale, y + slot_size - 5.0, 16.0, TEXT_NORMAL);
                     }
                 }
             }
