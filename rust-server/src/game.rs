@@ -130,6 +130,9 @@ pub struct Player {
     // Queued movement direction (-1, 0, or 1)
     pub move_dx: i32,
     pub move_dy: i32,
+    // Actual velocity (direction of last confirmed move, for client sync)
+    pub vel_x: i32,
+    pub vel_y: i32,
     pub last_move_tick: u64, // Tick-based movement cooldown
     pub direction: Direction,
     pub hp: i32,
@@ -176,6 +179,8 @@ impl Player {
             spawn_y,
             move_dx: 0,
             move_dy: 0,
+            vel_x: 0,
+            vel_y: 0,
             last_move_tick: 0,
             direction: Direction::Down,
             hp: skills.hitpoints.level, // HP = Hitpoints level
@@ -321,6 +326,8 @@ impl Player {
         self.hp = 0;
         self.move_dx = 0;
         self.move_dy = 0;
+        self.vel_x = 0;
+        self.vel_y = 0;
         self.target_id = None;
     }
 
@@ -953,6 +960,8 @@ impl GameRoom {
             // Ensure player is not moving when just facing
             player.move_dx = 0;
             player.move_dy = 0;
+            player.vel_x = 0;
+            player.vel_y = 0;
         } else {
             tracing::warn!("[SERVER] handle_face: player not found: {}", player_id);
         }
@@ -1424,6 +1433,8 @@ impl GameRoom {
                 // Stop movement when attacking (player must stand still to attack)
                 player.move_dx = 0;
                 player.move_dy = 0;
+                player.vel_x = 0;
+                player.vel_y = 0;
             }
         }
 
@@ -3535,15 +3546,29 @@ impl GameRoom {
 
         // Apply valid moves and collect player updates
         let mut player_updates = Vec::new();
+        // Track which players moved this tick
+        let moved_players: std::collections::HashSet<String> = valid_moves.iter().map(|(id, _, _)| id.clone()).collect();
         {
             let mut players = self.players.write().await;
 
-            // Apply valid moves
+            // Apply valid moves and update velocity
             for (id, target_x, target_y) in valid_moves {
                 if let Some(player) = players.get_mut(&id) {
+                    // Set velocity to the direction we just moved
+                    player.vel_x = player.move_dx;
+                    player.vel_y = player.move_dy;
                     player.x = target_x;
                     player.y = target_y;
                     player.last_move_tick = current_tick;
+                }
+            }
+
+            // Clear velocity for players who want to stop (move_dx/dy = 0) or didn't move
+            for player in players.values_mut() {
+                if player.move_dx == 0 && player.move_dy == 0 {
+                    // Player released movement keys
+                    player.vel_x = 0;
+                    player.vel_y = 0;
                 }
             }
 
@@ -3558,21 +3583,15 @@ impl GameRoom {
                     continue;
                 }
 
-                // Only report velocity if player can move on next tick (cooldown elapsed)
-                // This prevents "old position, new velocity" causing client mispredictions
-                let can_move_next = current_tick - player.last_move_tick >= MOVE_COOLDOWN_TICKS - 1;
-                let report_vel_x = if can_move_next { player.move_dx } else { 0 };
-                let report_vel_y = if can_move_next { player.move_dy } else { 0 };
-
                 player_updates.push(PlayerUpdate {
                     id: player.id.clone(),
                     name: player.name.clone(),
                     x: player.x,
                     y: player.y,
                     direction: player.direction as u8,
-                    // Include velocity for client-side prediction (only when move is imminent)
-                    vel_x: report_vel_x,
-                    vel_y: report_vel_y,
+                    // Velocity reflects actual movement (set when move happens, cleared when stopped)
+                    vel_x: player.vel_x,
+                    vel_y: player.vel_y,
                     hp: player.hp,
                     max_hp: player.max_hp(),
                     combat_level: player.combat_level(),
