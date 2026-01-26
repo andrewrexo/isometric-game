@@ -3086,7 +3086,16 @@
     ]
   },
   "collision": "Bx/g+wEfIIBBHyCAYR0ggAEQIICQAAAAAAAggAAAIIAF4CGAASAhgAAg4fsBOgEAAQgDAAAKHAAACBAAAApwAAAIQAAACkAAADhAAABAQAAAwEEAAABCAAAAQgAAADQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-  "entities": [],
+  "entities": [
+    {
+      "id": "entity_1769386697620_9u71psxlu",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 10,
+      "y": 28,
+      "level": 1
+    }
+  ],
   "mapObjects": [
     {
       "id": "obj_1769035636547_p7iusc4ds",

@@ -3086,7 +3086,24 @@
     ]
   },
   "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-  "entities": [],
+  "entities": [
+    {
+      "id": "entity_1769386698135_53gmliv27",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 9,
+      "y": 13,
+      "level": 1
+    },
+    {
+      "id": "entity_1769386698842_epduunjfe",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 22,
+      "y": 17,
+      "level": 1
+    }
+  ],
   "mapObjects": [],
   "walls": [],
   "portals": []

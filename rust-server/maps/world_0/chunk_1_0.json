@@ -3086,7 +3086,40 @@
     ]
   },
   "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-  "entities": [],
+  "entities": [
+    {
+      "id": "entity_1769386695242_drolxyoj0",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 3,
+      "y": 8,
+      "level": 1
+    },
+    {
+      "id": "entity_1769386699218_2wm76l94l",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 4,
+      "y": 11,
+      "level": 1
+    },
+    {
+      "id": "entity_1769386700369_n17tibm5a",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 14,
+      "y": 25,
+      "level": 1
+    },
+    {
+      "id": "entity_1769386700760_x5hbtmdjj",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 16,
+      "y": 6,
+      "level": 1
+    }
+  ],
   "mapObjects": [],
   "walls": [
     {

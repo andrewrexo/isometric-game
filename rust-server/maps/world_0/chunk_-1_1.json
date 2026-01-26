@@ -3086,7 +3086,48 @@
     ]
   },
   "collision": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-  "entities": [],
+  "entities": [
+    {
+      "id": "entity_1769386704760_b9tp67eda",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 28,
+      "y": 3,
+      "level": 1
+    },
+    {
+      "id": "entity_1769386705559_o4u7gk2vv",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 23,
+      "y": 23,
+      "level": 1
+    },
+    {
+      "id": "entity_1769386706159_66gxlhvio",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 4,
+      "y": 1,
+      "level": 1
+    },
+    {
+      "id": "entity_1769386706568_5eoscnxhi",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 7,
+      "y": 24,
+      "level": 1
+    },
+    {
+      "id": "entity_1769386706893_5pyibiv4n",
+      "entityId": "corrupted_pig",
+      "name": "corrupted_pig",
+      "x": 13,
+      "y": 14,
+      "level": 1
+    }
+  ],
   "mapObjects": [],
   "walls": [],
   "portals": []
