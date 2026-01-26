@@ -3558,15 +3558,21 @@ impl GameRoom {
                     continue;
                 }
 
+                // Only report velocity if player can move on next tick (cooldown elapsed)
+                // This prevents "old position, new velocity" causing client mispredictions
+                let can_move_next = current_tick - player.last_move_tick >= MOVE_COOLDOWN_TICKS - 1;
+                let report_vel_x = if can_move_next { player.move_dx } else { 0 };
+                let report_vel_y = if can_move_next { player.move_dy } else { 0 };
+
                 player_updates.push(PlayerUpdate {
                     id: player.id.clone(),
                     name: player.name.clone(),
                     x: player.x,
                     y: player.y,
                     direction: player.direction as u8,
-                    // Include velocity for client-side prediction
-                    vel_x: player.move_dx,
-                    vel_y: player.move_dy,
+                    // Include velocity for client-side prediction (only when move is imminent)
+                    vel_x: report_vel_x,
+                    vel_y: report_vel_y,
                     hp: player.hp,
                     max_hp: player.max_hp(),
                     combat_level: player.combat_level(),

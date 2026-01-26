@@ -1545,6 +1545,13 @@ impl InputHandler {
                         self.last_dy = dy;
                         self.last_send_time = current_time;
                         self.move_sent = true;
+
+                        // Apply local input immediately for client-side prediction
+                        if let Some(local_id) = &state.local_player_id {
+                            if let Some(player) = state.players.get_mut(local_id) {
+                                player.apply_local_input(dx, dy);
+                            }
+                        }
                     }
                 } else {
                     // Can't move - face that direction instead

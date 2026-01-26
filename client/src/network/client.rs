@@ -501,17 +501,14 @@ impl NetworkClient {
 
                                 if let (Some(x), Some(y)) = (x, y) {
                                     // Set server target with velocity for prediction
-                                    player.set_server_position_with_velocity(x as f32, y as f32, vel_x, vel_y);
+                                    player.set_server_position_with_velocity(x as f32, y as f32, vel_x, vel_y, is_local_player);
                                 }
                                 if let Some(dir) = direction {
-                                    // For local player: only update direction from server when safe
-                                    // This prevents flickering when client prediction differs from server state
+                                    // For local player: only update direction from server when stationary
+                                    // and enough time has passed since a Face command
                                     let should_update_direction = if is_local_player {
                                         let current_time = macroquad::time::get_time();
                                         let time_since_face = current_time - state.last_face_command_time;
-                                        // Only accept server direction when:
-                                        // 1. Stationary (no velocity), AND
-                                        // 2. Enough time has passed since we sent a Face command (200ms grace period)
                                         vel_x == 0.0 && vel_y == 0.0 && time_since_face > 0.2
                                     } else {
                                         true // Always update other players from server
@@ -521,9 +518,6 @@ impl NetworkClient {
                                         let new_dir = Direction::from_u8(dir as u8);
                                         player.direction = new_dir;
                                         // For local player: also update animation.direction directly
-                                        // (local player has special handling in state.rs update())
-                                        // For remote players: let interpolate_visual() handle animation.direction
-                                        // to prevent moonwalking (direction changing before movement catches up)
                                         if is_local_player {
                                             player.animation.direction = new_dir;
                                         }

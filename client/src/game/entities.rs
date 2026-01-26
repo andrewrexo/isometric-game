@@ -120,6 +120,11 @@ pub struct Player {
 
     // Last time this player took damage (for health bar visibility)
     pub last_damage_time: f64,
+
+    // Client-side prediction for local player
+    pub predicted_x: f32,
+    pub predicted_y: f32,
+    pub has_pending_prediction: bool,
 }
 
 impl Player {
@@ -160,6 +165,9 @@ impl Player {
             is_admin: false,
             animation: PlayerAnimation::new(),
             last_damage_time: 0.0,
+            predicted_x: 0.0,
+            predicted_y: 0.0,
+            has_pending_prediction: false,
         }
     }
 
@@ -244,15 +252,40 @@ impl Player {
         self.target_y = y;
     }
 
+    /// Apply local input for client-side prediction (local player only)
+    /// Predicts when at tile center with no server velocity
+    pub fn apply_local_input(&mut self, dx: f32, dy: f32) {
+        if dx == 0.0 && dy == 0.0 {
+            return;
+        }
+
+        // Predict if at tile center and server says we're not moving
+        // This covers: starting from stop, AND direction changes at tile boundaries
+        let at_tile_center = (self.x - self.x.round()).abs() < 0.05
+                          && (self.y - self.y.round()).abs() < 0.05;
+        let server_stopped = self.vel_x == 0.0 && self.vel_y == 0.0;
+
+        if at_tile_center && server_stopped {
+            let tile_x = self.x.round();
+            let tile_y = self.y.round();
+            self.predicted_x = tile_x + dx;
+            self.predicted_y = tile_y + dy;
+            self.target_x = self.predicted_x;
+            self.target_y = self.predicted_y;
+            self.has_pending_prediction = true;
+            self.direction = Direction::from_velocity(dx, dy);
+        }
+    }
+
     /// Set server-authoritative position (called when server sends state sync)
     /// Server sends grid positions (i32), we store as f32 for interpolation
     pub fn set_server_position(&mut self, new_x: f32, new_y: f32) {
-        self.set_server_position_with_velocity(new_x, new_y, 0.0, 0.0);
+        self.set_server_position_with_velocity(new_x, new_y, 0.0, 0.0, false);
     }
 
     /// Set server position with velocity for client-side prediction
-    /// Simple approach: always trust server, predict only when caught up
-    pub fn set_server_position_with_velocity(&mut self, new_x: f32, new_y: f32, vel_x: f32, vel_y: f32) {
+    /// is_local_player: if true, uses prediction-aware reconciliation
+    pub fn set_server_position_with_velocity(&mut self, new_x: f32, new_y: f32, vel_x: f32, vel_y: f32, is_local_player: bool) {
         // Update authoritative server position and velocity
         self.server_x = new_x;
         self.server_y = new_y;
@@ -265,27 +298,56 @@ impl Player {
         let dist = (dx * dx + dy * dy).sqrt();
 
         if dist > 2.0 {
-            // Too far - hard snap
+            // Too far - hard snap (teleport/major desync)
             self.x = new_x;
             self.y = new_y;
             self.target_x = new_x;
             self.target_y = new_y;
+            self.has_pending_prediction = false;
+        } else if is_local_player && self.has_pending_prediction {
+            // Local player with pending prediction (first move from stop)
+            let server_moving = vel_x != 0.0 || vel_y != 0.0;
+
+            if server_moving {
+                // Server confirmed movement - clear prediction flag, now follow server
+                // But keep current target if we're already moving toward it
+                self.has_pending_prediction = false;
+            } else {
+                // Server stopped - check if we reached our prediction
+                let at_predicted = (self.x - self.predicted_x).abs() < 0.1
+                                && (self.y - self.predicted_y).abs() < 0.1;
+                if at_predicted {
+                    // Check if server agrees with where we ended up
+                    let server_disagrees = (new_x - self.predicted_x).abs() > 0.01
+                                        || (new_y - self.predicted_y).abs() > 0.01;
+                    if server_disagrees {
+                        // Server rejected our move (hit a wall) - snap to server
+                        self.target_x = new_x;
+                        self.target_y = new_y;
+                    }
+                    self.has_pending_prediction = false;
+                }
+            }
         } else {
-            // Always update target to server position
-            // Interpolation will smoothly move us there
-            self.target_x = new_x;
-            self.target_y = new_y;
+            // Remote player OR local player following server
+            // When server has velocity, predict next tile; otherwise target is server position
+            if vel_x != 0.0 || vel_y != 0.0 {
+                self.target_x = new_x + vel_x;
+                self.target_y = new_y + vel_y;
+            } else {
+                self.target_x = new_x;
+                self.target_y = new_y;
+            }
         }
 
-        // Update direction from velocity (for player.direction only)
-        // animation.direction is synced separately in update_animation to avoid conflicts
+        // Update direction from velocity
         if vel_x != 0.0 || vel_y != 0.0 {
             self.direction = Direction::from_velocity(vel_x, vel_y);
         }
     }
 
-    /// Smooth visual interpolation toward target position using exponential lerp
-    /// This is frame-rate independent: looks the same at 30fps, 60fps, or 144fps
+    /// Smooth visual interpolation toward target position
+    /// Uses server velocity for continuous movement prediction
     pub fn interpolate_visual(&mut self, delta: f32) {
         let dx = self.target_x - self.x;
         let dy = self.target_y - self.y;
@@ -330,10 +392,8 @@ impl Player {
             self.is_moving = true;
             actually_moving = true;
 
-            // Only update direction from movement vector if:
-            // 1. We DON'T have server velocity (trust velocity when present)
-            // 2. NOT in an action animation (direction was set when action started)
-            // Movement vector can point wrong way during visual corrections
+            // Only update direction from movement vector if no server velocity
+            // (velocity is more authoritative than visual movement direction)
             let in_action = matches!(
                 self.animation.state,
                 AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
@@ -459,7 +519,7 @@ impl Player {
         self.animation.set_state(AnimationState::Idle);
     }
 
-    /// Smooth interpolation toward target position (for non-local players)
+    /// Smooth interpolation toward target position
     pub fn update(&mut self, delta: f32) {
         self.interpolate_visual(delta);
     }
