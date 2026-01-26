@@ -6,7 +6,7 @@
 
 [corrupted_pig]
 display_name = "Corrupted Pig"
-sprite = "corrupted_pig"
+sprite = "pig"  # TODO: create corrupted_pig sprite
 animation_type = "standard"
 description = "A farm pig twisted by the corruption. Its eyes glow with malice."
 
