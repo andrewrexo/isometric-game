@@ -374,13 +374,21 @@ impl Player {
             || self.animation.state == AnimationState::Casting
             || self.animation.state == AnimationState::ShootingBow;
 
-        // Only sync direction to animation when:
-        // 1. Actually moving, AND
-        // 2. Movement direction matches velocity (not correcting backward), AND
-        // 3. NOT in an action animation (direction is locked for attacks/casts/shots)
-        // This prevents "moonwalking" where sprite faces new direction before moving that way
-        // Face commands handle turning-in-place separately (updates animation.direction directly)
-        if actually_moving && movement_aligned && !in_action_animation {
+        // Sync direction to animation when safe (not moonwalking):
+        // 1. When moving: only if movement direction matches velocity (prevents moonwalking)
+        // 2. When stationary: always sync (handles Face commands from server)
+        // 3. Never during action animations (direction locked when action started)
+        let should_sync_direction = if in_action_animation {
+            false
+        } else if actually_moving {
+            movement_aligned // Only sync when movement catches up to velocity direction
+        } else if !has_velocity {
+            true // Stationary with no velocity = safe to sync (Face commands)
+        } else {
+            false // At tile boundary with velocity - wait for movement to start
+        };
+
+        if should_sync_direction {
             self.animation.direction = self.direction;
         }
 

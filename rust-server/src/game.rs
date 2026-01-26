@@ -1335,6 +1335,16 @@ impl GameRoom {
             }
         };
 
+        // Broadcast attack animation to all clients (plays even if no target hit)
+        let attack_type = match weapon_type {
+            WeaponType::Ranged => "ranged",
+            WeaponType::Melee => "melee",
+        };
+        self.broadcast(ServerMessage::PlayerAttack {
+            player_id: player_id.to_string(),
+            attack_type: attack_type.to_string(),
+        }).await;
+
         // Find target based on weapon range
         let mut target_id: Option<String> = None;
         let mut is_npc = false;

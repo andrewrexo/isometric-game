@@ -133,6 +133,10 @@ pub enum ServerMessage {
         player_id: String,
         target_id: Option<String>,
     },
+    PlayerAttack {
+        player_id: String,
+        attack_type: String, // "melee", "ranged", "spell"
+    },
     DamageEvent {
         source_id: String,
         target_id: String,
@@ -484,6 +488,7 @@ impl ServerMessage {
             ServerMessage::StateSync { .. } => "stateSync",
             ServerMessage::ChatMessage { .. } => "chatMessage",
             ServerMessage::TargetChanged { .. } => "targetChanged",
+            ServerMessage::PlayerAttack { .. } => "playerAttack",
             ServerMessage::DamageEvent { .. } => "damageEvent",
             ServerMessage::AttackResult { .. } => "attackResult",
             ServerMessage::NpcDied { .. } => "npcDied",
@@ -765,6 +770,21 @@ pub fn encode_server_message(msg: &ServerMessage) -> Result<Vec<u8>, String> {
                     Some(id) => Value::String(id.clone().into()),
                     None => Value::Nil,
                 },
+            ));
+            Value::Map(map)
+        }
+        ServerMessage::PlayerAttack {
+            player_id,
+            attack_type,
+        } => {
+            let mut map = Vec::new();
+            map.push((
+                Value::String("player_id".into()),
+                Value::String(player_id.clone().into()),
+            ));
+            map.push((
+                Value::String("attack_type".into()),
+                Value::String(attack_type.clone().into()),
             ));
             Value::Map(map)
         }

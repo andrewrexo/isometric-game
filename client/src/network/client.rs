@@ -520,7 +520,13 @@ impl NetworkClient {
                                     if should_update_direction {
                                         let new_dir = Direction::from_u8(dir as u8);
                                         player.direction = new_dir;
-                                        player.animation.direction = new_dir;
+                                        // For local player: also update animation.direction directly
+                                        // (local player has special handling in state.rs update())
+                                        // For remote players: let interpolate_visual() handle animation.direction
+                                        // to prevent moonwalking (direction changing before movement catches up)
+                                        if is_local_player {
+                                            player.animation.direction = new_dir;
+                                        }
                                     }
                                 }
                                 if let Some(hp) = hp {
@@ -780,6 +786,24 @@ impl NetworkClient {
                 }
             }
 
+            "playerAttack" => {
+                if let Some(value) = data {
+                    let player_id = extract_string(value, "player_id").unwrap_or_default();
+                    let attack_type = extract_string(value, "attack_type").unwrap_or_else(|| "melee".to_string());
+
+                    // Trigger attack animation for remote players (local player handles own animation)
+                    if state.local_player_id.as_ref() != Some(&player_id) {
+                        if let Some(player) = state.players.get_mut(&player_id) {
+                            match attack_type.as_str() {
+                                "ranged" => player.play_shoot_bow(),
+                                "spell" => player.play_cast(),
+                                _ => player.play_attack(),
+                            }
+                        }
+                    }
+                }
+            }
+
             "damageEvent" => {
                 if let Some(value) = data {
                     let source_id = extract_string(value, "source_id");
@@ -792,7 +816,7 @@ impl NetworkClient {
 
                     log::debug!("Damage event: {} took {} damage from {:?} (HP: {})", target_id, damage, source_id, target_hp);
 
-                    // If source is an NPC, trigger its attack animation
+                    // Trigger attack animation for NPCs (players use playerAttack event)
                     if let Some(ref src_id) = source_id {
                         if let Some(npc) = state.npcs.get_mut(src_id) {
                             npc.trigger_attack_animation();
