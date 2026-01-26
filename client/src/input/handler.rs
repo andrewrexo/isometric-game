@@ -1581,8 +1581,8 @@ impl InputHandler {
         // Path following - generate movement commands when auto-pathing
         // Only follow path if not manually moving and not attacking
         if dx == 0.0 && dy == 0.0 && !is_attacking {
-            // Get player position first to avoid borrow conflicts
-            let player_pos = state.get_local_player().map(|p| (p.x.round() as i32, p.y.round() as i32));
+            // Get player position from SERVER state (not visual) to avoid getting ahead of server
+            let player_pos = state.get_local_player().map(|p| (p.server_x.round() as i32, p.server_y.round() as i32));
 
             // Check if next waypoint is blocked by an entity - if so, cancel path
             let mut path_blocked = false;
