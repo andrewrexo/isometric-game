@@ -120,11 +120,6 @@ pub struct Player {
 
     // Last time this player took damage (for health bar visibility)
     pub last_damage_time: f64,
-
-    // Client-side prediction for local player
-    pub predicted_x: f32,
-    pub predicted_y: f32,
-    pub has_pending_prediction: bool,
 }
 
 impl Player {
@@ -165,9 +160,6 @@ impl Player {
             is_admin: false,
             animation: PlayerAnimation::new(),
             last_damage_time: 0.0,
-            predicted_x: 0.0,
-            predicted_y: 0.0,
-            has_pending_prediction: false,
         }
     }
 
@@ -252,204 +244,75 @@ impl Player {
         self.target_y = y;
     }
 
-    /// Apply local input for client-side prediction (local player only)
-    /// Predicts when at tile center with no server velocity
-    pub fn apply_local_input(&mut self, dx: f32, dy: f32) {
-        if dx == 0.0 && dy == 0.0 {
-            return;
-        }
-
-        // Predict if at tile center and server says we're not moving
-        // This covers: starting from stop, AND direction changes at tile boundaries
-        let at_tile_center = (self.x - self.x.round()).abs() < 0.05
-                          && (self.y - self.y.round()).abs() < 0.05;
-        let server_stopped = self.vel_x == 0.0 && self.vel_y == 0.0;
-
-        if at_tile_center && server_stopped {
-            let tile_x = self.x.round();
-            let tile_y = self.y.round();
-            self.predicted_x = tile_x + dx;
-            self.predicted_y = tile_y + dy;
-            self.target_x = self.predicted_x;
-            self.target_y = self.predicted_y;
-            self.has_pending_prediction = true;
-            self.direction = Direction::from_velocity(dx, dy);
-        }
-    }
-
-    /// Set server-authoritative position (called when server sends state sync)
-    /// Server sends grid positions (i32), we store as f32 for interpolation
+    /// Set server-authoritative position (convenience method for stopped state)
     pub fn set_server_position(&mut self, new_x: f32, new_y: f32) {
-        self.set_server_position_with_velocity(new_x, new_y, 0.0, 0.0, false);
+        self.set_server_state(new_x, new_y, 0.0, 0.0, self.direction);
     }
 
-    /// Set server position with velocity for client-side prediction
-    /// is_local_player: if true, uses prediction-aware reconciliation
-    pub fn set_server_position_with_velocity(&mut self, new_x: f32, new_y: f32, vel_x: f32, vel_y: f32, is_local_player: bool) {
-        // Update authoritative server position and velocity
-        self.server_x = new_x;
-        self.server_y = new_y;
+    /// Set server state - simple server-authoritative model
+    /// Server is single source of truth, client just animates smoothly
+    pub fn set_server_state(&mut self, x: f32, y: f32, vel_x: f32, vel_y: f32, dir: Direction) {
+        self.server_x = x;
+        self.server_y = y;
         self.vel_x = vel_x;
         self.vel_y = vel_y;
+        self.direction = dir;
 
-        // Calculate distance from visual to server
-        let dx = self.x - new_x;
-        let dy = self.y - new_y;
-        let dist = (dx * dx + dy * dy).sqrt();
-
+        // Teleport detection (>2 tiles = snap immediately)
+        let dist = ((self.x - x).powi(2) + (self.y - y).powi(2)).sqrt();
         if dist > 2.0 {
-            // Too far - hard snap (teleport/major desync)
-            self.x = new_x;
-            self.y = new_y;
-            self.target_x = new_x;
-            self.target_y = new_y;
-            self.has_pending_prediction = false;
-        } else if is_local_player && self.has_pending_prediction {
-            // Local player with pending prediction (first move from stop)
-            let server_moving = vel_x != 0.0 || vel_y != 0.0;
-
-            if server_moving {
-                // Server confirmed movement - clear prediction flag, now follow server
-                // But keep current target if we're already moving toward it
-                self.has_pending_prediction = false;
-            } else {
-                // Server stopped - check if we reached our prediction
-                let at_predicted = (self.x - self.predicted_x).abs() < 0.1
-                                && (self.y - self.predicted_y).abs() < 0.1;
-                if at_predicted {
-                    // Check if server agrees with where we ended up
-                    let server_disagrees = (new_x - self.predicted_x).abs() > 0.01
-                                        || (new_y - self.predicted_y).abs() > 0.01;
-                    if server_disagrees {
-                        // Server rejected our move (hit a wall) - snap to server
-                        self.target_x = new_x;
-                        self.target_y = new_y;
-                    }
-                    self.has_pending_prediction = false;
-                }
-            }
-        } else if is_local_player {
-            // Local player following server: just track server position, no velocity prediction
-            // This avoids diagonal corrections on direction changes
-            // First move from stop is already handled by apply_local_input
-            self.target_x = new_x;
-            self.target_y = new_y;
-        } else {
-            // Remote player: predict based on velocity for smooth movement
-            if vel_x != 0.0 || vel_y != 0.0 {
-                self.target_x = new_x + vel_x;
-                self.target_y = new_y + vel_y;
-            } else {
-                self.target_x = new_x;
-                self.target_y = new_y;
-            }
+            self.x = x;
+            self.y = y;
         }
 
-        // Update direction from velocity
+        // Target = next tile if moving, current tile if stopped
         if vel_x != 0.0 || vel_y != 0.0 {
-            self.direction = Direction::from_velocity(vel_x, vel_y);
+            self.target_x = x + vel_x;
+            self.target_y = y + vel_y;
+        } else {
+            self.target_x = x;
+            self.target_y = y;
         }
     }
 
     /// Smooth visual interpolation toward target position
-    /// Uses server velocity for continuous movement prediction
+    /// Simple server-authoritative model - just interpolate toward target
     pub fn interpolate_visual(&mut self, delta: f32) {
         let dx = self.target_x - self.x;
         let dy = self.target_y - self.y;
         let dist = (dx * dx + dy * dy).sqrt();
 
-        // Track if we're actually moving this frame (not just predicting)
-        let actually_moving;
-
         if dist < 0.01 {
-            // Reached target - snap exactly
             self.x = self.target_x;
             self.y = self.target_y;
-            actually_moving = false;
-            // Wait for next target update from server or input
             self.is_moving = false;
         } else {
-            // Linear interpolation - constant speed movement
             let move_dist = VISUAL_SPEED * delta;
-
             if dist <= move_dist {
-                // Close enough - snap to target
                 self.x = self.target_x;
                 self.y = self.target_y;
             } else {
-                // Move at constant speed toward target
                 self.x += (dx / dist) * move_dist;
                 self.y += (dy / dist) * move_dist;
             }
-
             self.is_moving = true;
-            actually_moving = true;
-
-            // Only update direction from movement vector if no server velocity
-            // (velocity is more authoritative than visual movement direction)
-            let in_action = matches!(
-                self.animation.state,
-                AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
-            );
-            if self.vel_x == 0.0 && self.vel_y == 0.0 && !in_action {
-                self.direction = Direction::from_velocity(dx, dy);
-            }
         }
 
-        // Check if movement direction matches velocity direction
-        // This prevents "moonwalking" - sprite changing direction before visual moves that way
-        let movement_matches_velocity = if self.vel_x != 0.0 || self.vel_y != 0.0 {
-            let movement_dir = Direction::from_velocity(
-                self.target_x - self.x,
-                self.target_y - self.y
-            );
-            let velocity_dir = Direction::from_velocity(self.vel_x, self.vel_y);
-            movement_dir == velocity_dir
-        } else {
-            true // No velocity = trust movement direction
-        };
-
-        // Update animation state based on movement and actions
-        self.update_animation(delta, actually_moving, movement_matches_velocity);
+        self.update_animation(delta);
     }
 
     /// Update animation state and frame
-    /// actually_moving: true only when visual position is actively changing
-    /// movement_aligned: true only when movement direction matches velocity direction
-    fn update_animation(&mut self, delta: f32, actually_moving: bool, movement_aligned: bool) {
-        // Check if player has velocity (intending to move, even if at tile boundary)
-        let has_velocity = self.vel_x != 0.0 || self.vel_y != 0.0;
-
+    /// Direction comes from server, is_moving determines walk vs idle
+    fn update_animation(&mut self, delta: f32) {
         // Handle action animations (attack, cast, etc) - they take priority
-        // Direction is locked in when the action starts (in play_attack/play_cast/play_shoot_bow)
-        // Don't sync direction during actions - visual interpolation may still be catching up
-        let in_action_animation = self.animation.state == AnimationState::Attacking
+        let in_action = self.animation.state == AnimationState::Attacking
             || self.animation.state == AnimationState::Casting
             || self.animation.state == AnimationState::ShootingBow;
 
-        // Sync direction to animation when safe (not moonwalking):
-        // 1. When moving: only if movement direction matches velocity (prevents moonwalking)
-        // 2. When stationary: always sync (handles Face commands from server)
-        // 3. Never during action animations (direction locked when action started)
-        let should_sync_direction = if in_action_animation {
-            false
-        } else if actually_moving {
-            movement_aligned // Only sync when movement catches up to velocity direction
-        } else if !has_velocity {
-            true // Stationary with no velocity = safe to sync (Face commands)
-        } else {
-            false // At tile boundary with velocity - wait for movement to start
-        };
-
-        if should_sync_direction {
-            self.animation.direction = self.direction;
-        }
-
-        if in_action_animation {
+        if in_action {
             self.animation.update(delta);
-            // Return to idle/walking when action animation completes
             if self.animation.is_finished() {
-                if actually_moving || has_velocity {
+                if self.is_moving {
                     self.animation.set_state(AnimationState::Walking);
                 } else {
                     self.animation.set_state(AnimationState::Idle);
@@ -458,21 +321,20 @@ impl Player {
             return;
         }
 
-        // Handle movement animations - only animate when actually moving
-        if actually_moving {
+        // Sync animation direction from player direction (which comes from server)
+        self.animation.direction = self.direction;
+
+        // Handle movement animations
+        if self.is_moving {
             self.animation.set_state(AnimationState::Walking);
             self.animation.update(delta);
         } else {
-            // Only go to idle if not in a sitting state AND we have no velocity
-            // Having velocity means we're at a tile boundary waiting for server confirmation
-            // during continuous movement - keep Walking state to prevent jitter
+            // Only go to idle if not in a sitting state
             if self.animation.state != AnimationState::SittingGround
                 && self.animation.state != AnimationState::SittingChair
-                && !has_velocity
             {
                 self.animation.set_state(AnimationState::Idle);
             }
-            // Don't update animation frame when idle or waiting at tile boundary
         }
     }
 

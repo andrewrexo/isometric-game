@@ -645,44 +645,15 @@ impl GameState {
         self.auto_path = None;
     }
 
-    /// Update with current input direction for smooth local movement
-    pub fn update(&mut self, delta: f32, input_dx: f32, input_dy: f32) {
+    /// Update all players - simple server-authoritative model
+    /// Direction comes from server for all players
+    pub fn update(&mut self, delta: f32, _input_dx: f32, _input_dy: f32) {
         // Use smoothed delta for visual interpolation (reduces jitter from frame variance)
         let visual_delta = self.frame_timings.smoothed_delta;
 
-        // Update local player - smoothly interpolate visual toward server grid position
-        if let Some(local_id) = &self.local_player_id {
-            if let Some(player) = self.players.get_mut(local_id) {
-                // Update facing direction based on input only when NOT moving and NOT attacking
-                // This prevents 1-frame direction jitter at tile boundaries
-                // (is_moving reflects previous frame, set by interpolate_visual)
-                let is_attacking = matches!(
-                    player.animation.state,
-                    AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
-                );
-                if !player.is_moving && !is_attacking && (input_dx != 0.0 || input_dy != 0.0) {
-                    let new_dir = super::entities::Direction::from_velocity(input_dx, input_dy);
-                    player.direction = new_dir;
-                    player.animation.direction = new_dir;
-                }
-
-                // Smoothly interpolate visual position toward server grid position
-                player.interpolate_visual(visual_delta);
-            }
-        }
-
-        // Update other players (smooth interpolation toward their server positions)
-        if let Some(local_id) = &self.local_player_id {
-            for (id, player) in self.players.iter_mut() {
-                if id != local_id {
-                    player.update(visual_delta);
-                }
-            }
-        } else {
-            // No local player yet - update all
-            for player in self.players.values_mut() {
-                player.update(visual_delta);
-            }
+        // Update all players (smooth interpolation toward server positions)
+        for player in self.players.values_mut() {
+            player.interpolate_visual(visual_delta);
         }
 
         // Update camera to follow local player

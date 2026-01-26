@@ -492,25 +492,19 @@ impl NetworkClient {
                             let equipped_belt = extract_string(player_value, "equipped_belt").filter(|s| !s.is_empty());
                             let is_admin = extract_bool(player_value, "is_admin").unwrap_or(false);
 
-                            let is_local_player = state.local_player_id.as_ref() == Some(&id);
-
                             if let Some(player) = state.players.get_mut(&id) {
-                                // Read velocity for client-side prediction
+                                // Read velocity (movement intent) from server
                                 let vel_x = extract_i32(player_value, "velX").unwrap_or(0) as f32;
                                 let vel_y = extract_i32(player_value, "velY").unwrap_or(0) as f32;
+                                // Direction from server for all players
+                                let dir = direction.map(|d| Direction::from_u8(d as u8)).unwrap_or(player.direction);
 
                                 if let (Some(x), Some(y)) = (x, y) {
-                                    // Set server target with velocity for prediction
-                                    player.set_server_position_with_velocity(x as f32, y as f32, vel_x, vel_y, is_local_player);
-                                }
-                                if let Some(dir) = direction {
-                                    // For local player: never update direction from server
-                                    // Local input controls direction entirely to avoid jitter
-                                    // For remote players: always update from server
-                                    if !is_local_player {
-                                        let new_dir = Direction::from_u8(dir as u8);
-                                        player.direction = new_dir;
-                                    }
+                                    // Set server state - simple server-authoritative model
+                                    player.set_server_state(x as f32, y as f32, vel_x, vel_y, dir);
+                                } else if direction.is_some() {
+                                    // Direction-only update (Face command)
+                                    player.direction = dir;
                                 }
                                 if let Some(hp) = hp {
                                     // Update last_damage_time if HP decreased (ensures HP bar shows)
@@ -548,7 +542,7 @@ impl NetworkClient {
                                 player.equipped_belt = equipped_belt.clone();
                                 // Update admin status
                                 player.is_admin = is_admin;
-                            } else if !is_local_player && !id.is_empty() {
+                            } else if state.local_player_id.as_ref() != Some(&id) && !id.is_empty() {
                                 // Player not in our map - create them from stateSync data
                                 // This handles players re-appearing after map transitions
                                 if let (Some(px), Some(py)) = (x, y) {
