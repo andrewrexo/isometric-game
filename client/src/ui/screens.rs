@@ -1066,6 +1066,9 @@ pub struct CharacterCreateScreen {
     active_field: CreateField,
     player_sprites: HashMap<String, Texture2D>,
     hair_sprites: HashMap<i32, Texture2D>,
+    scroll_y: f32,
+    last_touch_y: Option<f32>,
+    touch_detected: bool,
 }
 
 const HAIR_STYLES: usize = 3;  // 0, 1, 2
@@ -1097,6 +1100,9 @@ impl CharacterCreateScreen {
             active_field: CreateField::Name,
             player_sprites: HashMap::new(),
             hair_sprites: HashMap::new(),
+            scroll_y: 0.0,
+            last_touch_y: None,
+            touch_detected: false,
         }
     }
 
@@ -1146,7 +1152,7 @@ impl CharacterCreateScreen {
 #[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterCreateScreen {
     fn update(&mut self, audio: &AudioManager) -> ScreenState {
-        let (sw, _sh) = virtual_screen_size();
+        let (sw, sh) = virtual_screen_size();
         let (input_pos, clicked, _is_touch) = get_input_state();
         let mx = input_pos.x;
         let my = input_pos.y;
@@ -1154,11 +1160,49 @@ impl Screen for CharacterCreateScreen {
         // Layout constants (must match render)
         let total_width = 460.0;
         let content_x = (sw - total_width) / 2.0;
-        let content_y = 70.0;
+        let field_height = 70.0;
+        let form_visible_h: f32 = 200.0; // match preview height
+        let form_total_h: f32 = field_height * 4.0 + 10.0 + 36.0; // fields + button gap + button height
+        let max_scroll = (form_total_h - form_visible_h).max(0.0);
+
+        // Handle scroll via mouse wheel
+        let (_wheel_x, wheel_y) = mouse_wheel();
+        if wheel_y != 0.0 {
+            self.scroll_y = (self.scroll_y - wheel_y * 30.0).clamp(0.0, max_scroll);
+        }
+
+        // Handle touch drag scrolling (mobile)
+        let touch_list: Vec<Touch> = touches();
+        if !touch_list.is_empty() {
+            self.touch_detected = true;
+        }
+        if let Some(touch) = touch_list.first() {
+            let (_, vy) = screen_to_virtual(touch.position.x, touch.position.y);
+            match touch.phase {
+                TouchPhase::Started => {
+                    self.last_touch_y = Some(vy);
+                }
+                TouchPhase::Moved => {
+                    if let Some(last_y) = self.last_touch_y {
+                        let delta = last_y - vy;
+                        self.scroll_y = (self.scroll_y + delta).clamp(0.0, max_scroll);
+                    }
+                    self.last_touch_y = Some(vy);
+                }
+                TouchPhase::Ended | TouchPhase::Cancelled => {
+                    self.last_touch_y = None;
+                }
+                _ => {}
+            }
+        } else {
+            self.last_touch_y = None;
+        }
+
+        // Preview stays fixed, only form fields scroll
+        let content_y = 70.0 - self.scroll_y;
         let preview_w = 140.0;
         let form_x = content_x + preview_w + 20.0;
         let form_w = 300.0;
-        let field_height = 70.0;
         let half_width = (form_w - 10.0) / 2.0;
 
         // Handle name input when name field is active
@@ -1447,19 +1491,20 @@ impl Screen for CharacterCreateScreen {
         let title_width = self.measure_text_sharp(title, 16.0).width;
         self.draw_text_sharp(title, (sw - title_width) / 2.0, 30.0, 16.0, WHITE);
 
-        // Layout: Preview on left, form on right
+        // Layout: Preview on left (fixed), form on right (scrollable)
         let total_width = 460.0;  // Preview (140) + gap (20) + form (300)
         let content_x = (sw - total_width) / 2.0;
-        let content_y = 70.0;
+        let fixed_y = 70.0;         // Preview stays here
+        let form_y = 70.0 - self.scroll_y;  // Form fields scroll
 
-        // === LEFT SIDE: Character Preview ===
+        // === LEFT SIDE: Character Preview (fixed) ===
         let preview_w = 140.0;
         let preview_h = 200.0;
 
         // Decorative frame around preview
         let frame_padding = 8.0;
         let frame_x = content_x - frame_padding;
-        let frame_y = content_y - frame_padding;
+        let frame_y = fixed_y - frame_padding;
         let frame_w = preview_w + frame_padding * 2.0;
         let frame_h = preview_h + frame_padding * 2.0;
 
@@ -1468,7 +1513,7 @@ impl Screen for CharacterCreateScreen {
         // Frame background
         draw_rectangle(frame_x, frame_y, frame_w, frame_h, Color::from_rgba(40, 45, 60, 255));
         // Inner preview area
-        draw_rectangle(content_x, content_y, preview_w, preview_h, Color::from_rgba(20, 22, 30, 255));
+        draw_rectangle(content_x, fixed_y, preview_w, preview_h, Color::from_rgba(20, 22, 30, 255));
         // Frame border
         draw_rectangle_lines(frame_x, frame_y, frame_w, frame_h, 2.0, Color::from_rgba(80, 100, 140, 255));
         // Corner accents
@@ -1484,7 +1529,7 @@ impl Screen for CharacterCreateScreen {
         let sprite_w = SPRITE_WIDTH * preview_scale;
         let sprite_h = SPRITE_HEIGHT * preview_scale;
         let sprite_x = content_x + (preview_w - sprite_w) / 2.0;
-        let sprite_y = content_y + (preview_h - sprite_h) / 2.0 - 10.0;
+        let sprite_y = fixed_y + (preview_h - sprite_h) / 2.0 - 10.0;
         draw_character_preview(
             &self.player_sprites,
             &self.hair_sprites,
@@ -1500,180 +1545,222 @@ impl Screen for CharacterCreateScreen {
         // Preview label below character
         let preview_label = format!("{} {}", GENDERS[self.gender_index], SKINS[self.skin_index]);
         let label_width = self.measure_text_sharp(&preview_label, 16.0).width;
-        self.draw_text_sharp(&preview_label, content_x + (preview_w - label_width) / 2.0, content_y + preview_h - 30.0, 16.0, LIGHTGRAY);
+        self.draw_text_sharp(&preview_label, content_x + (preview_w - label_width) / 2.0, fixed_y + preview_h - 30.0, 16.0, LIGHTGRAY);
 
-        // === RIGHT SIDE: Form Fields ===
+        // === RIGHT SIDE: Form Fields (clipped to preview area) ===
         let form_x = content_x + preview_w + 20.0;
         let form_w = 300.0;
         let field_height = 70.0;
+        let clip_top = fixed_y;
+        let clip_bottom = fixed_y + 200.0; // match preview height
+
+        // Helper: check if a field row is visible in the clipped area
+        // field_top is the y of the label, field extends to field_top + field_height
+        let is_visible = |field_top: f32, height: f32| -> bool {
+            field_top + height > clip_top && field_top < clip_bottom
+        };
 
         // Name field
         let name_active = self.active_field == CreateField::Name;
-        let name_y = content_y;
-        self.draw_text_sharp("Name", form_x, name_y, 16.0, if name_active { WHITE } else { GRAY });
+        let name_y = form_y;
+        if is_visible(name_y, field_height) {
+            self.draw_text_sharp("Name", form_x, name_y, 16.0, if name_active { WHITE } else { GRAY });
 
-        let name_box_color = if name_active {
-            Color::from_rgba(80, 120, 180, 255)
-        } else {
-            Color::from_rgba(60, 60, 80, 255)
-        };
-        draw_rectangle(form_x, name_y + 20.0, form_w, 36.0, name_box_color);
-        draw_rectangle_lines(form_x, name_y + 20.0, form_w, 36.0, 2.0, if name_active { WHITE } else { GRAY });
+            let name_box_color = if name_active {
+                Color::from_rgba(80, 120, 180, 255)
+            } else {
+                Color::from_rgba(60, 60, 80, 255)
+            };
+            draw_rectangle(form_x, name_y + 20.0, form_w, 36.0, name_box_color);
+            draw_rectangle_lines(form_x, name_y + 20.0, form_w, 36.0, 2.0, if name_active { WHITE } else { GRAY });
 
-        let cursor = if name_active && (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
-        let name_display = if self.name.is_empty() && !name_active {
-            "Enter name...".to_string()
-        } else {
-            format!("{}{}", self.name, cursor)
-        };
-        let text_color = if self.name.is_empty() && !name_active { DARKGRAY } else { WHITE };
-        self.draw_text_sharp(&name_display, form_x + 10.0, name_y + 44.0, 16.0, text_color);
+            let cursor = if name_active && (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
+            let name_display = if self.name.is_empty() && !name_active {
+                "Enter name...".to_string()
+            } else {
+                format!("{}{}", self.name, cursor)
+            };
+            let text_color = if self.name.is_empty() && !name_active { DARKGRAY } else { WHITE };
+            self.draw_text_sharp(&name_display, form_x + 10.0, name_y + 44.0, 16.0, text_color);
+        }
 
         // Gender field
         let gender_active = self.active_field == CreateField::Gender;
-        let gender_y = content_y + field_height;
-        self.draw_text_sharp("Gender", form_x, gender_y, 16.0, if gender_active { WHITE } else { GRAY });
+        let gender_y = form_y + field_height;
+        if is_visible(gender_y, field_height) {
+            self.draw_text_sharp("Gender", form_x, gender_y, 16.0, if gender_active { WHITE } else { GRAY });
 
-        let gender_box_color = if gender_active {
-            Color::from_rgba(80, 120, 180, 255)
-        } else {
-            Color::from_rgba(60, 60, 80, 255)
-        };
-        draw_rectangle(form_x, gender_y + 20.0, form_w, 36.0, gender_box_color);
-        draw_rectangle_lines(form_x, gender_y + 20.0, form_w, 36.0, 2.0, if gender_active { WHITE } else { GRAY });
+            let gender_box_color = if gender_active {
+                Color::from_rgba(80, 120, 180, 255)
+            } else {
+                Color::from_rgba(60, 60, 80, 255)
+            };
+            draw_rectangle(form_x, gender_y + 20.0, form_w, 36.0, gender_box_color);
+            draw_rectangle_lines(form_x, gender_y + 20.0, form_w, 36.0, 2.0, if gender_active { WHITE } else { GRAY });
 
-        self.draw_text_sharp("<", form_x + 15.0, gender_y + 44.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
-        let gender_text = GENDERS[self.gender_index];
-        let gender_width = self.measure_text_sharp(gender_text, 16.0).width;
-        self.draw_text_sharp(gender_text, form_x + form_w / 2.0 - gender_width / 2.0, gender_y + 44.0, 16.0, WHITE);
-        self.draw_text_sharp(">", form_x + form_w - 25.0, gender_y + 44.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
+            self.draw_text_sharp("<", form_x + 15.0, gender_y + 44.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
+            let gender_text = GENDERS[self.gender_index];
+            let gender_width = self.measure_text_sharp(gender_text, 16.0).width;
+            self.draw_text_sharp(gender_text, form_x + form_w / 2.0 - gender_width / 2.0, gender_y + 44.0, 16.0, WHITE);
+            self.draw_text_sharp(">", form_x + form_w - 25.0, gender_y + 44.0, 16.0, if gender_active { YELLOW } else { DARKGRAY });
+        }
 
         // Skin field
         let skin_active = self.active_field == CreateField::Skin;
-        let skin_y = content_y + field_height * 2.0;
-        self.draw_text_sharp("Skin", form_x, skin_y, 16.0, if skin_active { WHITE } else { GRAY });
+        let skin_y = form_y + field_height * 2.0;
+        if is_visible(skin_y, field_height) {
+            self.draw_text_sharp("Skin", form_x, skin_y, 16.0, if skin_active { WHITE } else { GRAY });
 
-        let skin_box_color = if skin_active {
-            Color::from_rgba(80, 120, 180, 255)
-        } else {
-            Color::from_rgba(60, 60, 80, 255)
-        };
-        draw_rectangle(form_x, skin_y + 20.0, form_w, 36.0, skin_box_color);
-        draw_rectangle_lines(form_x, skin_y + 20.0, form_w, 36.0, 2.0, if skin_active { WHITE } else { GRAY });
+            let skin_box_color = if skin_active {
+                Color::from_rgba(80, 120, 180, 255)
+            } else {
+                Color::from_rgba(60, 60, 80, 255)
+            };
+            draw_rectangle(form_x, skin_y + 20.0, form_w, 36.0, skin_box_color);
+            draw_rectangle_lines(form_x, skin_y + 20.0, form_w, 36.0, 2.0, if skin_active { WHITE } else { GRAY });
 
-        self.draw_text_sharp("<", form_x + 15.0, skin_y + 44.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
-        let skin_text = SKINS[self.skin_index];
-        let skin_width = self.measure_text_sharp(skin_text, 16.0).width;
-        self.draw_text_sharp(skin_text, form_x + form_w / 2.0 - skin_width / 2.0, skin_y + 44.0, 16.0, WHITE);
-        self.draw_text_sharp(">", form_x + form_w - 25.0, skin_y + 44.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
+            self.draw_text_sharp("<", form_x + 15.0, skin_y + 44.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
+            let skin_text = SKINS[self.skin_index];
+            let skin_width = self.measure_text_sharp(skin_text, 16.0).width;
+            self.draw_text_sharp(skin_text, form_x + form_w / 2.0 - skin_width / 2.0, skin_y + 44.0, 16.0, WHITE);
+            self.draw_text_sharp(">", form_x + form_w - 25.0, skin_y + 44.0, 16.0, if skin_active { YELLOW } else { DARKGRAY });
+        }
 
         // Hair row: Style and Color side by side
-        let hair_y = content_y + field_height * 3.0;
+        let hair_y = form_y + field_height * 3.0;
         let half_width = (form_w - 10.0) / 2.0;  // 10px gap between
+        if is_visible(hair_y, field_height) {
+            // Hair Style (left half)
+            let hair_style_active = self.active_field == CreateField::HairStyle;
+            self.draw_text_sharp("Style", form_x, hair_y, 16.0, if hair_style_active { WHITE } else { GRAY });
 
-        // Hair Style (left half)
-        let hair_style_active = self.active_field == CreateField::HairStyle;
-        self.draw_text_sharp("Style", form_x, hair_y, 16.0, if hair_style_active { WHITE } else { GRAY });
+            let hair_style_box_color = if hair_style_active {
+                Color::from_rgba(80, 120, 180, 255)
+            } else {
+                Color::from_rgba(60, 60, 80, 255)
+            };
+            draw_rectangle(form_x, hair_y + 20.0, half_width, 36.0, hair_style_box_color);
+            draw_rectangle_lines(form_x, hair_y + 20.0, half_width, 36.0, 2.0, if hair_style_active { WHITE } else { GRAY });
 
-        let hair_style_box_color = if hair_style_active {
-            Color::from_rgba(80, 120, 180, 255)
-        } else {
-            Color::from_rgba(60, 60, 80, 255)
-        };
-        draw_rectangle(form_x, hair_y + 20.0, half_width, 36.0, hair_style_box_color);
-        draw_rectangle_lines(form_x, hair_y + 20.0, half_width, 36.0, 2.0, if hair_style_active { WHITE } else { GRAY });
+            self.draw_text_sharp("<", form_x + 10.0, hair_y + 44.0, 16.0, if hair_style_active { YELLOW } else { DARKGRAY });
+            let hair_style_text = match self.hair_style_index {
+                None => "Bald",
+                Some(0) => "Style 1",
+                Some(1) => "Style 2",
+                Some(2) => "Style 3",
+                _ => "?",
+            };
+            let hair_style_width = self.measure_text_sharp(hair_style_text, 16.0).width;
+            self.draw_text_sharp(hair_style_text, form_x + half_width / 2.0 - hair_style_width / 2.0, hair_y + 44.0, 16.0, WHITE);
+            self.draw_text_sharp(">", form_x + half_width - 20.0, hair_y + 44.0, 16.0, if hair_style_active { YELLOW } else { DARKGRAY });
 
-        self.draw_text_sharp("<", form_x + 10.0, hair_y + 44.0, 16.0, if hair_style_active { YELLOW } else { DARKGRAY });
-        let hair_style_text = match self.hair_style_index {
-            None => "Bald",
-            Some(0) => "Style 1",
-            Some(1) => "Style 2",
-            Some(2) => "Style 3",
-            _ => "?",
-        };
-        let hair_style_width = self.measure_text_sharp(hair_style_text, 16.0).width;
-        self.draw_text_sharp(hair_style_text, form_x + half_width / 2.0 - hair_style_width / 2.0, hair_y + 44.0, 16.0, WHITE);
-        self.draw_text_sharp(">", form_x + half_width - 20.0, hair_y + 44.0, 16.0, if hair_style_active { YELLOW } else { DARKGRAY });
+            // Hair Color (right half) - only enabled if hair style selected
+            let hair_color_x = form_x + half_width + 10.0;
+            let hair_color_active = self.active_field == CreateField::HairColor;
+            let has_hair = self.hair_style_index.is_some();
 
-        // Hair Color (right half) - only enabled if hair style selected
-        let hair_color_x = form_x + half_width + 10.0;
-        let hair_color_active = self.active_field == CreateField::HairColor;
-        let has_hair = self.hair_style_index.is_some();
+            self.draw_text_sharp("Color", hair_color_x, hair_y, 16.0, if has_hair { if hair_color_active { WHITE } else { GRAY } } else { DARKGRAY });
 
-        self.draw_text_sharp("Color", hair_color_x, hair_y, 16.0, if has_hair { if hair_color_active { WHITE } else { GRAY } } else { DARKGRAY });
+            let hair_color_box_color = if !has_hair {
+                Color::from_rgba(40, 40, 50, 255)  // Disabled look
+            } else if hair_color_active {
+                Color::from_rgba(80, 120, 180, 255)
+            } else {
+                Color::from_rgba(60, 60, 80, 255)
+            };
+            draw_rectangle(hair_color_x, hair_y + 20.0, half_width, 36.0, hair_color_box_color);
+            draw_rectangle_lines(hair_color_x, hair_y + 20.0, half_width, 36.0, 2.0, if has_hair { if hair_color_active { WHITE } else { GRAY } } else { DARKGRAY });
 
-        let hair_color_box_color = if !has_hair {
-            Color::from_rgba(40, 40, 50, 255)  // Disabled look
-        } else if hair_color_active {
-            Color::from_rgba(80, 120, 180, 255)
-        } else {
-            Color::from_rgba(60, 60, 80, 255)
-        };
-        draw_rectangle(hair_color_x, hair_y + 20.0, half_width, 36.0, hair_color_box_color);
-        draw_rectangle_lines(hair_color_x, hair_y + 20.0, half_width, 36.0, 2.0, if has_hair { if hair_color_active { WHITE } else { GRAY } } else { DARKGRAY });
-
-        if has_hair {
-            self.draw_text_sharp("<", hair_color_x + 10.0, hair_y + 44.0, 16.0, if hair_color_active { YELLOW } else { DARKGRAY });
-            let hair_color_text = format!("{}", self.hair_color_index + 1);
-            let hair_color_width = self.measure_text_sharp(&hair_color_text, 16.0).width;
-            self.draw_text_sharp(&hair_color_text, hair_color_x + half_width / 2.0 - hair_color_width / 2.0, hair_y + 44.0, 16.0, WHITE);
-            self.draw_text_sharp(">", hair_color_x + half_width - 20.0, hair_y + 44.0, 16.0, if hair_color_active { YELLOW } else { DARKGRAY });
-        } else {
-            let dash_width = self.measure_text_sharp("-", 16.0).width;
-            self.draw_text_sharp("-", hair_color_x + half_width / 2.0 - dash_width / 2.0, hair_y + 44.0, 16.0, DARKGRAY);
+            if has_hair {
+                self.draw_text_sharp("<", hair_color_x + 10.0, hair_y + 44.0, 16.0, if hair_color_active { YELLOW } else { DARKGRAY });
+                let hair_color_text = format!("{}", self.hair_color_index + 1);
+                let hair_color_width = self.measure_text_sharp(&hair_color_text, 16.0).width;
+                self.draw_text_sharp(&hair_color_text, hair_color_x + half_width / 2.0 - hair_color_width / 2.0, hair_y + 44.0, 16.0, WHITE);
+                self.draw_text_sharp(">", hair_color_x + half_width - 20.0, hair_y + 44.0, 16.0, if hair_color_active { YELLOW } else { DARKGRAY });
+            } else {
+                let dash_width = self.measure_text_sharp("-", 16.0).width;
+                self.draw_text_sharp("-", hair_color_x + half_width / 2.0 - dash_width / 2.0, hair_y + 44.0, 16.0, DARKGRAY);
+            }
         }
 
         // Buttons row
-        let buttons_y = content_y + field_height * 4.0 + 10.0;
+        let buttons_y = form_y + field_height * 4.0 + 10.0;
         let button_w = (form_w - 10.0) / 2.0;
+        if is_visible(buttons_y, 36.0) {
+            // Create button
+            let create_hovered = point_in_rect(mx, my, form_x, buttons_y, button_w, 36.0);
+            let create_bg = if create_hovered {
+                Color::from_rgba(60, 140, 90, 255)
+            } else {
+                Color::from_rgba(40, 100, 60, 255)
+            };
+            let create_border = if create_hovered {
+                Color::from_rgba(100, 200, 120, 255)
+            } else {
+                Color::from_rgba(60, 140, 80, 255)
+            };
+            draw_rectangle(form_x, buttons_y, button_w, 36.0, create_bg);
+            draw_rectangle_lines(form_x, buttons_y, button_w, 36.0, 2.0, create_border);
+            let create_text = "Create";
+            let create_width = self.measure_text_sharp(create_text, 16.0).width;
+            self.draw_text_sharp(create_text, form_x + button_w / 2.0 - create_width / 2.0, buttons_y + 24.0, 16.0, WHITE);
 
-        // Create button
-        let create_hovered = point_in_rect(mx, my, form_x, buttons_y, button_w, 36.0);
-        let create_bg = if create_hovered {
-            Color::from_rgba(60, 140, 90, 255)
-        } else {
-            Color::from_rgba(40, 100, 60, 255)
-        };
-        let create_border = if create_hovered {
-            Color::from_rgba(100, 200, 120, 255)
-        } else {
-            Color::from_rgba(60, 140, 80, 255)
-        };
-        draw_rectangle(form_x, buttons_y, button_w, 36.0, create_bg);
-        draw_rectangle_lines(form_x, buttons_y, button_w, 36.0, 2.0, create_border);
-        let create_text = "Create";
-        let create_width = self.measure_text_sharp(create_text, 16.0).width;
-        self.draw_text_sharp(create_text, form_x + button_w / 2.0 - create_width / 2.0, buttons_y + 24.0, 16.0, WHITE);
-
-        // Cancel button
-        let cancel_x = form_x + button_w + 10.0;
-        let cancel_hovered = point_in_rect(mx, my, cancel_x, buttons_y, button_w, 36.0);
-        let cancel_bg = if cancel_hovered {
-            Color::from_rgba(120, 80, 80, 255)
-        } else {
-            Color::from_rgba(80, 60, 60, 255)
-        };
-        let cancel_border = if cancel_hovered {
-            Color::from_rgba(180, 120, 120, 255)
-        } else {
-            Color::from_rgba(120, 80, 80, 255)
-        };
-        draw_rectangle(cancel_x, buttons_y, button_w, 36.0, cancel_bg);
-        draw_rectangle_lines(cancel_x, buttons_y, button_w, 36.0, 2.0, cancel_border);
-        let cancel_text = "Cancel";
-        let cancel_width = self.measure_text_sharp(cancel_text, 16.0).width;
-        self.draw_text_sharp(cancel_text, cancel_x + button_w / 2.0 - cancel_width / 2.0, buttons_y + 24.0, 16.0, WHITE);
+            // Cancel button
+            let cancel_x = form_x + button_w + 10.0;
+            let cancel_hovered = point_in_rect(mx, my, cancel_x, buttons_y, button_w, 36.0);
+            let cancel_bg = if cancel_hovered {
+                Color::from_rgba(120, 80, 80, 255)
+            } else {
+                Color::from_rgba(80, 60, 60, 255)
+            };
+            let cancel_border = if cancel_hovered {
+                Color::from_rgba(180, 120, 120, 255)
+            } else {
+                Color::from_rgba(120, 80, 80, 255)
+            };
+            draw_rectangle(cancel_x, buttons_y, button_w, 36.0, cancel_bg);
+            draw_rectangle_lines(cancel_x, buttons_y, button_w, 36.0, 2.0, cancel_border);
+            let cancel_text = "Cancel";
+            let cancel_width = self.measure_text_sharp(cancel_text, 16.0).width;
+            self.draw_text_sharp(cancel_text, cancel_x + button_w / 2.0 - cancel_width / 2.0, buttons_y + 24.0, 16.0, WHITE);
+        }
 
         // Error message
         if let Some(ref error) = self.error_message {
             let error_y = buttons_y + 50.0;
-            let error_width = self.measure_text_sharp(error, 16.0).width;
-            self.draw_text_sharp(error, form_x + (form_w - error_width) / 2.0, error_y, 16.0, RED);
+            if error_y < clip_bottom {
+                let error_width = self.measure_text_sharp(error, 16.0).width;
+                self.draw_text_sharp(error, form_x + (form_w - error_width) / 2.0, error_y, 16.0, RED);
+            }
         }
 
-        // Keyboard hints at bottom
-        let hints_y = sh - 30.0;
-        self.draw_text_sharp("[Tab] Next field    [A/D] Change    [Enter] Create    [Esc] Cancel",
-            (sw - 450.0) / 2.0, hints_y, 16.0, DARKGRAY);
+        // Scroll indicator (only when content is scrollable)
+        let field_height = 70.0;
+        let form_visible_h: f32 = 200.0; // match preview height
+        let form_total_h: f32 = field_height * 4.0 + 10.0 + 36.0;
+        let max_scroll = (form_total_h - form_visible_h).max(0.0);
+        if max_scroll > 0.0 {
+            let track_x = form_x + form_w + 8.0;
+            let track_y = fixed_y;
+            let track_h = form_visible_h;
+            let track_w = 4.0;
+
+            // Track
+            draw_rectangle(track_x, track_y, track_w, track_h, Color::from_rgba(50, 50, 70, 150));
+
+            // Thumb
+            let thumb_ratio = (form_visible_h / form_total_h).min(1.0);
+            let thumb_h = (track_h * thumb_ratio).max(20.0);
+            let scroll_ratio = self.scroll_y / max_scroll;
+            let thumb_y = track_y + (track_h - thumb_h) * scroll_ratio;
+            draw_rectangle(track_x, thumb_y, track_w, thumb_h, Color::from_rgba(120, 140, 180, 200));
+        }
+
+        // Keyboard hints at bottom (hide on touch devices)
+        if !self.touch_detected {
+            let hints_y = sh - 30.0;
+            self.draw_text_sharp("[Tab] Next field    [A/D] Change    [Enter] Create    [Esc] Cancel",
+                (sw - 450.0) / 2.0, hints_y, 16.0, DARKGRAY);
+        }
     }
 }

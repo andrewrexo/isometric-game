@@ -50,12 +50,13 @@ pub enum DPadDirection {
 
 impl DPadDirection {
     pub fn to_direction_u8(self) -> u8 {
+        // Must match server Direction enum: Down=0, Left=1, Up=2, Right=3
         match self {
-            DPadDirection::Up => 0,
-            DPadDirection::Down => 1,
-            DPadDirection::Left => 2,
+            DPadDirection::Down => 0,
+            DPadDirection::Left => 1,
+            DPadDirection::Up => 2,
             DPadDirection::Right => 3,
-            DPadDirection::None => 0,
+            DPadDirection::None => 0, // Default to down
         }
     }
 
