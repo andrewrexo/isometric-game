@@ -591,6 +591,10 @@ pub struct CharacterSelectScreen {
     confirm_delete: bool,
     player_sprites: HashMap<String, Texture2D>,
     hair_sprites: HashMap<i32, Texture2D>,
+    // Scroll state for character list on small screens
+    list_scroll_offset: f32,
+    touch_scroll_id: Option<u64>,
+    touch_scroll_last_y: f32,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -611,6 +615,9 @@ impl CharacterSelectScreen {
             confirm_delete: false,
             player_sprites: HashMap::new(),
             hair_sprites: HashMap::new(),
+            list_scroll_offset: 0.0,
+            touch_scroll_id: None,
+            touch_scroll_last_y: 0.0,
         }
     }
 
@@ -657,10 +664,58 @@ impl Screen for CharacterSelectScreen {
         let my = input_pos.y;
 
         // Layout constants (must match render)
-        let list_x = (sw - 500.0) / 2.0;
+        let list_w = 500.0_f32.min(sw - 20.0);
+        let list_x = (sw - list_w) / 2.0;
         let list_y = 44.0;
         let item_height = 70.0;
-        let inst_y = sh - 70.0;
+        let button_area_height = 48.0;
+        let inst_y = sh - button_area_height;
+
+        // Scrollable list area: from list_y down to the button area (with padding)
+        let list_button_gap = 4.0;
+        let list_visible_height = inst_y - 10.0 - list_button_gap - list_y;
+        let total_list_height = self.characters.len() as f32 * item_height;
+        let max_scroll = (total_list_height - list_visible_height).max(0.0);
+        self.list_scroll_offset = self.list_scroll_offset.clamp(0.0, max_scroll);
+
+        // Touch drag scrolling
+        let all_touches: Vec<Touch> = touches();
+        if let Some(tracking_id) = self.touch_scroll_id {
+            if let Some(touch) = all_touches.iter().find(|t| t.id == tracking_id) {
+                match touch.phase {
+                    TouchPhase::Moved | TouchPhase::Stationary => {
+                        let (_, vy) = screen_to_virtual(touch.position.x, touch.position.y);
+                        let dy = self.touch_scroll_last_y - vy;
+                        self.list_scroll_offset = (self.list_scroll_offset + dy).clamp(0.0, max_scroll);
+                        self.touch_scroll_last_y = vy;
+                    }
+                    TouchPhase::Ended | TouchPhase::Cancelled => {
+                        self.touch_scroll_id = None;
+                    }
+                    _ => {}
+                }
+            } else {
+                self.touch_scroll_id = None;
+            }
+        } else if !self.confirm_delete {
+            for touch in &all_touches {
+                if touch.phase == TouchPhase::Started {
+                    let (vx, vy) = screen_to_virtual(touch.position.x, touch.position.y);
+                    // Only start scroll if touch is in the list area
+                    if vx >= list_x && vx <= list_x + list_w && vy >= list_y && vy <= list_y + list_visible_height {
+                        self.touch_scroll_id = Some(touch.id);
+                        self.touch_scroll_last_y = vy;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Mouse wheel scrolling
+        let (_wheel_x, wheel_y) = mouse_wheel();
+        if wheel_y != 0.0 && my >= list_y && my <= list_y + list_visible_height {
+            self.list_scroll_offset = (self.list_scroll_offset - wheel_y * 30.0).clamp(0.0, max_scroll);
+        }
 
         // Delete confirmation mode
         if self.confirm_delete {
@@ -682,7 +737,7 @@ impl Screen for CharacterSelectScreen {
 
             // Mouse clicks on Yes/No buttons
             if clicked {
-                let box_w = 450.0;
+                let box_w = 450.0_f32.min(sw - 20.0);
                 let box_h = 150.0;
                 let box_x = (sw - box_w) / 2.0;
                 let box_y = (sh - box_h) / 2.0;
@@ -712,23 +767,29 @@ impl Screen for CharacterSelectScreen {
             return ScreenState::Continue;
         }
 
-        // Mouse: Click on character rows
+        // Mouse: Click on character rows (accounting for scroll and clipping)
         if clicked && !self.characters.is_empty() {
             for i in 0..self.characters.len() {
-                let y = list_y + i as f32 * item_height;
-                if point_in_rect(mx, my, list_x, y, 500.0, item_height - 5.0) {
-                    if self.selected_index == i {
-                        // Double-click effect: if already selected, start game
-                        let character = &self.characters[self.selected_index];
-                        return ScreenState::StartGame {
-                            session: self.session.clone(),
-                            character_id: character.id,
-                            character_name: character.name.clone(),
-                        };
-                    } else {
-                        self.selected_index = i;
+                let y = list_y + i as f32 * item_height - self.list_scroll_offset;
+                // Only allow clicking visible rows
+                if y + item_height - 5.0 < list_y || y > list_y + list_visible_height {
+                    continue;
+                }
+                if point_in_rect(mx, my, list_x, y, list_w, item_height - 5.0) {
+                    // Ensure click is within the visible list area
+                    if my >= list_y && my <= list_y + list_visible_height {
+                        if self.selected_index == i {
+                            let character = &self.characters[self.selected_index];
+                            return ScreenState::StartGame {
+                                session: self.session.clone(),
+                                character_id: character.id,
+                                character_name: character.name.clone(),
+                            };
+                        } else {
+                            self.selected_index = i;
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -838,19 +899,50 @@ impl Screen for CharacterSelectScreen {
         let account_text = format!("Logged in as: {}", self.session.username);
         self.draw_text_sharp(&account_text, 20.0, 24.0, 16.0, LIGHTGRAY);
 
-        // Character list (directly below title with slight padding)
-        let list_x = (sw - 500.0) / 2.0;
+        // Layout
+        let list_w = 500.0_f32.min(sw - 20.0);
+        let list_x = (sw - list_w) / 2.0;
         let list_y = 44.0;
         let item_height = 70.0;
+        let button_area_height = 48.0;
+        let inst_y = sh - button_area_height;
+        let list_visible_height = inst_y - 10.0 - list_y;
+        let total_list_height = self.characters.len() as f32 * item_height;
+        let max_scroll = (total_list_height - list_visible_height).max(0.0);
+        let scroll_offset = self.list_scroll_offset.clamp(0.0, max_scroll);
+        let needs_scroll = max_scroll > 0.0;
 
         if self.characters.is_empty() {
             self.draw_text_sharp("No characters yet!", list_x, list_y + 30.0, 16.0, GRAY);
             self.draw_text_sharp("Press [N] to create your first character", list_x, list_y + 55.0, 16.0, LIGHTGRAY);
         } else {
+            // Set up scissor clipping for the list area
+            if needs_scroll {
+                let physical_w = screen_width();
+                let physical_h = screen_height();
+                let scale_x = physical_w / sw;
+                let scale_y = physical_h / sh;
+                let mut gl = unsafe { macroquad::window::get_internal_gl() };
+                gl.flush();
+                gl.quad_gl.scissor(Some((
+                    (list_x * scale_x) as i32,
+                    (list_y * scale_y) as i32,
+                    (list_w * scale_x) as i32,
+                    (list_visible_height * scale_y) as i32,
+                )));
+            }
+
             for (i, character) in self.characters.iter().enumerate() {
-                let y = list_y + i as f32 * item_height;
+                let y = list_y + i as f32 * item_height - scroll_offset;
+
+                // Skip rows fully outside visible area
+                if needs_scroll && (y + item_height < list_y || y > list_y + list_visible_height) {
+                    continue;
+                }
+
                 let is_selected = i == self.selected_index;
-                let is_hovered = point_in_rect(mx, my, list_x, y, 500.0, item_height - 5.0);
+                let is_hovered = point_in_rect(mx, my, list_x, y, list_w, item_height - 5.0)
+                    && my >= list_y && my <= list_y + list_visible_height;
 
                 // Background
                 let bg_color = if is_selected {
@@ -860,12 +952,12 @@ impl Screen for CharacterSelectScreen {
                 } else {
                     Color::from_rgba(40, 40, 60, 255)
                 };
-                draw_rectangle(list_x, y, 500.0, item_height - 5.0, bg_color);
+                draw_rectangle(list_x, y, list_w, item_height - 5.0, bg_color);
 
                 if is_selected {
-                    draw_rectangle_lines(list_x, y, 500.0, item_height - 5.0, 2.0, WHITE);
+                    draw_rectangle_lines(list_x, y, list_w, item_height - 5.0, 2.0, WHITE);
                 } else if is_hovered {
-                    draw_rectangle_lines(list_x, y, 500.0, item_height - 5.0, 1.0, GRAY);
+                    draw_rectangle_lines(list_x, y, list_w, item_height - 5.0, 1.0, GRAY);
                 }
 
                 // Character preview sprite (scale to fit in the row)
@@ -898,13 +990,39 @@ impl Screen for CharacterSelectScreen {
                 } else {
                     format!("{}m played", minutes)
                 };
-                self.draw_text_sharp(&time_str, list_x + 340.0, y + 36.0, 16.0, DARKGRAY);
+                let time_x = (list_x + list_w - 160.0).max(text_x + 120.0);
+                self.draw_text_sharp(&time_str, time_x, y + 36.0, 16.0, DARKGRAY);
+            }
+
+            // Disable scissor clipping
+            if needs_scroll {
+                let mut gl = unsafe { macroquad::window::get_internal_gl() };
+                gl.flush();
+                gl.quad_gl.scissor(None);
+
+                // Draw scrollbar
+                let scrollbar_w = 4.0;
+                let scrollbar_x = list_x + list_w - scrollbar_w - 2.0;
+                let track_h = list_visible_height;
+                let thumb_ratio = list_visible_height / total_list_height;
+                let thumb_h = (track_h * thumb_ratio).max(20.0);
+                let scroll_ratio = if max_scroll > 0.0 { scroll_offset / max_scroll } else { 0.0 };
+                let thumb_y = list_y + (track_h - thumb_h) * scroll_ratio;
+
+                // Track
+                draw_rectangle(scrollbar_x, list_y, scrollbar_w, track_h, Color::new(1.0, 1.0, 1.0, 0.08));
+                // Thumb
+                draw_rectangle(scrollbar_x, thumb_y, scrollbar_w, thumb_h, Color::new(1.0, 1.0, 1.0, 0.3));
             }
         }
 
+        // Solid background below the list to cleanly separate from buttons
+        let button_zone_y = list_y + list_visible_height;
+        draw_rectangle(0.0, button_zone_y, sw, sh - button_zone_y, Color::from_rgba(25, 25, 35, 255));
+
         // Error message
         if let Some(ref error) = self.error_message {
-            let error_y = sh - 130.0;
+            let error_y = inst_y - 25.0;
             self.draw_text_sharp(error, list_x, error_y, 16.0, RED);
         }
 
@@ -912,7 +1030,7 @@ impl Screen for CharacterSelectScreen {
         if self.confirm_delete {
             draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.7));
 
-            let box_w = 450.0;
+            let box_w = 450.0_f32.min(sw - 20.0);
             let box_h = 150.0;
             let box_x = (sw - box_w) / 2.0;
             let box_y = (sh - box_h) / 2.0;
@@ -969,7 +1087,6 @@ impl Screen for CharacterSelectScreen {
         }
 
         // Buttons at bottom
-        let inst_y = sh - 70.0;
         let button_height = 30.0;
 
         // Play button
@@ -1038,6 +1155,7 @@ impl Screen for CharacterSelectScreen {
         draw_rectangle_lines(list_x + 330.0, inst_y - 10.0, 100.0, button_height, 2.0, logout_border);
         self.draw_text_sharp("Logout", list_x + 340.0, inst_y + 10.0, 16.0, WHITE);
 
+        #[cfg(not(target_os = "android"))]
         self.draw_text_sharp("[W/S] Navigate", list_x, inst_y + 28.0, 16.0, DARKGRAY);
     }
 }
