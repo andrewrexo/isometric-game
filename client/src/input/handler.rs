@@ -149,11 +149,12 @@ impl InputHandler {
         let current_time = get_time();
 
         // Update touch controls (for mobile)
+        let in_dialogue = state.ui_state.active_dialogue.is_some();
         let hide_action_buttons = state.ui_state.inventory_open
             || state.ui_state.character_panel_open
             || state.ui_state.skills_open
-            || state.ui_state.active_dialogue.is_some();
-        self.touch_controls.update(current_time, hide_action_buttons);
+            || in_dialogue;
+        self.touch_controls.update(current_time, hide_action_buttons, in_dialogue);
 
         // Get current mouse/touch position in virtual coordinates (for UI hit detection)
         let (raw_mx, raw_my) = mouse_position();
@@ -2302,7 +2303,7 @@ impl InputHandler {
 
     /// Render touch controls overlay (call after all other rendering)
     /// Set hide_action_buttons to true when panels like inventory are open
-    pub fn render_touch_controls(&self, hide_action_buttons: bool) {
-        self.touch_controls.render(hide_action_buttons);
+    pub fn render_touch_controls(&self, hide_action_buttons: bool, hide_all_controls: bool) {
+        self.touch_controls.render(hide_action_buttons, hide_all_controls);
     }
 }

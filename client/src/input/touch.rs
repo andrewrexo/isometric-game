@@ -468,7 +468,7 @@ impl TouchControls {
 
     /// Update all touch controls
     /// Set hide_action_buttons to true when panels like inventory are open
-    pub fn update(&mut self, current_time: f64, hide_action_buttons: bool) {
+    pub fn update(&mut self, current_time: f64, hide_action_buttons: bool, hide_all_controls: bool) {
         self.touch_consumed = false;
 
         if !self.enabled {
@@ -490,7 +490,11 @@ impl TouchControls {
         } else {
             (self.attack_button.update(&touches), self.interact_button.update(&touches))
         };
-        let dpad_consumed = self.dpad.update(&touches, current_time);
+        let dpad_consumed = if hide_all_controls {
+            false
+        } else {
+            self.dpad.update(&touches, current_time)
+        };
 
         // Mark touch as consumed if any control is active or just received input
         self.touch_consumed = attack_consumed || interact_consumed || dpad_consumed
@@ -507,12 +511,14 @@ impl TouchControls {
 
     /// Render all touch controls
     /// Set hide_action_buttons to true when panels like inventory are open
-    pub fn render(&self, hide_action_buttons: bool) {
+    pub fn render(&self, hide_action_buttons: bool, hide_all_controls: bool) {
         if !self.enabled {
             return;
         }
 
-        self.dpad.render();
+        if !hide_all_controls {
+            self.dpad.render();
+        }
         if !hide_action_buttons {
             self.attack_button.render();
             self.interact_button.render();
