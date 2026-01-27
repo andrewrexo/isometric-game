@@ -11,7 +11,7 @@ use super::common::*;
 const CHARACTER_PANEL_PADDING: f32 = 12.0;
 const CHARACTER_HEADER_HEIGHT: f32 = 24.0;
 const CHARACTER_GRID_WIDTH: f32 = 3.0 * EQUIP_SLOT_SIZE + 2.0 * EQUIP_SLOT_SPACING; // 122
-const CHARACTER_GRID_HEIGHT: f32 = 5.0 * EQUIP_SLOT_SIZE + 4.0 * EQUIP_SLOT_SPACING; // 206
+const CHARACTER_GRID_HEIGHT: f32 = 4.0 * EQUIP_SLOT_SIZE + 3.0 * EQUIP_SLOT_SPACING + 16.0; // 180
 const CHARACTER_PANEL_WIDTH: f32 = 240.0; // Unified width to match inventory and other UI panels
 const CHARACTER_PANEL_HEIGHT: f32 = FRAME_THICKNESS * 2.0 + CHARACTER_HEADER_HEIGHT + CHARACTER_PANEL_PADDING + CHARACTER_GRID_HEIGHT + CHARACTER_PANEL_PADDING; // ~262
 const STATS_SECTION_GAP: f32 = 8.0; // Gap between equipment grid and stats
@@ -39,10 +39,13 @@ impl Renderer {
         let stats_gap = STATS_SECTION_GAP * scale;
         let grid_width = CHARACTER_GRID_WIDTH * scale;
 
-        // Position panel on right side, above the menu buttons (align with button right edge)
+        // Position panel on right side, top-aligned with HP bar, bottom above menu buttons
         let panel_x = screen_w - panel_width - 8.0;
         let button_area_height = button_size + exp_bar_gap;
-        let panel_y = screen_h - button_area_height - panel_height - 8.0;
+        let panel_top = 45.0; // Align with top of HP bar (below name tag)
+        let panel_bottom = screen_h - button_area_height - 8.0;
+        let panel_height = (panel_bottom - panel_top).min(panel_height);
+        let panel_y = panel_bottom - panel_height;
 
         // Draw panel frame
         self.draw_panel_frame(panel_x, panel_y, panel_width, panel_height);
@@ -85,8 +88,8 @@ impl Renderer {
             ("gloves", 0, 2),
             ("ring", 2, 2),
             ("necklace", 0, 3),
+            ("feet", 1, 3),
             ("belt", 2, 3),
-            ("feet", 1, 4),
         ];
 
         for (slot_type, col, row) in equipment_slots.iter() {
@@ -144,7 +147,8 @@ impl Renderer {
         // Get player stats (native font size for crisp rendering)
         if let Some(player) = state.get_local_player() {
             let line_height = 24.0 * scale;
-            let text_x = stats_x + 4.0 * scale;
+            let label_x = stats_x + 18.0 * scale;
+            let value_x = label_x + self.measure_text_sharp("DEF", 16.0).width + 4.0;
             let mut text_y = stats_y + 18.0 * scale;
 
             // Equipment bonuses
@@ -153,24 +157,29 @@ impl Renderer {
             let def_bonus = player.defence_bonus(&state.item_registry);
 
             // Stats list (font stays at native 16.0 for crisp text)
-            let hp_text = format!("HP  {}/{}", player.hp, player.max_hp);
-            self.draw_text_sharp(&hp_text, text_x, text_y, 16.0, HEALTH_GREEN_MID);
+            self.draw_text_sharp("HP", label_x, text_y, 16.0, HEALTH_GREEN_MID);
+            let hp_val = format!("{}/{}", player.hp, player.max_hp);
+            self.draw_text_sharp(&hp_val, value_x, text_y, 16.0, HEALTH_GREEN_MID);
             text_y += line_height;
 
-            let combat_text = format!("Lv  {}", player.combat_level());
-            self.draw_text_sharp(&combat_text, text_x, text_y, 16.0, TEXT_NORMAL);
+            self.draw_text_sharp("Lv", label_x, text_y, 16.0, TEXT_NORMAL);
+            let lv_val = format!("{}", player.combat_level());
+            self.draw_text_sharp(&lv_val, value_x, text_y, 16.0, TEXT_NORMAL);
             text_y += line_height;
 
-            let atk_text = format!("ATK +{}", atk_bonus);
-            self.draw_text_sharp(&atk_text, text_x, text_y, 16.0, CATEGORY_EQUIPMENT);
+            self.draw_text_sharp("ATK", label_x, text_y, 16.0, CATEGORY_EQUIPMENT);
+            let atk_val = format!("+{}", atk_bonus);
+            self.draw_text_sharp(&atk_val, value_x, text_y, 16.0, CATEGORY_EQUIPMENT);
             text_y += line_height;
 
-            let str_text = format!("STR +{}", str_bonus);
-            self.draw_text_sharp(&str_text, text_x, text_y, 16.0, CATEGORY_CONSUMABLE);
+            self.draw_text_sharp("STR", label_x, text_y, 16.0, CATEGORY_CONSUMABLE);
+            let str_val = format!("+{}", str_bonus);
+            self.draw_text_sharp(&str_val, value_x, text_y, 16.0, CATEGORY_CONSUMABLE);
             text_y += line_height;
 
-            let def_text = format!("DEF +{}", def_bonus);
-            self.draw_text_sharp(&def_text, text_x, text_y, 16.0, CATEGORY_MATERIAL);
+            self.draw_text_sharp("DEF", label_x, text_y, 16.0, CATEGORY_MATERIAL);
+            let def_val = format!("+{}", def_bonus);
+            self.draw_text_sharp(&def_val, value_x, text_y, 16.0, CATEGORY_MATERIAL);
         }
     }
 }
