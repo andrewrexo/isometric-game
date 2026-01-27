@@ -1940,7 +1940,8 @@ impl InputHandler {
 
         // Target selection (left click) - only if not clicking on UI
         if mouse_clicked && clicked_element.is_none() {
-            let (mouse_x, mouse_y) = mouse_position();
+            let (raw_x, raw_y) = mouse_position();
+            let (mouse_x, mouse_y) = screen_to_virtual_coords(raw_x, raw_y);
             let (world_x, world_y) = screen_to_world(mouse_x, mouse_y, &state.camera);
 
             // Get the clicked tile coordinates
