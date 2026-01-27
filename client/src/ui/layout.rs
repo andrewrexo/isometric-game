@@ -27,6 +27,7 @@ pub enum UiElementId {
     ContextMenuOption(usize),
 
     // Escape Menu
+    EscapeMenuZoom05x,
     EscapeMenuZoom1x,
     EscapeMenuZoom2x,
     EscapeMenuMusicSlider,

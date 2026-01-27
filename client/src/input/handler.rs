@@ -674,6 +674,12 @@ impl InputHandler {
             if let Some(ref element) = clicked_element {
                 if mouse_clicked {
                     match element {
+                        UiElementId::EscapeMenuZoom05x => {
+                            audio.play_sfx("enter");
+                            state.camera.zoom = 0.5;
+                            state.ui_state.escape_menu_open = false;
+                            return commands;
+                        }
                         UiElementId::EscapeMenuZoom1x => {
                             audio.play_sfx("enter");
                             state.camera.zoom = 1.0;
