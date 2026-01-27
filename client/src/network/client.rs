@@ -1275,6 +1275,9 @@ impl NetworkClient {
 
                     log::info!("Showing dialogue from {}: {} ({} choices)", speaker, text, choices.len());
 
+                    state.ui_state.dialogue_scroll_offset = 0.0;
+                    state.ui_state.dialogue_touch_scroll_id = None;
+                    state.ui_state.dialogue_touch_dragged = false;
                     state.ui_state.active_dialogue = Some(ActiveDialogue {
                         quest_id,
                         npc_id,

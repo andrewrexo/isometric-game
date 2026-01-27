@@ -6,6 +6,7 @@ pub enum UiElementId {
     // Dialogue
     DialogueChoice(usize),
     DialogueContinue,
+    DialogueClose,
 
     // Crafting
     CraftingCategoryTab(usize),

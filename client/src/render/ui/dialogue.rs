@@ -1,6 +1,7 @@
 //! NPC dialogue panel rendering
 
 use macroquad::prelude::*;
+use macroquad::window::get_internal_gl;
 use crate::game::ActiveDialogue;
 use crate::ui::{UiElementId, UiLayout};
 use crate::util::virtual_screen_size;
@@ -8,25 +9,72 @@ use super::super::Renderer;
 use super::common::*;
 
 impl Renderer {
-    pub(crate) fn render_dialogue(&self, dialogue: &ActiveDialogue, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
+    pub(crate) fn render_dialogue(&self, dialogue: &ActiveDialogue, hovered: &Option<UiElementId>, layout: &mut UiLayout, scroll_offset: f32) {
         let (sw, sh) = virtual_screen_size();
+
+        let is_mobile = cfg!(target_os = "android");
 
         // Semi-transparent overlay to focus attention
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
 
-        let box_width = 620.0;
+        // Responsive width: cap at 620, with 10px margin each side
+        let box_width = sw.min(620.0 + 20.0) - 20.0;
+
+        // Mobile-aware sizing
+        let (choice_btn_height, choice_spacing) = if is_mobile {
+            (40.0, 48.0)
+        } else {
+            (26.0, 32.0)
+        };
+
+        let bottom_margin = if is_mobile { 20.0 } else { 60.0 };
+
         let choice_area_height = if dialogue.choices.is_empty() {
             0.0
         } else {
-            dialogue.choices.len() as f32 * 32.0 + 36.0
+            dialogue.choices.len() as f32 * choice_spacing + 36.0
         };
-        let box_height = 120.0 + choice_area_height;
+        let text_margin_bottom = 8.0;
+        let ideal_box_height = 120.0 + text_margin_bottom + choice_area_height;
+
+        // Clamp height to screen bounds (leave 40px top margin minimum)
+        let max_box_height = sh - 40.0 - bottom_margin;
+        let box_height = ideal_box_height.min(max_box_height);
+        let is_clamped = ideal_box_height > max_box_height;
+
         let box_x = (sw - box_width) / 2.0;
-        let box_y = sh - box_height - 60.0;
+        let box_y = sh - box_height - bottom_margin;
 
         // Draw themed panel frame with corner accents
         self.draw_panel_frame(box_x, box_y, box_width, box_height);
         self.draw_corner_accents(box_x, box_y, box_width, box_height);
+
+        // ===== CLOSE BUTTON (top-right corner) =====
+        if !dialogue.choices.is_empty() {
+            let close_size = if is_mobile { 32.0 } else { 24.0 };
+            let close_x = box_x + box_width - close_size - FRAME_THICKNESS - 4.0;
+            let close_y = box_y + FRAME_THICKNESS + 4.0;
+
+            let bounds = Rect::new(close_x, close_y, close_size, close_size);
+            layout.add(UiElementId::DialogueClose, bounds);
+
+            let is_hovered = matches!(hovered, Some(UiElementId::DialogueClose));
+            let (btn_bg, btn_border) = if is_hovered {
+                (Color::new(0.4, 0.15, 0.15, 1.0), Color::new(0.6, 0.2, 0.2, 1.0))
+            } else {
+                (Color::new(0.2, 0.1, 0.1, 1.0), FRAME_MID)
+            };
+
+            draw_rectangle(close_x, close_y, close_size, close_size, btn_border);
+            draw_rectangle(close_x + 1.0, close_y + 1.0, close_size - 2.0, close_size - 2.0, btn_bg);
+
+            let cx = close_x + close_size / 2.0;
+            let cy = close_y + close_size / 2.0;
+            let cross = close_size * 0.25;
+            let cross_color = if is_hovered { TEXT_TITLE } else { TEXT_DIM };
+            draw_line(cx - cross, cy - cross, cx + cross, cy + cross, 2.0, cross_color);
+            draw_line(cx + cross, cy - cross, cx - cross, cy + cross, 2.0, cross_color);
+        }
 
         // ===== SPEAKER NAME TAB =====
         let speaker_text = dialogue.speaker.to_uppercase();
@@ -55,8 +103,14 @@ impl Renderer {
         let content_y = box_y + FRAME_THICKNESS + 20.0;
         let content_width = box_width - FRAME_THICKNESS * 2.0 - 24.0;
 
-        // Decorative line under speaker area
-        draw_line(content_x, content_y, content_x + content_width, content_y, 1.0, HEADER_BORDER);
+        // Decorative line under speaker area (shortened when close button is present)
+        let line_end = if !dialogue.choices.is_empty() {
+            let close_size = if is_mobile { 32.0 } else { 24.0 };
+            box_x + box_width - close_size - FRAME_THICKNESS - 4.0 - 8.0
+        } else {
+            content_x + content_width
+        };
+        draw_line(content_x, content_y, line_end, content_y, 1.0, HEADER_BORDER);
 
         // Dialogue text with word wrap
         let text_x = content_x;
@@ -118,12 +172,43 @@ impl Renderer {
             self.draw_text_sharp("[Enter]", box_x + FRAME_THICKNESS + 15.0, hint_y + 17.0, 16.0, TEXT_DIM);
         } else {
             // ===== CHOICE BUTTONS =====
-            let choice_start_y = box_y + FRAME_THICKNESS + 70.0;
-            let choice_btn_height = 26.0;
-            let choice_spacing = 32.0;
+            let choice_start_y = box_y + FRAME_THICKNESS + 70.0 + text_margin_bottom;
+
+            // Calculate visible area for choices when clamped
+            let choice_area_top = choice_start_y;
+            let choice_area_bottom = box_y + box_height - FRAME_THICKNESS - 20.0;
+            let visible_choice_height = choice_area_bottom - choice_area_top;
+
+            // Calculate max scroll
+            let total_choice_content = dialogue.choices.len() as f32 * choice_spacing;
+            let max_scroll = (total_choice_content - visible_choice_height).max(0.0);
+            let needs_scroll = max_scroll > 0.0;
+            let clamped_scroll = scroll_offset.clamp(0.0, max_scroll);
+
+            // Apply scissor clipping when choices overflow the visible area
+            if needs_scroll {
+                let physical_w = screen_width();
+                let physical_h = screen_height();
+                let scale_x = physical_w / sw;
+                let scale_y = physical_h / sh;
+                let mut gl = unsafe { get_internal_gl() };
+                gl.flush();
+                gl.quad_gl.scissor(Some((
+                    (content_x * scale_x) as i32,
+                    (choice_area_top * scale_y) as i32,
+                    (content_width * scale_x) as i32,
+                    (visible_choice_height * scale_y) as i32,
+                )));
+            }
 
             for (i, choice) in dialogue.choices.iter().enumerate() {
-                let choice_y = choice_start_y + (i as f32 * choice_spacing);
+                let choice_y = choice_start_y + (i as f32 * choice_spacing) - clamped_scroll;
+
+                // Skip rendering if outside visible area
+                if needs_scroll && (choice_y + choice_btn_height < choice_area_top || choice_y > choice_area_bottom) {
+                    continue;
+                }
+
                 let choice_width = content_width;
                 let choice_x = content_x;
 
@@ -148,10 +233,16 @@ impl Renderer {
 
                 let num_text = format!("[{}]", i + 1);
                 let num_color = if is_hovered { TEXT_GOLD } else { FRAME_MID };
-                self.draw_text_sharp(&num_text, choice_x + 8.0, choice_y + 18.0, 16.0, num_color);
+                self.draw_text_sharp(&num_text, choice_x + 8.0, choice_y + choice_btn_height * 0.65, 16.0, num_color);
 
                 let text_color = if is_hovered { TEXT_TITLE } else { TEXT_NORMAL };
-                self.draw_text_sharp(&choice.text, choice_x + 40.0, choice_y + 18.0, 16.0, text_color);
+                self.draw_text_sharp(&choice.text, choice_x + 40.0, choice_y + choice_btn_height * 0.65, 16.0, text_color);
+            }
+
+            if needs_scroll {
+                let mut gl = unsafe { get_internal_gl() };
+                gl.flush();
+                gl.quad_gl.scissor(None);
             }
 
             let hint_y = box_y + box_height - FRAME_THICKNESS - 10.0;

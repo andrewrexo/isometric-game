@@ -893,27 +893,86 @@ impl InputHandler {
 
         // Handle dialogue mode - intercept input when dialogue is open
         if let Some(dialogue) = &state.ui_state.active_dialogue {
-            // Handle mouse clicks on dialogue elements
-            if let Some(ref element) = clicked_element {
-                match element {
-                    UiElementId::DialogueChoice(idx) => {
-                        if *idx < dialogue.choices.len() {
-                            let choice = &dialogue.choices[*idx];
+            // Touch drag scrolling for dialogue choices on mobile
+            let all_touches: Vec<Touch> = touches();
+            if let Some(tracking_id) = state.ui_state.dialogue_touch_scroll_id {
+                if let Some(touch) = all_touches.iter().find(|t| t.id == tracking_id) {
+                    match touch.phase {
+                        TouchPhase::Moved | TouchPhase::Stationary => {
+                            let (_, vy) = screen_to_virtual_coords(touch.position.x, touch.position.y);
+                            let dy = state.ui_state.dialogue_touch_last_y - vy;
+                            if !state.ui_state.dialogue_touch_dragged {
+                                let total_dy = (state.ui_state.dialogue_touch_start_y - vy).abs();
+                                if total_dy > 8.0 {
+                                    state.ui_state.dialogue_touch_dragged = true;
+                                }
+                            }
+                            if state.ui_state.dialogue_touch_dragged {
+                                state.ui_state.dialogue_scroll_offset = (state.ui_state.dialogue_scroll_offset + dy).max(0.0);
+                            }
+                            state.ui_state.dialogue_touch_last_y = vy;
+                        }
+                        TouchPhase::Ended | TouchPhase::Cancelled => {
+                            state.ui_state.dialogue_touch_scroll_id = None;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    state.ui_state.dialogue_touch_scroll_id = None;
+                }
+            } else {
+                for touch in &all_touches {
+                    if touch.phase == TouchPhase::Started {
+                        let (vx, vy) = screen_to_virtual_coords(touch.position.x, touch.position.y);
+                        let over_choice = matches!(
+                            layout.hit_test(vx, vy),
+                            Some(UiElementId::DialogueChoice(_))
+                        );
+                        if over_choice {
+                            state.ui_state.dialogue_touch_scroll_id = Some(touch.id);
+                            state.ui_state.dialogue_touch_last_y = vy;
+                            state.ui_state.dialogue_touch_start_y = vy;
+                            state.ui_state.dialogue_touch_dragged = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Handle mouse/touch clicks on dialogue elements
+            // Skip if touch was a drag (scroll gesture)
+            let was_touch_drag = state.ui_state.dialogue_touch_dragged && state.ui_state.dialogue_touch_scroll_id.is_none();
+            if was_touch_drag {
+                state.ui_state.dialogue_touch_dragged = false;
+            }
+
+            if !was_touch_drag {
+                if let Some(ref element) = clicked_element {
+                    match element {
+                        UiElementId::DialogueChoice(idx) => {
+                            if *idx < dialogue.choices.len() {
+                                let choice = &dialogue.choices[*idx];
+                                commands.push(InputCommand::DialogueChoice {
+                                    quest_id: dialogue.quest_id.clone(),
+                                    choice_id: choice.id.clone(),
+                                });
+                                return commands;
+                            }
+                        }
+                        UiElementId::DialogueContinue => {
                             commands.push(InputCommand::DialogueChoice {
                                 quest_id: dialogue.quest_id.clone(),
-                                choice_id: choice.id.clone(),
+                                choice_id: "__continue__".to_string(),
                             });
                             return commands;
                         }
+                        UiElementId::DialogueClose => {
+                            commands.push(InputCommand::CloseDialogue);
+                            state.ui_state.active_dialogue = None;
+                            return commands;
+                        }
+                        _ => {}
                     }
-                    UiElementId::DialogueContinue => {
-                        commands.push(InputCommand::DialogueChoice {
-                            quest_id: dialogue.quest_id.clone(),
-                            choice_id: "__continue__".to_string(),
-                        });
-                        return commands;
-                    }
-                    _ => {}
                 }
             }
 
@@ -937,6 +996,11 @@ impl InputHandler {
                         // Don't clear dialogue here - wait for server response
                         return commands;
                     }
+                }
+                // Handle scroll wheel for dialogue choices
+                let (_wheel_x, wheel_y) = mouse_wheel();
+                if wheel_y.abs() > 0.0 {
+                    state.ui_state.dialogue_scroll_offset = (state.ui_state.dialogue_scroll_offset - wheel_y * 20.0).max(0.0);
                 }
             } else {
                 // No choices - Escape, Enter, or Space to continue/close
