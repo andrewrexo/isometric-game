@@ -207,16 +207,23 @@ impl AuthClient {
     pub fn create_character(&self, token: &str, name: &str, gender: &str, skin: &str, hair_style: Option<i32>, hair_color: Option<i32>) -> Result<CharacterInfo, AuthError> {
         let url = format!("{}/api/characters", self.base_url);
 
+        let mut body = ureq::json!({
+            "name": name,
+            "gender": gender,
+            "skin": skin,
+        });
+        if let Some(style) = hair_style {
+            body["hair_style"] = serde_json::Value::Number(style.into());
+        }
+        if let Some(color) = hair_color {
+            body["hair_color"] = serde_json::Value::Number(color.into());
+        }
+        log::info!("Create character request body: {}", body);
+
         let response = ureq::post(&url)
             .set("Authorization", &format!("Bearer {}", token))
             .set("Content-Type", "application/json")
-            .send_json(ureq::json!({
-                "name": name,
-                "gender": gender,
-                "skin": skin,
-                "hair_style": hair_style,
-                "hair_color": hair_color
-            }))
+            .send_json(body)
             .map_err(|e| {
                 let error_str = e.to_string();
                 log::error!("Character creation error: {}", error_str);

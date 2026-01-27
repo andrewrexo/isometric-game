@@ -537,7 +537,9 @@ struct CreateCharacterRequest {
     name: String,
     gender: String,
     skin: String,
+    #[serde(default)]
     hair_style: Option<i32>,
+    #[serde(default)]
     hair_color: Option<i32>,
 }
 

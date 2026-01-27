@@ -699,7 +699,7 @@ impl Screen for CharacterSelectScreen {
 
         // Scrollable list area: from list_y down to the button area (with padding)
         let list_button_gap = 4.0;
-        let list_visible_height = inst_y - 10.0 - list_button_gap - list_y;
+        let list_visible_height = (inst_y - 10.0 - list_button_gap - list_y).min(400.0);
         let total_list_height = self.characters.len() as f32 * item_height;
         let max_scroll = (total_list_height - list_visible_height).max(0.0);
         self.list_scroll_offset = self.list_scroll_offset.clamp(0.0, max_scroll);
@@ -932,7 +932,7 @@ impl Screen for CharacterSelectScreen {
         let item_height = 70.0;
         let button_area_height = 48.0;
         let inst_y = sh - button_area_height;
-        let list_visible_height = inst_y - 10.0 - list_y;
+        let list_visible_height = (inst_y - 10.0 - list_y).min(400.0);
         let total_list_height = self.characters.len() as f32 * item_height;
         let max_scroll = (total_list_height - list_visible_height).max(0.0);
         let scroll_offset = self.list_scroll_offset.clamp(0.0, max_scroll);
@@ -1305,9 +1305,10 @@ impl Screen for CharacterCreateScreen {
         let total_width = 460.0;
         let content_x = (sw - total_width) / 2.0;
         let field_height = 70.0;
-        let form_visible_h: f32 = 200.0; // match preview height
+        let content_height: f32 = 330.0;
+        let max_content_height = content_height.min(sh - 80.0);
         let form_total_h: f32 = field_height * 4.0 + 10.0 + 36.0; // fields + button gap + button height
-        let max_scroll = (form_total_h - form_visible_h).max(0.0);
+        let max_scroll = (form_total_h - max_content_height).max(0.0);
 
         // Handle scroll via mouse wheel
         let (_wheel_x, wheel_y) = mouse_wheel();
@@ -1343,7 +1344,8 @@ impl Screen for CharacterCreateScreen {
         }
 
         // Preview stays fixed, only form fields scroll
-        let content_y = 70.0 - self.scroll_y;
+        let fixed_y = ((sh - max_content_height) / 2.0).max(50.0);
+        let content_y = fixed_y - self.scroll_y;
         let preview_w = 140.0;
         let form_x = content_x + preview_w + 20.0;
         let form_w = 300.0;
@@ -1638,8 +1640,10 @@ impl Screen for CharacterCreateScreen {
         // Layout: Preview on left (fixed), form on right (scrollable)
         let total_width = 460.0;  // Preview (140) + gap (20) + form (300)
         let content_x = (sw - total_width) / 2.0;
-        let fixed_y = 70.0;         // Preview stays here
-        let form_y = 70.0 - self.scroll_y;  // Form fields scroll
+        let content_height: f32 = 330.0; // 4 fields * 70 + buttons area
+        let max_content_height = content_height.min(sh - 80.0); // leave room for title + padding
+        let fixed_y = ((sh - max_content_height) / 2.0).max(50.0);
+        let form_y = fixed_y - self.scroll_y;  // Form fields scroll
 
         // === LEFT SIDE: Character Preview (fixed) ===
         let preview_w = 140.0;
@@ -1696,7 +1700,7 @@ impl Screen for CharacterCreateScreen {
         let form_w = 300.0;
         let field_height = 70.0;
         let clip_top = fixed_y;
-        let clip_bottom = fixed_y + 200.0; // match preview height
+        let clip_bottom = fixed_y + max_content_height;
 
         // Helper: check if a field row is visible in the clipped area
         // field_top is the y of the label, field extends to field_top + field_height
@@ -1880,20 +1884,19 @@ impl Screen for CharacterCreateScreen {
 
         // Scroll indicator (only when content is scrollable)
         let field_height = 70.0;
-        let form_visible_h: f32 = 200.0; // match preview height
         let form_total_h: f32 = field_height * 4.0 + 10.0 + 36.0;
-        let max_scroll = (form_total_h - form_visible_h).max(0.0);
+        let max_scroll = (form_total_h - max_content_height).max(0.0);
         if max_scroll > 0.0 {
             let track_x = form_x + form_w + 8.0;
             let track_y = fixed_y;
-            let track_h = form_visible_h;
+            let track_h = max_content_height;
             let track_w = 4.0;
 
             // Track
             draw_rectangle(track_x, track_y, track_w, track_h, Color::from_rgba(50, 50, 70, 150));
 
             // Thumb
-            let thumb_ratio = (form_visible_h / form_total_h).min(1.0);
+            let thumb_ratio = (max_content_height / form_total_h).min(1.0);
             let thumb_h = (track_h * thumb_ratio).max(20.0);
             let scroll_ratio = self.scroll_y / max_scroll;
             let thumb_y = track_y + (track_h - thumb_h) * scroll_ratio;
