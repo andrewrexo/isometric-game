@@ -324,6 +324,7 @@ pub fn run_game_frame(
     // Hide action buttons when panels are open
     let hide_action_buttons = game_state.ui_state.inventory_open
         || game_state.ui_state.character_panel_open
-        || game_state.ui_state.skills_open;
+        || game_state.ui_state.skills_open
+        || game_state.ui_state.active_dialogue.is_some();
     input_handler.render_touch_controls(hide_action_buttons);
 }

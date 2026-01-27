@@ -151,7 +151,8 @@ impl InputHandler {
         // Update touch controls (for mobile)
         let hide_action_buttons = state.ui_state.inventory_open
             || state.ui_state.character_panel_open
-            || state.ui_state.skills_open;
+            || state.ui_state.skills_open
+            || state.ui_state.active_dialogue.is_some();
         self.touch_controls.update(current_time, hide_action_buttons);
 
         // Get current mouse/touch position in virtual coordinates (for UI hit detection)
