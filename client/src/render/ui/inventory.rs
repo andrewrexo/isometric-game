@@ -189,7 +189,7 @@ impl Renderer {
 
         // ===== INVENTORY GRID =====
         let grid_padding = GRID_PADDING * scale;
-        let slot_size = INV_SLOT_SIZE * scale;
+        let slot_size = (INV_SLOT_SIZE * scale).max(MIN_SLOT_SIZE); // Ensure icons fit
         let slot_spacing = SLOT_SPACING * scale;
         let content_y = inv_y + frame_thickness + header_height + 10.0 * scale;
         let grid_x = inv_x + grid_padding;

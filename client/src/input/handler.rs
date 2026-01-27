@@ -715,13 +715,13 @@ impl InputHandler {
                             return commands;
                         }
                         UiElementId::EscapeMenuUiScaleSlider => {
-                            // Calculate UI scale from click position (0.5x to 1.5x range)
+                            // Calculate UI scale from click position (0.75x to 1.25x range)
                             if let Some(slider_elem) = layout.elements.iter().find(|e| e.id == UiElementId::EscapeMenuUiScaleSlider) {
                                 let (mouse_x, _) = mouse_position();
                                 let relative_x = mouse_x - slider_elem.bounds.x;
                                 let normalized = (relative_x / slider_elem.bounds.w).clamp(0.0, 1.0);
-                                // Convert 0.0-1.0 to 0.5-1.5 range
-                                state.ui_state.ui_scale = 0.5 + normalized * 1.0;
+                                // Convert 0.0-1.0 to 0.75-1.25 range
+                                state.ui_state.ui_scale = 0.75 + normalized * 0.5;
                             }
                             return commands;
                         }

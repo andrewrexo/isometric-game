@@ -12,8 +12,8 @@ impl Renderer {
     pub(crate) fn render_quick_slots(&self, state: &GameState, hovered: &Option<UiElementId>, layout: &mut UiLayout) {
         let scale = state.ui_state.ui_scale;
 
-        // Quick slot size: 32px icon + 2px padding each side (scaled)
-        let slot_size = QUICK_SLOT_SIZE * scale;
+        // Quick slot size: 32px icon + 2px padding each side (scaled, with minimum)
+        let slot_size = (QUICK_SLOT_SIZE * scale).max(MIN_SLOT_SIZE); // Ensure icons fit
         let spacing = QUICK_SLOT_SPACING * scale;
         let total_width = 5.0 * slot_size + 4.0 * spacing;
 

@@ -118,7 +118,7 @@ impl Renderer {
         // UI Scale slider
         let scale_bounds = Rect::new(slider_x, y, slider_width, slider_height);
         layout.add(UiElementId::EscapeMenuUiScaleSlider, scale_bounds);
-        let scale_normalized = (state.ui_state.ui_scale - 0.5) / 1.0;
+        let scale_normalized = (state.ui_state.ui_scale - 0.75) / 0.5; // 0.75-1.25 range
         self.draw_compact_slider("Scale", slider_x, y, slider_width, slider_height,
                                  scale_normalized, false, is_hovered(scale_bounds));
         y += row_height;

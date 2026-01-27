@@ -151,8 +151,9 @@ impl Renderer {
             draw_line(x + size - 1.0, y + 2.0, x + size - 1.0, y + size - 2.0, 1.0, accent);
         }
 
-        // Draw icon from sprite sheet if available (scale icon with button)
-        let icon_size = ICON_SIZE * scale;
+        // Draw icon from sprite sheet if available
+        // Keep icon at native 32x32 for crisp pixel art - only scale the container
+        let icon_size = ICON_SIZE; // Don't scale pixel art icons
         if let Some(ref texture) = self.menu_button_icons {
             // Calculate source rectangle for this frame
             let src_x = icon_frame as f32 * ICON_SIZE;

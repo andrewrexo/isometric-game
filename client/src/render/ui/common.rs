@@ -111,6 +111,9 @@ pub const TAB_FONT_SIZE: f32 = 16.0;
 pub const ITEM_ICON_SIZE: f32 = 32.0;
 pub const ITEM_TEXT_OFFSET: f32 = 48.0;  // icon padding (8) + icon size (32) + gap (8)
 
+// Minimum slot size - must fit 32x32 pixel art icons without scaling
+pub const MIN_SLOT_SIZE: f32 = 34.0;  // 32px icon + 2px padding
+
 // Transaction Bar Constants
 pub const TRANSACTION_BAR_HEIGHT: f32 = 100.0;
 

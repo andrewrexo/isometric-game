@@ -32,7 +32,7 @@ impl Renderer {
         let frame_thickness = FRAME_THICKNESS * scale;
         let header_height = CHARACTER_HEADER_HEIGHT * scale;
         let panel_padding = CHARACTER_PANEL_PADDING * scale;
-        let slot_size = EQUIP_SLOT_SIZE * scale;
+        let slot_size = (EQUIP_SLOT_SIZE * scale).max(MIN_SLOT_SIZE); // Ensure icons fit
         let slot_spacing = EQUIP_SLOT_SPACING * scale;
         let button_size = MENU_BUTTON_SIZE * scale;
         let exp_bar_gap = EXP_BAR_GAP * scale;
