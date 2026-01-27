@@ -310,6 +310,13 @@ impl Player {
         let dy = self.target_y - self.y;
         let dist = (dx * dx + dy * dy).sqrt();
 
+        // Calculate visual movement direction (for moonwalk prevention)
+        let movement_dir = if dist > 0.01 {
+            Some(Direction::from_velocity(dx, dy))
+        } else {
+            None
+        };
+
         if dist < 0.01 {
             self.x = self.target_x;
             self.y = self.target_y;
@@ -326,12 +333,12 @@ impl Player {
             self.is_moving = true;
         }
 
-        self.update_animation(delta);
+        self.update_animation(delta, movement_dir);
     }
 
     /// Update animation state and frame
-    /// Direction comes from server, is_moving determines walk vs idle
-    fn update_animation(&mut self, delta: f32) {
+    /// Only syncs animation direction when movement aligns (prevents moonwalking)
+    fn update_animation(&mut self, delta: f32, movement_dir: Option<Direction>) {
         // Handle action animations (attack, cast, etc) - they take priority
         let in_action = self.animation.state == AnimationState::Attacking
             || self.animation.state == AnimationState::Casting
@@ -349,8 +356,17 @@ impl Player {
             return;
         }
 
-        // Sync animation direction from player direction (which comes from server)
-        self.animation.direction = self.direction;
+        // Sync animation direction only when safe (prevents moonwalking):
+        // - When stationary: always safe to sync
+        // - When moving: only if movement direction matches player direction
+        let should_sync_direction = match movement_dir {
+            None => true,  // Stationary - safe to sync
+            Some(move_dir) => move_dir == self.direction,  // Moving - only if aligned
+        };
+
+        if should_sync_direction {
+            self.animation.direction = self.direction;
+        }
 
         // Handle movement animations
         if self.is_moving {

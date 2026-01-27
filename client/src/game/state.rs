@@ -646,10 +646,27 @@ impl GameState {
     }
 
     /// Update all players - simple server-authoritative model
-    /// Direction comes from server for all players
-    pub fn update(&mut self, delta: f32, _input_dx: f32, _input_dy: f32) {
+    /// Local player facing is immediate when stationary, movement direction from server
+    pub fn update(&mut self, delta: f32, input_dx: f32, input_dy: f32) {
         // Use smoothed delta for visual interpolation (reduces jitter from frame variance)
         let visual_delta = self.frame_timings.smoothed_delta;
+
+        // Update local player facing immediately when stationary (responsive feel)
+        if let Some(local_id) = &self.local_player_id {
+            if let Some(player) = self.players.get_mut(local_id) {
+                // Only update direction from input when stationary and not attacking
+                let is_stationary = !player.is_moving && player.vel_x == 0.0 && player.vel_y == 0.0;
+                let is_attacking = matches!(
+                    player.animation.state,
+                    AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
+                );
+                if is_stationary && !is_attacking && (input_dx != 0.0 || input_dy != 0.0) {
+                    let new_dir = super::entities::Direction::from_velocity(input_dx, input_dy);
+                    player.direction = new_dir;
+                    player.animation.direction = new_dir;
+                }
+            }
+        }
 
         // Update all players (smooth interpolation toward server positions)
         for player in self.players.values_mut() {
