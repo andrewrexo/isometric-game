@@ -103,7 +103,7 @@ impl CardinalDir {
 }
 
 /// Threshold for distinguishing face vs move (in seconds)
-const FACE_THRESHOLD: f64 = 0.05; // 100ms
+const FACE_THRESHOLD: f64 = 0.15; // 150ms - time to hold before movement starts (taps shorter than this = face only)
 
 pub struct InputHandler {
     // Track last sent velocity to detect changes
@@ -733,6 +733,11 @@ impl InputHandler {
                         UiElementId::EscapeMenuChatLogToggle => {
                             audio.play_sfx("enter");
                             state.ui_state.chat_log_visible = !state.ui_state.chat_log_visible;
+                            return commands;
+                        }
+                        UiElementId::EscapeMenuTapPathfindToggle => {
+                            audio.play_sfx("enter");
+                            state.ui_state.tap_to_pathfind = !state.ui_state.tap_to_pathfind;
                             return commands;
                         }
                         UiElementId::EscapeMenuDisconnect => {
@@ -1958,8 +1963,8 @@ impl InputHandler {
             } else if let Some(entity_id) = clicked_player {
                 // Player clicked - target them
                 commands.push(InputCommand::Target { entity_id });
-            } else {
-                // Clicked on empty space - try to path there
+            } else if state.ui_state.tap_to_pathfind {
+                // Clicked on empty space - try to path there (if tap-to-pathfind enabled)
                 let tile_x = world_x.round() as i32;
                 let tile_y = world_y.round() as i32;
 

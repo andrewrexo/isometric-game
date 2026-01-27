@@ -3087,28 +3087,30 @@ impl Renderer {
             }
         }
 
-        // Chat messages (bottom-left) with text wrapping
-        let chat_x = 10.0;
-        let (_, chat_sh) = virtual_screen_size();
-        let chat_y = chat_sh - 20.0;
-        let line_height = 18.0;
-        let max_chat_width = 400.0;
-        let font_size = 16.0;
+        // Chat messages (bottom-left) with text wrapping - only if visible
+        if state.ui_state.chat_log_visible {
+            let chat_x = 10.0;
+            let (_, chat_sh) = virtual_screen_size();
+            let chat_y = chat_sh - 20.0;
+            let line_height = 18.0;
+            let max_chat_width = 400.0;
+            let font_size = 16.0;
 
-        let mut current_y = chat_y;
-        for msg in state.ui_state.chat_messages.iter().rev().take(5) {
-            // Channel-specific formatting and colors
-            let (color, text) = match msg.channel {
-                ChatChannel::Local => (WHITE, format!("{}: {}", msg.sender_name, msg.text)),
-                ChatChannel::Global => (SKYBLUE, format!("[G] {}: {}", msg.sender_name, msg.text)),
-                ChatChannel::System => (YELLOW, format!("{} {}", msg.sender_name, msg.text)),
-            };
-            let wrapped_lines = self.wrap_text(&text, max_chat_width, font_size);
+            let mut current_y = chat_y;
+            for msg in state.ui_state.chat_messages.iter().rev().take(5) {
+                // Channel-specific formatting and colors
+                let (color, text) = match msg.channel {
+                    ChatChannel::Local => (WHITE, format!("{}: {}", msg.sender_name, msg.text)),
+                    ChatChannel::Global => (SKYBLUE, format!("[G] {}: {}", msg.sender_name, msg.text)),
+                    ChatChannel::System => (YELLOW, format!("{} {}", msg.sender_name, msg.text)),
+                };
+                let wrapped_lines = self.wrap_text(&text, max_chat_width, font_size);
 
-            // Draw lines from bottom to top (reversed)
-            for line in wrapped_lines.iter().rev() {
-                self.draw_text_sharp(line, chat_x, current_y, font_size, color);
-                current_y -= line_height;
+                // Draw lines from bottom to top (reversed)
+                for line in wrapped_lines.iter().rev() {
+                    self.draw_text_sharp(line, chat_x, current_y, font_size, color);
+                    current_y -= line_height;
+                }
             }
         }
 

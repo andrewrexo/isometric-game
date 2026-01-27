@@ -456,6 +456,8 @@ pub struct UiState {
     pub announcements: Vec<Announcement>,
     // Chat log visibility (hidden by default on mobile)
     pub chat_log_visible: bool,
+    // Tap-to-pathfind (enabled by default on mobile, disabled on desktop)
+    pub tap_to_pathfind: bool,
 }
 
 impl Default for UiState {
@@ -512,6 +514,10 @@ impl Default for UiState {
             chat_log_visible: false,
             #[cfg(not(target_os = "android"))]
             chat_log_visible: true,
+            #[cfg(target_os = "android")]
+            tap_to_pathfind: false,
+            #[cfg(not(target_os = "android"))]
+            tap_to_pathfind: true,
         }
     }
 }

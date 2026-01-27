@@ -248,8 +248,19 @@ impl Renderer {
         let chat_log_text = if state.ui_state.chat_log_visible { "Chat Log: ON" } else { "Chat Log: OFF" };
         draw_button(shift_drop_btn_x, chat_log_btn_y, shift_drop_btn_width, shift_drop_btn_height, chat_log_text, state.ui_state.chat_log_visible, is_chat_log_hovered, self);
 
+        // Tap-to-Pathfind toggle button
+        let tap_path_btn_y = (chat_log_btn_y + shift_drop_btn_height + 6.0).floor();
+        let tap_path_bounds = Rect::new(shift_drop_btn_x, tap_path_btn_y, shift_drop_btn_width, shift_drop_btn_height);
+        layout.add(UiElementId::EscapeMenuTapPathfindToggle, tap_path_bounds);
+
+        let is_tap_path_hovered = mouse_x >= tap_path_bounds.x && mouse_x <= tap_path_bounds.x + tap_path_bounds.w
+            && mouse_y >= tap_path_bounds.y && mouse_y <= tap_path_bounds.y + tap_path_bounds.h;
+
+        let tap_path_text = if state.ui_state.tap_to_pathfind { "Tap Walk: ON" } else { "Tap Walk: OFF" };
+        draw_button(shift_drop_btn_x, tap_path_btn_y, shift_drop_btn_width, shift_drop_btn_height, tap_path_text, state.ui_state.tap_to_pathfind, is_tap_path_hovered, self);
+
         // ===== CONTROLS SECTION =====
-        let controls_y = chat_log_btn_y + shift_drop_btn_height + 16.0;
+        let controls_y = tap_path_btn_y + shift_drop_btn_height + 16.0;
         self.draw_text_sharp("Controls", content_x.floor(), (controls_y + 12.0).floor(), 16.0, TEXT_DIM);
 
         let controls_text_y = controls_y + 28.0;

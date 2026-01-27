@@ -100,8 +100,8 @@ impl VirtualDPad {
 
         Self {
             center: vec2(center_x, center_y),
-            button_size: 44.0,
-            gap: 4.0,
+            button_size: 52.0,
+            gap: 2.0,
             current_dir: DPadDirection::None,
             touch_id: None,
             press_time: 0.0,
@@ -419,7 +419,7 @@ impl TouchButton {
         );
 
         // Draw label
-        let font_size = 24.0;
+        let font_size = 16.0;
         let text_dim = measure_text(&self.label, None, font_size as u16, 1.0);
         draw_text(
             &self.label,
