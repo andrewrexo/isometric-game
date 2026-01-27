@@ -111,7 +111,12 @@ impl XpGlobesManager {
     /// On tap/click, toggle tooltip for that globe (mobile support)
     pub fn update(&mut self, stats_left_x: f32, stats_center_y: f32) {
         let current_time = macroquad::time::get_time();
-        let (mouse_x, mouse_y) = mouse_position();
+        let (raw_mx, raw_my) = mouse_position();
+        let (vw, vh) = virtual_screen_size();
+        let sw = screen_width();
+        let sh = screen_height();
+        let mouse_x = raw_mx * vw / sw;
+        let mouse_y = raw_my * vh / sh;
         let just_pressed = is_mouse_button_pressed(MouseButton::Left);
 
         // Check each globe for hover and reset timer if hovered
@@ -318,7 +323,12 @@ impl Renderer {
     /// Render tooltip for XP globe if mouse is hovering over one or one is tapped
     pub fn render_xp_globe_tooltip(&self, xp_globes: &XpGlobesManager, stats_left_x: f32, stats_center_y: f32) {
         let current_time = macroquad::time::get_time();
-        let (mouse_x, mouse_y) = mouse_position();
+        let (raw_mx, raw_my) = mouse_position();
+        let (vw, vh) = virtual_screen_size();
+        let sw = screen_width();
+        let sh = screen_height();
+        let mouse_x = raw_mx * vw / sw;
+        let mouse_y = raw_my * vh / sh;
 
         // Check each globe for hover (same positioning logic as render)
         let mut x = stats_left_x - STATS_PADDING - GLOBE_SPACING - GLOBE_SIZE;
@@ -334,10 +344,13 @@ impl Renderer {
             let center_y = stats_center_y;
             let radius = GLOBE_SIZE / 2.0;
 
-            // Show tooltip if mouse is hovering over this globe
+            // Show tooltip if mouse is hovering over this globe (desktop only)
             let dx = mouse_x - center_x;
             let dy = mouse_y - center_y;
+            #[cfg(not(target_os = "android"))]
             let is_hovered = dx * dx + dy * dy <= radius * radius;
+            #[cfg(target_os = "android")]
+            let is_hovered = false; // On mobile, use tap-to-pin only
 
             // Also show tooltip if this globe was tapped (mobile support)
             let is_tapped = xp_globes.tapped_skill == Some(globe.skill_type);

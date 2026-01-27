@@ -749,7 +749,8 @@ impl GameState {
         let base_y = 25.0;
         let tag_height = 22.0;
         let bar_width = 120.0_f32.max(140.0);
-        let bar_x = (macroquad::window::screen_width() - bar_width - margin).floor();
+        let (vw, _) = crate::util::virtual_screen_size();
+        let bar_x = (vw - bar_width - margin).floor();
         let globe_stats_y = base_y + tag_height / 2.0 + 8.0;
         self.xp_globes.update(bar_x, globe_stats_y);
     }
