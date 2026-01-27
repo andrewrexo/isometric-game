@@ -562,6 +562,7 @@ impl Database {
         equipped_gloves: Option<&str>,
         equipped_necklace: Option<&str>,
         equipped_belt: Option<&str>,
+        played_time_delta: i64,
     ) -> Result<(), sqlx::Error> {
         // Serialize skills to JSON for the skills_json column
         let skills_json = serde_json::to_string(skills).unwrap_or_else(|_| "{}".to_string());
@@ -576,7 +577,8 @@ impl Database {
                 gold = ?, inventory_json = ?, skills_json = ?,
                 equipped_head = ?, equipped_body = ?, equipped_weapon = ?,
                 equipped_back = ?, equipped_feet = ?, equipped_ring = ?,
-                equipped_gloves = ?, equipped_necklace = ?, equipped_belt = ?
+                equipped_gloves = ?, equipped_necklace = ?, equipped_belt = ?,
+                played_time = played_time + ?
             WHERE id = ?"#,
         )
         .bind(x)
@@ -596,6 +598,7 @@ impl Database {
         .bind(equipped_gloves)
         .bind(equipped_necklace)
         .bind(equipped_belt)
+        .bind(played_time_delta)
         .bind(character_id)
         .execute(&self.pool)
         .await?;

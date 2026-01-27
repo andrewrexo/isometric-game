@@ -90,6 +90,8 @@ struct AppState {
     player_instances: Arc<RwLock<HashMap<String, String>>>,
     /// Tracks where each player entered their current interior from (for return teleport)
     player_entrance_positions: Arc<RwLock<HashMap<String, (i32, i32)>>>,
+    /// Character ID -> last time played_time was flushed to DB (for incremental play time tracking)
+    play_time_anchors: Arc<DashMap<i64, std::time::Instant>>,
 }
 
 impl AppState {
@@ -178,6 +180,7 @@ impl AppState {
             instance_manager,
             player_instances: Arc::new(RwLock::new(HashMap::new())),
             player_entrance_positions: Arc::new(RwLock::new(HashMap::new())),
+            play_time_anchors: Arc::new(DashMap::new()),
         }
     }
 
@@ -914,6 +917,9 @@ async fn matchmake_join_or_create(
         },
     );
 
+    // Start tracking play time for this character
+    state.play_time_anchors.insert(character_id, std::time::Instant::now());
+
     // Load saved character into the game room
     info!("Loading character: {} (id: {}) at ({}, {}) as {} {}",
         character_data.name, character_id, character_data.x, character_data.y,
@@ -1232,6 +1238,11 @@ async fn handle_socket(
             .map(|s| s.character_id)
             .unwrap_or(0);
 
+        // Compute played time delta from anchor
+        let played_time_delta = state.play_time_anchors.remove(&character_id)
+            .map(|(_, anchor)| anchor.elapsed().as_secs() as i64)
+            .unwrap_or(0);
+
         // Save character state to database
         if let Some(save_data) = room.get_player_save_data(&player_id).await {
             if let Err(e) = state.db.save_character(
@@ -1251,10 +1262,11 @@ async fn handle_socket(
                 save_data.equipped_gloves.as_deref(),
                 save_data.equipped_necklace.as_deref(),
                 save_data.equipped_belt.as_deref(),
+                played_time_delta,
             ).await {
                 error!("Failed to save character {} on disconnect: {}", character_name, e);
             } else {
-                info!("Saved character {} to database on disconnect", character_name);
+                info!("Saved character {} to database on disconnect (played_time +{}s)", character_name, played_time_delta);
             }
         }
 
@@ -1817,6 +1829,14 @@ async fn main() {
                 // Get the room and character save data
                 if let Some(room) = save_state.rooms.get(room_id) {
                     if let Some(save_data) = room.get_player_save_data(player_id).await {
+                        // Compute played time delta and reset anchor
+                        let played_time_delta = save_state.play_time_anchors
+                            .get(&character_id)
+                            .map(|anchor| anchor.elapsed().as_secs() as i64)
+                            .unwrap_or(0);
+                        // Reset the anchor to now
+                        save_state.play_time_anchors.insert(character_id, std::time::Instant::now());
+
                         if let Err(e) = save_state.db.save_character(
                             character_id,
                             save_data.x,
@@ -1834,6 +1854,7 @@ async fn main() {
                             save_data.equipped_gloves.as_deref(),
                             save_data.equipped_necklace.as_deref(),
                             save_data.equipped_belt.as_deref(),
+                            played_time_delta,
                         ).await {
                             warn!("Auto-save failed for character {}: {}", character_name, e);
                         } else {
