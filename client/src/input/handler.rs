@@ -149,7 +149,7 @@ impl InputHandler {
         let current_time = get_time();
 
         // Update touch controls (for mobile)
-        self.touch_controls.update();
+        self.touch_controls.update(current_time);
 
         // Get current mouse/touch position in virtual coordinates (for UI hit detection)
         let (raw_mx, raw_my) = mouse_position();
@@ -1405,18 +1405,20 @@ impl InputHandler {
         let left = is_key_down(KeyCode::A) || is_key_down(KeyCode::Left);
         let right = is_key_down(KeyCode::D) || is_key_down(KeyCode::Right);
 
-        // Get touch joystick input (for mobile)
-        let (touch_dx, touch_dy) = self.touch_controls.get_movement();
-        let has_touch_input = touch_dx.abs() > 0.1 || touch_dy.abs() > 0.1;
+        // Get touch D-pad input (for mobile)
+        use crate::input::touch::DPadDirection;
+        let dpad_dir = self.touch_controls.get_direction();
+        let dpad_released = self.touch_controls.get_just_released_direction();
+        let has_dpad_input = dpad_dir != DPadDirection::None;
 
-        // Cancel auto-path if any movement input (keyboard or touch)
-        if up || down || left || right || has_touch_input {
+        // Cancel auto-path if any movement input (keyboard or D-pad)
+        if up || down || left || right || has_dpad_input {
             state.clear_auto_path();
         }
 
-        // Determine new direction - only one direction at a time
+        // Determine new direction from keyboard - only one direction at a time
         // Priority: keep current direction if still held, otherwise pick new one
-        let new_dir = match self.current_dir {
+        let keyboard_dir = match self.current_dir {
             CardinalDir::Up if up => CardinalDir::Up,
             CardinalDir::Down if down => CardinalDir::Down,
             CardinalDir::Left if left => CardinalDir::Left,
@@ -1431,16 +1433,29 @@ impl InputHandler {
             }
         };
 
-        // Detect direction changes for face vs move logic
-        let dir_changed = new_dir != self.prev_dir;
+        // Combine keyboard and D-pad: D-pad takes priority if active
+        let new_dir = if has_dpad_input {
+            match dpad_dir {
+                DPadDirection::Up => CardinalDir::Up,
+                DPadDirection::Down => CardinalDir::Down,
+                DPadDirection::Left => CardinalDir::Left,
+                DPadDirection::Right => CardinalDir::Right,
+                DPadDirection::None => keyboard_dir,
+            }
+        } else {
+            keyboard_dir
+        };
 
-        // Handle direction key press/release for face vs move
-        if dir_changed {
-            if new_dir != CardinalDir::None && self.prev_dir == CardinalDir::None {
+        // Detect direction changes for face vs move logic (keyboard only - D-pad has its own tracking)
+        let dir_changed = keyboard_dir != self.prev_dir;
+
+        // Handle keyboard direction key press/release for face vs move
+        if dir_changed && !has_dpad_input {
+            if keyboard_dir != CardinalDir::None && self.prev_dir == CardinalDir::None {
                 // New direction pressed - record time
                 self.dir_press_time = current_time;
                 self.move_sent = false;
-            } else if new_dir == CardinalDir::None && self.prev_dir != CardinalDir::None {
+            } else if keyboard_dir == CardinalDir::None && self.prev_dir != CardinalDir::None {
                 // Direction released
                 let hold_duration = current_time - self.dir_press_time;
                 log::info!("[INPUT] Key released: hold_duration={:.3}s, threshold={:.3}s, move_sent={}",
@@ -1467,7 +1482,7 @@ impl InputHandler {
                         self.last_send_time = current_time;
                     }
                 }
-            } else if new_dir != CardinalDir::None && self.prev_dir != CardinalDir::None {
+            } else if keyboard_dir != CardinalDir::None && self.prev_dir != CardinalDir::None {
                 // Direction changed while holding
                 if self.move_sent {
                     // Already moving - continue moving in new direction immediately (no threshold wait)
@@ -1479,22 +1494,41 @@ impl InputHandler {
             }
         }
 
-        self.prev_dir = new_dir;
-        self.current_dir = new_dir;
-
-        // Convert direction to velocity - prefer touch input if available
-        let (dx, dy): (f32, f32) = if has_touch_input {
-            // Use touch joystick input directly (analog control)
-            (touch_dx, touch_dy)
-        } else {
-            // Use keyboard input (cardinal directions)
-            match new_dir {
-                CardinalDir::Up => (0.0, -1.0),
-                CardinalDir::Down => (0.0, 1.0),
-                CardinalDir::Left => (-1.0, 0.0),
-                CardinalDir::Right => (1.0, 0.0),
-                CardinalDir::None => (0.0, 0.0),
+        // Handle D-pad release for tap-to-face
+        if dpad_released != DPadDirection::None {
+            if self.touch_controls.was_dpad_move_sent() {
+                // Was moving, now stopped - send stop command
+                commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
+                self.last_dx = 0.0;
+                self.last_dy = 0.0;
+                self.last_send_time = current_time;
+            } else {
+                // Quick tap - send Face command
+                let attack_anim = state.get_local_player().map_or(false, |p| {
+                    matches!(
+                        p.animation.state,
+                        AnimationState::Attacking | AnimationState::Casting | AnimationState::ShootingBow
+                    )
+                });
+                if !attack_anim {
+                    let dir = dpad_released.to_direction_u8();
+                    log::info!("[INPUT] D-pad tap - sending Face command: direction={}", dir);
+                    commands.push(InputCommand::Face { direction: dir });
+                    self.last_send_time = current_time;
+                }
             }
+        }
+
+        self.prev_dir = keyboard_dir;
+        self.current_dir = keyboard_dir;
+
+        // Convert direction to velocity
+        let (dx, dy): (f32, f32) = match new_dir {
+            CardinalDir::Up => (0.0, -1.0),
+            CardinalDir::Down => (0.0, 1.0),
+            CardinalDir::Left => (-1.0, 0.0),
+            CardinalDir::Right => (1.0, 0.0),
+            CardinalDir::None => (0.0, 0.0),
         };
 
         // Only send Move commands if held past the threshold
@@ -1506,16 +1540,20 @@ impl InputHandler {
             )
         });
 
-        // Check if we have any movement input (keyboard or touch)
-        let has_movement_input = new_dir != CardinalDir::None || has_touch_input;
+        // Check if we have any movement input (keyboard or D-pad)
+        let has_movement_input = new_dir != CardinalDir::None;
 
         if has_movement_input && !is_attacking {
-            // For touch input, skip the face threshold (move immediately)
-            // For keyboard, respect the threshold for tap-to-face behavior
-            let hold_duration = current_time - self.dir_press_time;
-            let past_threshold = has_touch_input || hold_duration >= FACE_THRESHOLD;
+            // Determine hold duration based on input source
+            let hold_duration = if has_dpad_input {
+                current_time - self.touch_controls.get_dpad_press_time()
+            } else {
+                current_time - self.dir_press_time
+            };
+            let past_threshold = hold_duration >= FACE_THRESHOLD;
+
             if past_threshold {
-                // Past threshold (or touch input) - check if target tile is walkable before sending movement
+                // Past threshold - check if target tile is walkable before sending movement
                 let can_move = if let Some(player) = state.get_local_player() {
                     let player_x = player.x.round() as i32;
                     let player_y = player.y.round() as i32;
@@ -1545,21 +1583,21 @@ impl InputHandler {
                         self.last_dy = dy;
                         self.last_send_time = current_time;
                         self.move_sent = true;
+                        // Also track D-pad move sent
+                        if has_dpad_input {
+                            self.touch_controls.set_dpad_move_sent(true);
+                        }
                     }
                 } else {
                     // Can't move - face that direction instead
-                    if self.move_sent {
+                    if self.move_sent || self.touch_controls.was_dpad_move_sent() {
                         // Was moving, send stop
                         commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
                         self.move_sent = false;
+                        self.touch_controls.set_dpad_move_sent(false);
                     }
                     if should_send {
-                        // Derive direction from dx/dy for both keyboard and touch
-                        let face_dir = if dy < -0.5 { 0 }      // Up/North
-                            else if dy > 0.5 { 1 }             // Down/South
-                            else if dx < -0.5 { 2 }            // Left/West
-                            else if dx > 0.5 { 3 }             // Right/East
-                            else { new_dir.to_direction_u8() }; // Fallback to keyboard direction
+                        let face_dir = new_dir.to_direction_u8();
                         commands.push(InputCommand::Face { direction: face_dir });
                         self.last_dx = dx;
                         self.last_dy = dy;
@@ -1569,13 +1607,9 @@ impl InputHandler {
             }
         }
 
-        // Handle touch joystick release - send stop command
-        if self.touch_controls.enabled && !has_touch_input && self.move_sent && new_dir == CardinalDir::None {
-            commands.push(InputCommand::Move { dx: 0.0, dy: 0.0 });
-            self.last_dx = 0.0;
-            self.last_dy = 0.0;
-            self.last_send_time = current_time;
-            self.move_sent = false;
+        // Handle keyboard release when D-pad not active - send stop command
+        if !has_dpad_input && keyboard_dir == CardinalDir::None && self.move_sent {
+            // Already handled above in dir_changed block
         }
 
         // Path following - generate movement commands when auto-pathing

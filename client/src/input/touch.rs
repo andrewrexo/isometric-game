@@ -38,64 +38,124 @@ fn virtual_screen_size() -> (f32, f32) {
     }
 }
 
-/// Virtual joystick state
-pub struct VirtualJoystick {
-    /// Center position of the joystick (where finger first touched)
-    center: Option<Vec2>,
-    /// Current touch position
-    current: Option<Vec2>,
-    /// Touch ID tracking this joystick
-    touch_id: Option<u64>,
-    /// Maximum distance the stick can move from center
-    max_radius: f32,
-    /// Dead zone radius (inputs below this are ignored)
-    dead_zone: f32,
-    /// Visual radius of the joystick base
-    base_radius: f32,
-    /// Visual radius of the joystick stick
-    stick_radius: f32,
-    /// Which side of the screen (for positioning)
-    side: JoystickSide,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum JoystickSide {
+/// D-pad direction
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum DPadDirection {
+    None,
+    Up,
+    Down,
     Left,
     Right,
 }
 
-impl VirtualJoystick {
-    pub fn new(side: JoystickSide) -> Self {
-        Self {
-            center: None,
-            current: None,
-            touch_id: None,
-            max_radius: 60.0,
-            dead_zone: 10.0,
-            base_radius: 70.0,
-            stick_radius: 35.0,
-            side,
+impl DPadDirection {
+    pub fn to_direction_u8(self) -> u8 {
+        match self {
+            DPadDirection::Up => 0,
+            DPadDirection::Down => 1,
+            DPadDirection::Left => 2,
+            DPadDirection::Right => 3,
+            DPadDirection::None => 0,
         }
     }
 
-    /// Update joystick state based on touch input
-    /// Returns true if this joystick consumed the touch
-    pub fn update(&mut self, touches: &[Touch]) -> bool {
-        let (screen_w, screen_h) = virtual_screen_size();
+    pub fn to_velocity(self) -> (f32, f32) {
+        match self {
+            DPadDirection::Up => (0.0, -1.0),
+            DPadDirection::Down => (0.0, 1.0),
+            DPadDirection::Left => (-1.0, 0.0),
+            DPadDirection::Right => (1.0, 0.0),
+            DPadDirection::None => (0.0, 0.0),
+        }
+    }
+}
 
-        // Define the active zone for this joystick (left or right half of screen)
-        let zone_start = match self.side {
-            JoystickSide::Left => 0.0,
-            JoystickSide::Right => screen_w * 0.5,
+/// Virtual D-pad for mobile controls
+/// Supports tap-to-face (quick tap) vs hold-to-move (like keyboard)
+pub struct VirtualDPad {
+    /// Center position of the D-pad
+    center: Vec2,
+    /// Size of each direction button
+    button_size: f32,
+    /// Gap between buttons
+    gap: f32,
+    /// Currently pressed direction
+    current_dir: DPadDirection,
+    /// Touch ID tracking input
+    touch_id: Option<u64>,
+    /// Time when direction was first pressed
+    press_time: f64,
+    /// Whether a move command has been sent (held past threshold)
+    move_sent: bool,
+    /// Direction that was just released (for face command)
+    just_released_dir: DPadDirection,
+}
+
+impl VirtualDPad {
+    pub fn new() -> Self {
+        let (screen_w, screen_h) = virtual_screen_size();
+        // Position in bottom-left area
+        let center_x = 90.0;
+        let center_y = screen_h - 100.0;
+
+        Self {
+            center: vec2(center_x, center_y),
+            button_size: 44.0,
+            gap: 4.0,
+            current_dir: DPadDirection::None,
+            touch_id: None,
+            press_time: 0.0,
+            move_sent: false,
+            just_released_dir: DPadDirection::None,
+        }
+    }
+
+    /// Update D-pad position for current screen size
+    pub fn update_position(&mut self) {
+        let (_, screen_h) = virtual_screen_size();
+        self.center = vec2(90.0, screen_h - 100.0);
+    }
+
+    /// Get the button rect for a direction
+    fn get_button_rect(&self, dir: DPadDirection) -> (f32, f32, f32, f32) {
+        let half = self.button_size / 2.0;
+        let offset = self.button_size + self.gap;
+
+        let (ox, oy) = match dir {
+            DPadDirection::Up => (0.0, -offset),
+            DPadDirection::Down => (0.0, offset),
+            DPadDirection::Left => (-offset, 0.0),
+            DPadDirection::Right => (offset, 0.0),
+            DPadDirection::None => (0.0, 0.0),
         };
-        let zone_end = match self.side {
-            JoystickSide::Left => screen_w * 0.5,
-            JoystickSide::Right => screen_w,
-        };
+
+        (
+            self.center.x + ox - half,
+            self.center.y + oy - half,
+            self.button_size,
+            self.button_size,
+        )
+    }
+
+    /// Check which direction a point is in
+    fn hit_test(&self, x: f32, y: f32) -> DPadDirection {
+        for dir in [DPadDirection::Up, DPadDirection::Down, DPadDirection::Left, DPadDirection::Right] {
+            let (rx, ry, rw, rh) = self.get_button_rect(dir);
+            if x >= rx && x < rx + rw && y >= ry && y < ry + rh {
+                return dir;
+            }
+        }
+        DPadDirection::None
+    }
+
+    /// Update D-pad state based on touch input
+    /// Returns true if this D-pad consumed the touch
+    pub fn update(&mut self, touches: &[Touch], current_time: f64) -> bool {
+        let (screen_w, _) = virtual_screen_size();
+        self.just_released_dir = DPadDirection::None;
 
         // If we're tracking a touch, update or release it
         if let Some(tracking_id) = self.touch_id {
-            // Find our tracked touch
             let tracked = touches.iter().find(|t| t.id == tracking_id);
 
             match tracked {
@@ -103,33 +163,64 @@ impl VirtualJoystick {
                     match touch.phase {
                         TouchPhase::Moved | TouchPhase::Stationary => {
                             let (vx, vy) = to_virtual_coords(touch.position.x, touch.position.y);
-                            self.current = Some(vec2(vx, vy));
+                            let new_dir = self.hit_test(vx, vy);
+
+                            // Direction changed while touching
+                            if new_dir != self.current_dir {
+                                if new_dir != DPadDirection::None {
+                                    // Moved to new direction
+                                    self.current_dir = new_dir;
+                                    if !self.move_sent {
+                                        // Restart timer if we haven't started moving yet
+                                        self.press_time = current_time;
+                                    }
+                                } else {
+                                    // Moved off all buttons but still touching
+                                    // Keep current direction for now
+                                }
+                            }
                         }
                         TouchPhase::Ended | TouchPhase::Cancelled => {
+                            self.just_released_dir = self.current_dir;
                             self.release();
                         }
                         _ => {}
                     }
                 }
                 None => {
-                    // Touch disappeared
+                    self.just_released_dir = self.current_dir;
                     self.release();
                 }
             }
             return true;
         }
 
-        // Look for a new touch in our zone
+        // Look for a new touch on the D-pad (left side of screen)
         for touch in touches {
             if touch.phase == TouchPhase::Started {
                 let (x, y) = to_virtual_coords(touch.position.x, touch.position.y);
 
-                // Check if touch is in our zone and in the lower portion of screen
-                if x >= zone_start && x < zone_end && y > screen_h * 0.3 {
-                    self.touch_id = Some(touch.id);
-                    self.center = Some(vec2(x, y));
-                    self.current = Some(vec2(x, y));
-                    return true;
+                // Only respond to touches on left half of screen
+                if x < screen_w * 0.5 {
+                    let dir = self.hit_test(x, y);
+                    if dir != DPadDirection::None {
+                        self.touch_id = Some(touch.id);
+                        self.current_dir = dir;
+                        self.press_time = current_time;
+                        self.move_sent = false;
+
+                        // Check if this same touch also ended in this frame (very quick tap)
+                        // This happens when Started and Ended occur in the same frame
+                        let also_ended = touches.iter().any(|t| {
+                            t.id == touch.id && matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+                        });
+                        if also_ended {
+                            self.just_released_dir = dir;
+                            self.release();
+                        }
+
+                        return true;
+                    }
                 }
             }
         }
@@ -137,82 +228,82 @@ impl VirtualJoystick {
         false
     }
 
-    /// Release the joystick
+    /// Release the D-pad
     fn release(&mut self) {
         self.touch_id = None;
-        self.center = None;
-        self.current = None;
+        self.current_dir = DPadDirection::None;
+        self.move_sent = false;
     }
 
-    /// Get the joystick input as a normalized vector (-1 to 1 on each axis)
-    pub fn get_input(&self) -> Vec2 {
-        match (self.center, self.current) {
-            (Some(center), Some(current)) => {
-                let delta = current - center;
-                let distance = delta.length();
-
-                if distance < self.dead_zone {
-                    return Vec2::ZERO;
-                }
-
-                // Normalize and clamp to max radius
-                let clamped_distance = distance.min(self.max_radius);
-                let normalized = delta.normalize_or_zero();
-
-                // Scale to 0-1 range (accounting for dead zone)
-                let effective_distance = (clamped_distance - self.dead_zone) / (self.max_radius - self.dead_zone);
-
-                normalized * effective_distance
-            }
-            _ => Vec2::ZERO,
-        }
+    /// Get current direction (None if not pressed)
+    pub fn get_direction(&self) -> DPadDirection {
+        self.current_dir
     }
 
-    /// Check if the joystick is currently active
+    /// Get the direction that was just released (for face command detection)
+    pub fn get_just_released(&self) -> DPadDirection {
+        self.just_released_dir
+    }
+
+    /// Get press time for threshold checking
+    pub fn get_press_time(&self) -> f64 {
+        self.press_time
+    }
+
+    /// Mark that a move command was sent (held past threshold)
+    pub fn set_move_sent(&mut self, sent: bool) {
+        self.move_sent = sent;
+    }
+
+    /// Check if move was sent (held past threshold)
+    pub fn was_move_sent(&self) -> bool {
+        self.move_sent
+    }
+
+    /// Check if D-pad is active
     pub fn is_active(&self) -> bool {
         self.touch_id.is_some()
     }
 
-    /// Render the joystick
+    /// Render the D-pad
     pub fn render(&self) {
-        if let (Some(center), Some(current)) = (self.center, self.current) {
-            // Draw base circle (semi-transparent)
-            draw_circle(
-                center.x,
-                center.y,
-                self.base_radius,
-                Color::new(1.0, 1.0, 1.0, 0.2),
-            );
-            draw_circle_lines(
-                center.x,
-                center.y,
-                self.base_radius,
-                2.0,
-                Color::new(1.0, 1.0, 1.0, 0.4),
-            );
+        let directions = [DPadDirection::Up, DPadDirection::Down, DPadDirection::Left, DPadDirection::Right];
+        let arrows = ["^", "v", "<", ">"];
 
-            // Calculate stick position (clamped to max radius)
-            let delta = current - center;
-            let distance = delta.length().min(self.max_radius);
-            let stick_pos = if delta.length() > 0.0 {
-                center + delta.normalize() * distance
+        for (dir, arrow) in directions.iter().zip(arrows.iter()) {
+            let (x, y, w, h) = self.get_button_rect(*dir);
+            let is_pressed = self.current_dir == *dir;
+
+            // Button background
+            let bg_color = if is_pressed {
+                Color::new(1.0, 1.0, 1.0, 0.4)
             } else {
-                center
+                Color::new(1.0, 1.0, 1.0, 0.15)
             };
+            draw_rectangle(x, y, w, h, bg_color);
 
-            // Draw stick
-            draw_circle(
-                stick_pos.x,
-                stick_pos.y,
-                self.stick_radius,
-                Color::new(1.0, 1.0, 1.0, 0.5),
-            );
-            draw_circle_lines(
-                stick_pos.x,
-                stick_pos.y,
-                self.stick_radius,
-                2.0,
-                Color::new(1.0, 1.0, 1.0, 0.7),
+            // Button border
+            let border_color = if is_pressed {
+                Color::new(1.0, 1.0, 1.0, 0.8)
+            } else {
+                Color::new(1.0, 1.0, 1.0, 0.3)
+            };
+            draw_rectangle_lines(x, y, w, h, 2.0, border_color);
+
+            // Arrow
+            let font_size = 16.0;
+            let text_dim = measure_text(arrow, None, font_size as u16, 1.0);
+            let text_color = if is_pressed {
+                WHITE
+            } else {
+                Color::new(0.95, 0.95, 0.95, 0.9)
+            };
+            draw_text(
+                arrow,
+                x + (w - text_dim.width) / 2.0,
+                y + (h + text_dim.height) / 2.0,
+                font_size,
+                text_color,
             );
         }
     }
@@ -342,7 +433,7 @@ impl TouchButton {
 
 /// Container for all touch controls
 pub struct TouchControls {
-    pub joystick: VirtualJoystick,
+    pub dpad: VirtualDPad,
     pub attack_button: TouchButton,
     pub interact_button: TouchButton,
     /// Whether touch controls are enabled (typically only on Android)
@@ -363,7 +454,7 @@ impl TouchControls {
         let interact_y = screen_h - 85.0;
 
         Self {
-            joystick: VirtualJoystick::new(JoystickSide::Left),
+            dpad: VirtualDPad::new(),
             attack_button: TouchButton::new(attack_x, attack_y, 40.0, "ATK"),
             interact_button: TouchButton::new(interact_x, interact_y, 32.0, "USE"),
             #[cfg(target_os = "android")]
@@ -375,30 +466,30 @@ impl TouchControls {
     }
 
     /// Update all touch controls
-    pub fn update(&mut self) {
+    pub fn update(&mut self, current_time: f64) {
         self.touch_consumed = false;
 
         if !self.enabled {
             return;
         }
 
-        // Update button positions for current virtual screen size (above menu buttons)
+        // Update positions for current virtual screen size
         let (screen_w, screen_h) = virtual_screen_size();
         self.attack_button.set_position(screen_w - 55.0, screen_h - 130.0);
         self.interact_button.set_position(screen_w - 115.0, screen_h - 85.0);
+        self.dpad.update_position();
 
         // Get all current touches
         let touches: Vec<Touch> = touches();
 
         // Update each control (order matters - buttons first to consume their touches)
-        // Track if any control consumed a touch
         let attack_consumed = self.attack_button.update(&touches);
         let interact_consumed = self.interact_button.update(&touches);
-        let joystick_consumed = self.joystick.update(&touches);
+        let dpad_consumed = self.dpad.update(&touches, current_time);
 
         // Mark touch as consumed if any control is active or just received input
-        self.touch_consumed = attack_consumed || interact_consumed || joystick_consumed
-            || self.joystick.is_active()
+        self.touch_consumed = attack_consumed || interact_consumed || dpad_consumed
+            || self.dpad.is_active()
             || self.attack_button.is_pressed()
             || self.interact_button.is_pressed();
     }
@@ -415,23 +506,45 @@ impl TouchControls {
             return;
         }
 
-        self.joystick.render();
+        self.dpad.render();
         self.attack_button.render();
         self.interact_button.render();
     }
 
-    /// Get movement input from joystick
-    pub fn get_movement(&self) -> (f32, f32) {
+    /// Get current D-pad direction
+    pub fn get_direction(&self) -> DPadDirection {
         if !self.enabled {
-            return (0.0, 0.0);
+            return DPadDirection::None;
         }
-        let input = self.joystick.get_input();
-        (input.x, input.y)
+        self.dpad.get_direction()
     }
 
-    /// Check if attack was just pressed
+    /// Get direction that was just released (for tap-to-face)
+    pub fn get_just_released_direction(&self) -> DPadDirection {
+        if !self.enabled {
+            return DPadDirection::None;
+        }
+        self.dpad.get_just_released()
+    }
+
+    /// Get D-pad press time for threshold checking
+    pub fn get_dpad_press_time(&self) -> f64 {
+        self.dpad.get_press_time()
+    }
+
+    /// Mark that a move command was sent
+    pub fn set_dpad_move_sent(&mut self, sent: bool) {
+        self.dpad.set_move_sent(sent);
+    }
+
+    /// Check if D-pad move was sent (held past threshold)
+    pub fn was_dpad_move_sent(&self) -> bool {
+        self.dpad.was_move_sent()
+    }
+
+    /// Check if attack button is held (for continuous attacking like space bar)
     pub fn attack_pressed(&self) -> bool {
-        self.enabled && self.attack_button.just_pressed()
+        self.enabled && self.attack_button.is_pressed()
     }
 
     /// Check if interact was just pressed
