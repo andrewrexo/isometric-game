@@ -82,11 +82,13 @@ impl XpGlobe {
 #[derive(Default)]
 pub struct XpGlobesManager {
     pub globes: Vec<XpGlobe>,
+    /// Which skill's globe tooltip is pinned open (for mobile tap support)
+    pub tapped_skill: Option<SkillType>,
 }
 
 impl XpGlobesManager {
     pub fn new() -> Self {
-        Self { globes: Vec::new() }
+        Self { globes: Vec::new(), tapped_skill: None }
     }
 
     /// Handle an XP gain event
@@ -106,13 +108,16 @@ impl XpGlobesManager {
 
     /// Update globes, removing expired ones
     /// If mouse is hovering over any globe, keep it alive
+    /// On tap/click, toggle tooltip for that globe (mobile support)
     pub fn update(&mut self, stats_left_x: f32, stats_center_y: f32) {
         let current_time = macroquad::time::get_time();
         let (mouse_x, mouse_y) = mouse_position();
+        let just_pressed = is_mouse_button_pressed(MouseButton::Left);
 
         // Check each globe for hover and reset timer if hovered
         // Use generous hit detection (square area) since position calc may be approximate
         let mut x = stats_left_x - STATS_PADDING - GLOBE_SPACING - GLOBE_SIZE;
+        let mut tapped_any = false;
         for globe in self.globes.iter_mut().rev() {
             let center_x = x + GLOBE_SIZE / 2.0;
             let center_y = stats_center_y;
@@ -124,9 +129,31 @@ impl XpGlobesManager {
             if dx <= half_size && dy <= half_size {
                 // Mouse is hovering - reset timer to keep it visible
                 globe.last_updated = current_time;
+
+                // Handle tap to toggle tooltip (for mobile)
+                if just_pressed {
+                    tapped_any = true;
+                    if self.tapped_skill == Some(globe.skill_type) {
+                        self.tapped_skill = None;
+                    } else {
+                        self.tapped_skill = Some(globe.skill_type);
+                    }
+                }
             }
 
             x -= GLOBE_SIZE + GLOBE_SPACING;
+        }
+
+        // If tapped elsewhere, dismiss the tooltip
+        if just_pressed && !tapped_any {
+            self.tapped_skill = None;
+        }
+
+        // Clear tapped_skill if that globe no longer exists
+        if let Some(skill) = self.tapped_skill {
+            if !self.globes.iter().any(|g| g.skill_type == skill && !g.is_expired(current_time)) {
+                self.tapped_skill = None;
+            }
         }
 
         // Remove expired globes
@@ -288,7 +315,7 @@ impl Renderer {
         }
     }
 
-    /// Render tooltip for XP globe if mouse is hovering over one
+    /// Render tooltip for XP globe if mouse is hovering over one or one is tapped
     pub fn render_xp_globe_tooltip(&self, xp_globes: &XpGlobesManager, stats_left_x: f32, stats_center_y: f32) {
         let current_time = macroquad::time::get_time();
         let (mouse_x, mouse_y) = mouse_position();
@@ -307,12 +334,22 @@ impl Renderer {
             let center_y = stats_center_y;
             let radius = GLOBE_SIZE / 2.0;
 
-            // Check if mouse is within this globe
+            // Show tooltip if mouse is hovering over this globe
             let dx = mouse_x - center_x;
             let dy = mouse_y - center_y;
-            if dx * dx + dy * dy <= radius * radius {
-                // Mouse is over this globe, show tooltip
-                self.draw_xp_globe_tooltip(globe, mouse_x, mouse_y);
+            let is_hovered = dx * dx + dy * dy <= radius * radius;
+
+            // Also show tooltip if this globe was tapped (mobile support)
+            let is_tapped = xp_globes.tapped_skill == Some(globe.skill_type);
+
+            if is_hovered || is_tapped {
+                // For tapped tooltips, anchor to the globe position instead of cursor
+                let (tip_x, tip_y) = if is_tapped && !is_hovered {
+                    (center_x, center_y + radius + 4.0)
+                } else {
+                    (mouse_x, mouse_y)
+                };
+                self.draw_xp_globe_tooltip(globe, tip_x, tip_y);
                 return; // Only show one tooltip at a time
             }
 
