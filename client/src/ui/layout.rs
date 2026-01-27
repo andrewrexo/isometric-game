@@ -71,6 +71,7 @@ pub enum UiElementId {
 
     // Inventory grid scroll area
     InventoryGridArea,
+    InventoryScrollbar,
 
     // Gold Drop Dialog
     GoldDropConfirm,

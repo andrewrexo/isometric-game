@@ -942,31 +942,24 @@ impl InputHandler {
                 }
             }
 
-            // Handle mouse scrollbar dragging
+            // Handle mouse scrollbar dragging (relative/delta-based)
             if state.ui_state.dialogue_scrollbar_dragging {
                 if is_mouse_button_down(MouseButton::Left) {
-                    // Update scroll based on mouse Y position relative to track
+                    let dy = my - state.ui_state.dialogue_scrollbar_drag_last_y;
                     if let Some(track_bounds) = layout.get_bounds(&UiElementId::DialogueScrollbar) {
-                        let ratio = ((my - track_bounds.y) / track_bounds.h).clamp(0.0, 1.0);
-                        let choice_spacing: f32 = if cfg!(target_os = "android") { 48.0 } else { 32.0 };
+                        let choice_spacing: f32 = if cfg!(target_os = "android") { 38.0 } else { 32.0 };
                         let total_content = dialogue.choices.len() as f32 * choice_spacing;
-                        let max_scroll = (total_content - track_bounds.h).max(0.0);
-                        state.ui_state.dialogue_scroll_offset = ratio * max_scroll;
+                        let scale = total_content / track_bounds.h;
+                        state.ui_state.dialogue_scroll_offset = (state.ui_state.dialogue_scroll_offset + dy * scale).max(0.0);
                     }
+                    state.ui_state.dialogue_scrollbar_drag_last_y = my;
                 } else {
                     state.ui_state.dialogue_scrollbar_dragging = false;
                 }
             } else if mouse_clicked {
                 if matches!(clicked_element, Some(UiElementId::DialogueScrollbar)) {
                     state.ui_state.dialogue_scrollbar_dragging = true;
-                    // Jump scroll to click position
-                    if let Some(track_bounds) = layout.get_bounds(&UiElementId::DialogueScrollbar) {
-                        let ratio = ((my - track_bounds.y) / track_bounds.h).clamp(0.0, 1.0);
-                        let choice_spacing: f32 = if cfg!(target_os = "android") { 48.0 } else { 32.0 };
-                        let total_content = dialogue.choices.len() as f32 * choice_spacing;
-                        let max_scroll = (total_content - track_bounds.h).max(0.0);
-                        state.ui_state.dialogue_scroll_offset = ratio * max_scroll;
-                    }
+                    state.ui_state.dialogue_scrollbar_drag_last_y = my;
                 }
             }
 
@@ -2160,6 +2153,27 @@ impl InputHandler {
                 }
             }
 
+            // Mouse scrollbar dragging (relative/delta-based)
+            if state.ui_state.inventory_scrollbar_dragging {
+                if is_mouse_button_down(MouseButton::Left) {
+                    let dy = my - state.ui_state.inventory_scrollbar_drag_last_y;
+                    if let Some(track_bounds) = layout.get_bounds(&UiElementId::InventoryScrollbar) {
+                        // Scale: moving across the full track scrolls all content
+                        // Use a reasonable estimate for total content height
+                        let scale = 500.0 / track_bounds.h;
+                        state.ui_state.inventory_scroll_offset = (state.ui_state.inventory_scroll_offset + dy * scale).max(0.0);
+                    }
+                    state.ui_state.inventory_scrollbar_drag_last_y = my;
+                } else {
+                    state.ui_state.inventory_scrollbar_dragging = false;
+                }
+            } else if mouse_clicked {
+                if matches!(clicked_element, Some(UiElementId::InventoryScrollbar)) {
+                    state.ui_state.inventory_scrollbar_dragging = true;
+                    state.ui_state.inventory_scrollbar_drag_last_y = my;
+                }
+            }
+
             // Touch drag scrolling for mobile
             let all_touches: Vec<Touch> = touches();
             if let Some(tracking_id) = state.ui_state.inventory_touch_scroll_id {
@@ -2187,7 +2201,7 @@ impl InputHandler {
                         let (vx, vy) = screen_to_virtual_coords(touch.position.x, touch.position.y);
                         let over_grid = matches!(
                             layout.hit_test(vx, vy),
-                            Some(UiElementId::InventoryGridArea) | Some(UiElementId::InventorySlot(_))
+                            Some(UiElementId::InventoryGridArea) | Some(UiElementId::InventorySlot(_)) | Some(UiElementId::InventoryScrollbar)
                         );
                         if over_grid {
                             state.ui_state.inventory_touch_scroll_id = Some(touch.id);
@@ -2198,8 +2212,9 @@ impl InputHandler {
                 }
             }
         } else {
-            // Reset touch tracking when inventory closes
+            // Reset tracking when inventory closes
             state.ui_state.inventory_touch_scroll_id = None;
+            state.ui_state.inventory_scrollbar_dragging = false;
         }
 
         // Toggle character panel (C key) with mutual exclusivity

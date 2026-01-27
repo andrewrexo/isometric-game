@@ -465,11 +465,14 @@ pub struct UiState {
     pub dialogue_touch_start_y: f32,
     pub dialogue_touch_dragged: bool,
     pub dialogue_scrollbar_dragging: bool,
+    pub dialogue_scrollbar_drag_last_y: f32,
     // Inventory grid scroll offset (for small screens where not all rows fit)
     pub inventory_scroll_offset: f32,
     // Touch drag scroll tracking for inventory grid
     pub inventory_touch_scroll_id: Option<u64>,
     pub inventory_touch_last_y: f32,
+    pub inventory_scrollbar_dragging: bool,
+    pub inventory_scrollbar_drag_last_y: f32,
 }
 
 impl Default for UiState {
@@ -536,9 +539,12 @@ impl Default for UiState {
             dialogue_touch_start_y: 0.0,
             dialogue_touch_dragged: false,
             dialogue_scrollbar_dragging: false,
+            dialogue_scrollbar_drag_last_y: 0.0,
             inventory_scroll_offset: 0.0,
             inventory_touch_scroll_id: None,
             inventory_touch_last_y: 0.0,
+            inventory_scrollbar_dragging: false,
+            inventory_scrollbar_drag_last_y: 0.0,
         }
     }
 }

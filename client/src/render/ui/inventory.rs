@@ -347,6 +347,32 @@ impl Renderer {
                     );
                 }
             }
+
+            // Scrollbar track and thumb
+            let scrollbar_w: f32 = if cfg!(target_os = "android") { 12.0 } else { 8.0 };
+            let track_x = inv_x + inv_width - frame_thickness - scrollbar_w - 2.0;
+            let track_y = grid_y;
+            let track_h = visible_grid_height;
+
+            layout.add(UiElementId::InventoryScrollbar, Rect::new(track_x, track_y, scrollbar_w, track_h));
+
+            // Track background
+            draw_rectangle(track_x, track_y, scrollbar_w, track_h, Color::new(0.1, 0.09, 0.12, 0.6));
+
+            // Thumb
+            let thumb_ratio = visible_grid_height / total_grid_height;
+            let thumb_h = (track_h * thumb_ratio).max(16.0);
+            let scroll_ratio = if max_scroll > 0.0 { scroll_offset / max_scroll } else { 0.0 };
+            let thumb_y = track_y + scroll_ratio * (track_h - thumb_h);
+
+            let thumb_color = if state.ui_state.inventory_scrollbar_dragging {
+                FRAME_ACCENT
+            } else if matches!(hovered, Some(UiElementId::InventoryScrollbar)) {
+                FRAME_MID
+            } else {
+                Color::new(0.3, 0.27, 0.35, 0.8)
+            };
+            draw_rectangle(track_x + 1.0, thumb_y, scrollbar_w - 2.0, thumb_h, thumb_color);
         }
 
     }
