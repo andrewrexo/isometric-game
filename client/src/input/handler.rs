@@ -730,6 +730,11 @@ impl InputHandler {
                             state.ui_state.shift_drop_enabled = !state.ui_state.shift_drop_enabled;
                             return commands;
                         }
+                        UiElementId::EscapeMenuChatLogToggle => {
+                            audio.play_sfx("enter");
+                            state.ui_state.chat_log_visible = !state.ui_state.chat_log_visible;
+                            return commands;
+                        }
                         UiElementId::EscapeMenuDisconnect => {
                             audio.play_sfx("enter");
                             state.disconnect_requested = true;

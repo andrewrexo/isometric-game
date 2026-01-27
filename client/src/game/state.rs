@@ -454,6 +454,8 @@ pub struct UiState {
     pub double_click_state: DoubleClickState,
     // Server announcements
     pub announcements: Vec<Announcement>,
+    // Chat log visibility (hidden by default on mobile)
+    pub chat_log_visible: bool,
 }
 
 impl Default for UiState {
@@ -506,6 +508,10 @@ impl Default for UiState {
                 last_click_time: 0.0,
             },
             announcements: Vec::new(),
+            #[cfg(target_os = "android")]
+            chat_log_visible: false,
+            #[cfg(not(target_os = "android"))]
+            chat_log_visible: true,
         }
     }
 }
