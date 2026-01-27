@@ -288,9 +288,9 @@ impl Screen for LoginScreen {
         let logo_h = 60.0;
         let start_y = logo_h + 30.0;
         let username_y = start_y;
-        let username_field_y = username_y + 16.0;  // Box position (after label)
-        let password_y = username_field_y + box_height + spacing;
-        let password_field_y = password_y + 16.0;  // Box position (after label)
+        let username_field_y = username_y + 12.0;  // Box position (after label) - reduced from 16.0
+        let password_y = username_field_y + box_height + spacing + 10.0; // Added 10.0 extra margin
+        let password_field_y = password_y + 12.0;  // Box position (after label) - reduced from 16.0
         let buttons_y = password_field_y + box_height + spacing + 24.0;
 
         // Handle touch/click on input fields and buttons
@@ -478,7 +478,7 @@ impl Screen for LoginScreen {
         let username_color = if username_active { Color::from_rgba(80, 120, 180, 255) } else { Color::from_rgba(60, 60, 80, 255) };
 
         self.draw_text_sharp("Username", box_x, username_y, font_size, LIGHTGRAY);
-        let field_y = username_y + 16.0;
+        let field_y = username_y + 12.0; // Reduced from 16.0
         draw_rectangle(box_x, field_y, box_width, box_height, username_color);
         draw_rectangle_lines(box_x, field_y, box_width, box_height, 2.0, if username_active { WHITE } else { GRAY });
 
@@ -492,12 +492,12 @@ impl Screen for LoginScreen {
         self.draw_text_sharp(&username_display, box_x + 10.0, field_y + 27.0, font_size, text_color);
 
         // Password field
-        let password_y = field_y + box_height + spacing;
+        let password_y = field_y + box_height + spacing + 10.0; // Added 10.0 extra margin
         let password_active = self.active_field == LoginField::Password;
         let password_color = if password_active { Color::from_rgba(80, 120, 180, 255) } else { Color::from_rgba(60, 60, 80, 255) };
 
         self.draw_text_sharp("Password", box_x, password_y, font_size, LIGHTGRAY);
-        let pass_field_y = password_y + 16.0;
+        let pass_field_y = password_y + 12.0; // Reduced from 16.0
         draw_rectangle(box_x, pass_field_y, box_width, box_height, password_color);
         draw_rectangle_lines(box_x, pass_field_y, box_width, box_height, 2.0, if password_active { WHITE } else { GRAY });
 
