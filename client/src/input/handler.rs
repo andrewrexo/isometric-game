@@ -926,11 +926,12 @@ impl InputHandler {
                 for touch in &all_touches {
                     if touch.phase == TouchPhase::Started {
                         let (vx, vy) = screen_to_virtual_coords(touch.position.x, touch.position.y);
-                        let over_choice = matches!(
-                            layout.hit_test(vx, vy),
-                            Some(UiElementId::DialogueChoice(_))
+                        let hit = layout.hit_test(vx, vy);
+                        let over_scrollable = matches!(
+                            hit,
+                            Some(UiElementId::DialogueChoice(_)) | Some(UiElementId::DialogueScrollbar)
                         );
-                        if over_choice {
+                        if over_scrollable {
                             state.ui_state.dialogue_touch_scroll_id = Some(touch.id);
                             state.ui_state.dialogue_touch_last_y = vy;
                             state.ui_state.dialogue_touch_start_y = vy;
@@ -941,14 +942,43 @@ impl InputHandler {
                 }
             }
 
+            // Handle mouse scrollbar dragging
+            if state.ui_state.dialogue_scrollbar_dragging {
+                if is_mouse_button_down(MouseButton::Left) {
+                    // Update scroll based on mouse Y position relative to track
+                    if let Some(track_bounds) = layout.get_bounds(&UiElementId::DialogueScrollbar) {
+                        let ratio = ((my - track_bounds.y) / track_bounds.h).clamp(0.0, 1.0);
+                        let choice_spacing: f32 = if cfg!(target_os = "android") { 48.0 } else { 32.0 };
+                        let total_content = dialogue.choices.len() as f32 * choice_spacing;
+                        let max_scroll = (total_content - track_bounds.h).max(0.0);
+                        state.ui_state.dialogue_scroll_offset = ratio * max_scroll;
+                    }
+                } else {
+                    state.ui_state.dialogue_scrollbar_dragging = false;
+                }
+            } else if mouse_clicked {
+                if matches!(clicked_element, Some(UiElementId::DialogueScrollbar)) {
+                    state.ui_state.dialogue_scrollbar_dragging = true;
+                    // Jump scroll to click position
+                    if let Some(track_bounds) = layout.get_bounds(&UiElementId::DialogueScrollbar) {
+                        let ratio = ((my - track_bounds.y) / track_bounds.h).clamp(0.0, 1.0);
+                        let choice_spacing: f32 = if cfg!(target_os = "android") { 48.0 } else { 32.0 };
+                        let total_content = dialogue.choices.len() as f32 * choice_spacing;
+                        let max_scroll = (total_content - track_bounds.h).max(0.0);
+                        state.ui_state.dialogue_scroll_offset = ratio * max_scroll;
+                    }
+                }
+            }
+
             // Handle mouse/touch clicks on dialogue elements
-            // Skip if touch was a drag (scroll gesture)
+            // Skip if touch was a drag (scroll gesture) or scrollbar interaction
             let was_touch_drag = state.ui_state.dialogue_touch_dragged && state.ui_state.dialogue_touch_scroll_id.is_none();
             if was_touch_drag {
                 state.ui_state.dialogue_touch_dragged = false;
             }
+            let was_scrollbar = state.ui_state.dialogue_scrollbar_dragging;
 
-            if !was_touch_drag {
+            if !was_touch_drag && !was_scrollbar {
                 if let Some(ref element) = clicked_element {
                     match element {
                         UiElementId::DialogueChoice(idx) => {

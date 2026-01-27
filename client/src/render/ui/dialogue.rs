@@ -9,7 +9,7 @@ use super::super::Renderer;
 use super::common::*;
 
 impl Renderer {
-    pub(crate) fn render_dialogue(&self, dialogue: &ActiveDialogue, hovered: &Option<UiElementId>, layout: &mut UiLayout, scroll_offset: f32) {
+    pub(crate) fn render_dialogue(&self, dialogue: &ActiveDialogue, hovered: &Option<UiElementId>, layout: &mut UiLayout, scroll_offset: f32, scrollbar_dragging: bool) {
         let (sw, sh) = virtual_screen_size();
 
         let is_mobile = cfg!(target_os = "android");
@@ -22,7 +22,7 @@ impl Renderer {
 
         // Mobile-aware sizing
         let (choice_btn_height, choice_spacing) = if is_mobile {
-            (40.0, 48.0)
+            (30.0, 38.0)
         } else {
             (26.0, 32.0)
         };
@@ -34,7 +34,7 @@ impl Renderer {
         } else {
             dialogue.choices.len() as f32 * choice_spacing + 36.0
         };
-        let text_margin_bottom = 8.0;
+        let text_margin_bottom = 12.0;
         let ideal_box_height = 120.0 + text_margin_bottom + choice_area_height;
 
         // Clamp height to screen bounds (leave 40px top margin minimum)
@@ -114,7 +114,7 @@ impl Renderer {
 
         // Dialogue text with word wrap
         let text_x = content_x;
-        let text_y = content_y + 24.0;
+        let text_y = content_y + 28.0;
         let max_line_width = content_width;
 
         let words: Vec<&str> = dialogue.text.split_whitespace().collect();
@@ -185,6 +185,9 @@ impl Renderer {
             let needs_scroll = max_scroll > 0.0;
             let clamped_scroll = scroll_offset.clamp(0.0, max_scroll);
 
+            // Scrollbar margin
+            let scrollbar_width: f32 = if is_mobile { 20.0 } else { 14.0 };
+
             // Apply scissor clipping when choices overflow the visible area
             if needs_scroll {
                 let physical_w = screen_width();
@@ -193,10 +196,11 @@ impl Renderer {
                 let scale_y = physical_h / sh;
                 let mut gl = unsafe { get_internal_gl() };
                 gl.flush();
+                let clip_width = content_width - scrollbar_width - 4.0;
                 gl.quad_gl.scissor(Some((
                     (content_x * scale_x) as i32,
                     (choice_area_top * scale_y) as i32,
-                    (content_width * scale_x) as i32,
+                    (clip_width * scale_x) as i32,
                     (visible_choice_height * scale_y) as i32,
                 )));
             }
@@ -209,7 +213,7 @@ impl Renderer {
                     continue;
                 }
 
-                let choice_width = content_width;
+                let choice_width = if needs_scroll { content_width - scrollbar_width - 4.0 } else { content_width };
                 let choice_x = content_x;
 
                 let bounds = Rect::new(choice_x, choice_y, choice_width, choice_btn_height);
@@ -243,6 +247,32 @@ impl Renderer {
                 let mut gl = unsafe { get_internal_gl() };
                 gl.flush();
                 gl.quad_gl.scissor(None);
+
+                // Scrollbar track and thumb
+                let track_x = content_x + content_width - scrollbar_width;
+                let track_y = choice_area_top;
+                let track_h = visible_choice_height;
+
+                // Register scrollbar hit area
+                layout.add(UiElementId::DialogueScrollbar, Rect::new(track_x, track_y, scrollbar_width, track_h));
+
+                // Draw track background
+                draw_rectangle(track_x, track_y, scrollbar_width, track_h, Color::new(0.1, 0.09, 0.12, 0.6));
+
+                // Draw thumb
+                let thumb_ratio = visible_choice_height / total_choice_content;
+                let thumb_h = (track_h * thumb_ratio).max(20.0);
+                let scroll_ratio = if max_scroll > 0.0 { clamped_scroll / max_scroll } else { 0.0 };
+                let thumb_y = track_y + scroll_ratio * (track_h - thumb_h);
+
+                let thumb_color = if scrollbar_dragging {
+                    FRAME_ACCENT
+                } else if matches!(hovered, Some(UiElementId::DialogueScrollbar)) {
+                    FRAME_MID
+                } else {
+                    Color::new(0.3, 0.27, 0.35, 0.8)
+                };
+                draw_rectangle(track_x + 2.0, thumb_y, scrollbar_width - 4.0, thumb_h, thumb_color);
             }
 
             let hint_y = box_y + box_height - FRAME_THICKNESS - 10.0;

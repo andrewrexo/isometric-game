@@ -7,6 +7,7 @@ pub enum UiElementId {
     DialogueChoice(usize),
     DialogueContinue,
     DialogueClose,
+    DialogueScrollbar,
 
     // Crafting
     CraftingCategoryTab(usize),
@@ -101,6 +102,11 @@ impl UiLayout {
 
     pub fn add(&mut self, id: UiElementId, bounds: Rect) {
         self.elements.push(UiElement { id, bounds });
+    }
+
+    /// Get bounds for a specific element
+    pub fn get_bounds(&self, id: &UiElementId) -> Option<Rect> {
+        self.elements.iter().find(|e| &e.id == id).map(|e| e.bounds)
     }
 
     /// Find element at mouse position (topmost - iterate in reverse)

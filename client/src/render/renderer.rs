@@ -3335,7 +3335,7 @@ impl Renderer {
 
         // Dialogue box (when active)
         if let Some(dialogue) = &state.ui_state.active_dialogue {
-            self.render_dialogue(dialogue, hovered, &mut layout, state.ui_state.dialogue_scroll_offset);
+            self.render_dialogue(dialogue, hovered, &mut layout, state.ui_state.dialogue_scroll_offset, state.ui_state.dialogue_scrollbar_dragging);
         }
 
         // Gold drop dialog (when active)
