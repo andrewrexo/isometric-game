@@ -149,7 +149,10 @@ impl InputHandler {
         let current_time = get_time();
 
         // Update touch controls (for mobile)
-        self.touch_controls.update(current_time);
+        let hide_action_buttons = state.ui_state.inventory_open
+            || state.ui_state.character_panel_open
+            || state.ui_state.skills_open;
+        self.touch_controls.update(current_time, hide_action_buttons);
 
         // Get current mouse/touch position in virtual coordinates (for UI hit detection)
         let (raw_mx, raw_my) = mouse_position();
@@ -2042,6 +2045,64 @@ impl InputHandler {
                                 state.ui_state.social_open = false;
                 state.ui_state.skills_open = false;
             }
+        }
+
+        // Inventory grid scrolling (mouse wheel / touch drag)
+        if state.ui_state.inventory_open {
+            let (_wheel_x, wheel_y) = mouse_wheel();
+            if wheel_y != 0.0 {
+                // Check if hovering over inventory grid or any inventory slot
+                let over_inventory = matches!(
+                    &state.ui_state.hovered_element,
+                    Some(UiElementId::InventoryGridArea) | Some(UiElementId::InventorySlot(_))
+                );
+                if over_inventory {
+                    const SCROLL_SPEED: f32 = 30.0;
+                    state.ui_state.inventory_scroll_offset = (state.ui_state.inventory_scroll_offset - wheel_y * SCROLL_SPEED).max(0.0);
+                    // Max scroll will be clamped during rendering
+                }
+            }
+
+            // Touch drag scrolling for mobile
+            let all_touches: Vec<Touch> = touches();
+            if let Some(tracking_id) = state.ui_state.inventory_touch_scroll_id {
+                // We're tracking a touch - update or release
+                if let Some(touch) = all_touches.iter().find(|t| t.id == tracking_id) {
+                    match touch.phase {
+                        TouchPhase::Moved | TouchPhase::Stationary => {
+                            let (_, vy) = screen_to_virtual_coords(touch.position.x, touch.position.y);
+                            let dy = state.ui_state.inventory_touch_last_y - vy;
+                            state.ui_state.inventory_scroll_offset = (state.ui_state.inventory_scroll_offset + dy).max(0.0);
+                            state.ui_state.inventory_touch_last_y = vy;
+                        }
+                        TouchPhase::Ended | TouchPhase::Cancelled => {
+                            state.ui_state.inventory_touch_scroll_id = None;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    state.ui_state.inventory_touch_scroll_id = None;
+                }
+            } else {
+                // Look for new touch starting in the inventory grid area
+                for touch in &all_touches {
+                    if touch.phase == TouchPhase::Started {
+                        let (vx, vy) = screen_to_virtual_coords(touch.position.x, touch.position.y);
+                        let over_grid = matches!(
+                            layout.hit_test(vx, vy),
+                            Some(UiElementId::InventoryGridArea) | Some(UiElementId::InventorySlot(_))
+                        );
+                        if over_grid {
+                            state.ui_state.inventory_touch_scroll_id = Some(touch.id);
+                            state.ui_state.inventory_touch_last_y = vy;
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Reset touch tracking when inventory closes
+            state.ui_state.inventory_touch_scroll_id = None;
         }
 
         // Toggle character panel (C key) with mutual exclusivity

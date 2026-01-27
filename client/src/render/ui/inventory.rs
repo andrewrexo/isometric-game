@@ -1,6 +1,7 @@
 //! Inventory panel rendering
 
 use macroquad::prelude::*;
+use macroquad::window::get_internal_gl;
 use crate::game::{GameState, DragState, DragSource};
 use crate::ui::{UiElementId, UiLayout};
 use crate::util::virtual_screen_size;
@@ -120,7 +121,7 @@ impl Renderer {
 
         // Scaled dimensions (keep font at native size for crisp rendering)
         let inv_width = INV_WIDTH * scale;
-        let inv_height = INV_HEIGHT * scale;
+        let inv_height_full = INV_HEIGHT * scale;
         let frame_thickness = FRAME_THICKNESS * scale;
         let header_height = HEADER_HEIGHT * scale;
         let button_size = MENU_BUTTON_SIZE * scale;
@@ -129,6 +130,13 @@ impl Renderer {
         // Position panel on right side, above the menu buttons (align with button right edge)
         let inv_x = screen_w - inv_width - 8.0;
         let button_area_height = button_size + exp_bar_gap;
+
+        // Calculate the minimum Y the panel can reach (below XP bar)
+        let min_panel_y = EXP_BAR_HEIGHT + 4.0; // XP bar height + small margin
+        let max_available_height = screen_h - button_area_height - 8.0 - min_panel_y;
+
+        // Clamp panel height if it would overlap the XP bar
+        let inv_height = inv_height_full.min(max_available_height);
         let inv_y = screen_h - button_area_height - inv_height - 8.0;
 
         // Draw panel frame with corner accents
@@ -195,16 +203,58 @@ impl Renderer {
         let grid_x = inv_x + grid_padding;
         let grid_y = content_y;
         let slots_per_row = 4;
+        let total_rows = 5;
+        let row_height = slot_size + slot_spacing;
+
+        // Calculate visible grid area (panel bottom minus grid top, with bottom padding)
+        let grid_bottom = inv_y + inv_height - frame_thickness - 4.0 * scale;
+        let visible_grid_height = grid_bottom - grid_y;
+        let total_grid_height = total_rows as f32 * row_height;
+        let needs_scroll = total_grid_height > visible_grid_height + 1.0;
+
+        // Scroll offset (clamped)
+        let max_scroll = (total_grid_height - visible_grid_height).max(0.0);
+        let scroll_offset = state.ui_state.inventory_scroll_offset.clamp(0.0, max_scroll);
+
+        // Register grid area for scroll input detection
+        if needs_scroll {
+            let grid_area = Rect::new(inv_x, grid_y, inv_width, visible_grid_height);
+            layout.add(UiElementId::InventoryGridArea, grid_area);
+        }
+
+        // Set up scissor clipping for the grid area
+        // Convert virtual coordinates to physical screen pixels for scissor
+        let physical_w = screen_width();
+        let physical_h = screen_height();
+        let scale_x = physical_w / screen_w;
+        let scale_y = physical_h / screen_h;
+
+        if needs_scroll {
+            let mut gl = unsafe { get_internal_gl() };
+            gl.flush();
+            let scissor_x = (grid_x * scale_x) as i32;
+            let scissor_y = (grid_y * scale_y) as i32;
+            let scissor_w = ((inv_width - grid_padding) * scale_x) as i32;
+            let scissor_h = (visible_grid_height * scale_y) as i32;
+            gl.quad_gl.scissor(Some((scissor_x, scissor_y, scissor_w, scissor_h)));
+        }
 
         for i in 0..20 {
             let row = i / slots_per_row;
             let col = i % slots_per_row;
             let x = grid_x + col as f32 * (slot_size + slot_spacing);
-            let y = grid_y + row as f32 * (slot_size + slot_spacing);
+            let y = grid_y + row as f32 * row_height - scroll_offset;
 
-            // Register slot bounds for hit detection
-            let bounds = Rect::new(x, y, slot_size, slot_size);
-            layout.add(UiElementId::InventorySlot(i), bounds);
+            // Skip slots fully outside the visible grid area
+            if needs_scroll && (y + slot_size < grid_y || y > grid_bottom) {
+                continue;
+            }
+
+            // Register slot bounds for hit detection (only if visible)
+            if !needs_scroll || (y >= grid_y - 1.0 && y + slot_size <= grid_bottom + 1.0) {
+                let bounds = Rect::new(x, y, slot_size, slot_size);
+                layout.add(UiElementId::InventorySlot(i), bounds);
+            }
 
             // Check if this slot is hovered
             let is_hovered = matches!(hovered, Some(UiElementId::InventorySlot(idx)) if *idx == i);
@@ -260,6 +310,42 @@ impl Renderer {
                 draw_rectangle(x + 2.0, y + 2.0, slot_size - 4.0, slot_size - 4.0, Color::new(0.8, 0.2, 0.2, 0.35));
                 // Red border highlight
                 draw_rectangle_lines(x + 1.0, y + 1.0, slot_size - 2.0, slot_size - 2.0, 2.0, Color::new(0.9, 0.3, 0.3, 0.9));
+            }
+        }
+
+        // Disable scissor clipping
+        if needs_scroll {
+            let mut gl = unsafe { get_internal_gl() };
+            gl.flush();
+            gl.quad_gl.scissor(None);
+
+            // Draw scroll indicator - subtle gradient at bottom when more content below
+            if scroll_offset < max_scroll - 1.0 {
+                let fade_h = 12.0 * scale;
+                let fade_y = grid_bottom - fade_h;
+                for j in 0..4 {
+                    let t = j as f32 / 4.0;
+                    let alpha = t * 0.6;
+                    draw_rectangle(
+                        grid_x, fade_y + t * fade_h,
+                        inv_width - grid_padding * 2.0, fade_h / 4.0,
+                        Color::new(PANEL_BG_DARK.r, PANEL_BG_DARK.g, PANEL_BG_DARK.b, alpha),
+                    );
+                }
+            }
+
+            // Draw scroll indicator at top when scrolled down
+            if scroll_offset > 1.0 {
+                let fade_h = 12.0 * scale;
+                for j in 0..4 {
+                    let t = 1.0 - j as f32 / 4.0;
+                    let alpha = t * 0.6;
+                    draw_rectangle(
+                        grid_x, grid_y + (j as f32) * fade_h / 4.0,
+                        inv_width - grid_padding * 2.0, fade_h / 4.0,
+                        Color::new(PANEL_BG_DARK.r, PANEL_BG_DARK.g, PANEL_BG_DARK.b, alpha),
+                    );
+                }
             }
         }
 

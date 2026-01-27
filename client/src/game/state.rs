@@ -458,6 +458,11 @@ pub struct UiState {
     pub chat_log_visible: bool,
     // Tap-to-pathfind (enabled by default on mobile, disabled on desktop)
     pub tap_to_pathfind: bool,
+    // Inventory grid scroll offset (for small screens where not all rows fit)
+    pub inventory_scroll_offset: f32,
+    // Touch drag scroll tracking for inventory grid
+    pub inventory_touch_scroll_id: Option<u64>,
+    pub inventory_touch_last_y: f32,
 }
 
 impl Default for UiState {
@@ -518,6 +523,9 @@ impl Default for UiState {
             tap_to_pathfind: false,
             #[cfg(not(target_os = "android"))]
             tap_to_pathfind: true,
+            inventory_scroll_offset: 0.0,
+            inventory_touch_scroll_id: None,
+            inventory_touch_last_y: 0.0,
         }
     }
 }

@@ -67,6 +67,9 @@ pub enum UiElementId {
     // Gold Display (inventory header)
     GoldDisplay,
 
+    // Inventory grid scroll area
+    InventoryGridArea,
+
     // Gold Drop Dialog
     GoldDropConfirm,
     GoldDropCancel,

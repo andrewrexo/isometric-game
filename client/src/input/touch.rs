@@ -467,7 +467,8 @@ impl TouchControls {
     }
 
     /// Update all touch controls
-    pub fn update(&mut self, current_time: f64) {
+    /// Set hide_action_buttons to true when panels like inventory are open
+    pub fn update(&mut self, current_time: f64, hide_action_buttons: bool) {
         self.touch_consumed = false;
 
         if !self.enabled {
@@ -483,9 +484,12 @@ impl TouchControls {
         // Get all current touches
         let touches: Vec<Touch> = touches();
 
-        // Update each control (order matters - buttons first to consume their touches)
-        let attack_consumed = self.attack_button.update(&touches);
-        let interact_consumed = self.interact_button.update(&touches);
+        // Only update action buttons when no panels are open
+        let (attack_consumed, interact_consumed) = if hide_action_buttons {
+            (false, false)
+        } else {
+            (self.attack_button.update(&touches), self.interact_button.update(&touches))
+        };
         let dpad_consumed = self.dpad.update(&touches, current_time);
 
         // Mark touch as consumed if any control is active or just received input
