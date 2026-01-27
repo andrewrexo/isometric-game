@@ -416,6 +416,9 @@ impl Screen for LoginScreen {
 
     fn render(&self) {
         let (sw, sh) = virtual_screen_size();
+        let (input_pos, _, _) = get_input_state();
+        let mx = input_pos.x;
+        let my = input_pos.y;
 
         // Background
         clear_background(Color::from_rgba(25, 25, 35, 255));
@@ -526,8 +529,19 @@ impl Screen for LoginScreen {
             LoginMode::Login => "Login",
             LoginMode::Register => "Register",
         };
-        draw_rectangle(box_x, buttons_y, btn_w, btn_height, Color::from_rgba(40, 100, 60, 255));
-        draw_rectangle_lines(box_x, buttons_y, btn_w, btn_height, 2.0, GREEN);
+        let login_hovered = point_in_rect(mx, my, box_x, buttons_y, btn_w, btn_height);
+        let login_bg = if login_hovered {
+            Color::from_rgba(60, 140, 90, 255)
+        } else {
+            Color::from_rgba(40, 100, 60, 255)
+        };
+        let login_border = if login_hovered {
+            Color::from_rgba(100, 255, 150, 255)
+        } else {
+            GREEN
+        };
+        draw_rectangle(box_x, buttons_y, btn_w, btn_height, login_bg);
+        draw_rectangle_lines(box_x, buttons_y, btn_w, btn_height, 2.0, login_border);
         let enter_w = self.measure_text_sharp(enter_text, font_size).width;
         self.draw_text_sharp(enter_text, box_x + (btn_w - enter_w) / 2.0, buttons_y + 24.0, font_size, WHITE);
 
@@ -537,8 +551,19 @@ impl Screen for LoginScreen {
             LoginMode::Register => "Login",
         };
         let toggle_x = box_x + btn_w + spacing;
-        draw_rectangle(toggle_x, buttons_y, btn_w, btn_height, Color::from_rgba(80, 80, 40, 255));
-        draw_rectangle_lines(toggle_x, buttons_y, btn_w, btn_height, 2.0, YELLOW);
+        let toggle_hovered = point_in_rect(mx, my, toggle_x, buttons_y, btn_w, btn_height);
+        let toggle_bg = if toggle_hovered {
+            Color::from_rgba(120, 120, 60, 255)
+        } else {
+            Color::from_rgba(80, 80, 40, 255)
+        };
+        let toggle_border = if toggle_hovered {
+            Color::from_rgba(255, 255, 100, 255)
+        } else {
+            YELLOW
+        };
+        draw_rectangle(toggle_x, buttons_y, btn_w, btn_height, toggle_bg);
+        draw_rectangle_lines(toggle_x, buttons_y, btn_w, btn_height, 2.0, toggle_border);
         let toggle_w = self.measure_text_sharp(toggle_text, font_size).width;
         self.draw_text_sharp(toggle_text, toggle_x + (btn_w - toggle_w) / 2.0, buttons_y + 24.0, font_size, WHITE);
 
@@ -633,7 +658,7 @@ impl Screen for CharacterSelectScreen {
 
         // Layout constants (must match render)
         let list_x = (sw - 500.0) / 2.0;
-        let list_y = 100.0;
+        let list_y = 44.0;
         let item_height = 70.0;
         let inst_y = sh - 70.0;
 
@@ -790,6 +815,9 @@ impl Screen for CharacterSelectScreen {
 
     fn render(&self) {
         let (sw, sh) = virtual_screen_size();
+        let (input_pos, _, _) = get_input_state();
+        let mx = input_pos.x;
+        let my = input_pos.y;
 
         // Background
         clear_background(Color::from_rgba(25, 25, 35, 255));
@@ -801,31 +829,34 @@ impl Screen for CharacterSelectScreen {
             draw_line(0.0, i as f32 * 50.0, sw, i as f32 * 50.0, 1.0, color);
         }
 
-        // Title
+        // Title (aligned vertically with account info, horizontally centered)
         let title = "SELECT CHARACTER";
         let title_width = self.measure_text_sharp(title, 16.0).width;
-        self.draw_text_sharp(title, (sw - title_width) / 2.0, 50.0, 16.0, WHITE);
+        self.draw_text_sharp(title, (sw - title_width) / 2.0, 24.0, 16.0, WHITE);
 
         // Account info
         let account_text = format!("Logged in as: {}", self.session.username);
         self.draw_text_sharp(&account_text, 20.0, 24.0, 16.0, LIGHTGRAY);
 
-        // Character list
+        // Character list (directly below title with slight padding)
         let list_x = (sw - 500.0) / 2.0;
-        let list_y = 100.0;
+        let list_y = 44.0;
         let item_height = 70.0;
 
         if self.characters.is_empty() {
-            self.draw_text_sharp("No characters yet!", list_x, list_y + 40.0, 16.0, GRAY);
-            self.draw_text_sharp("Press [N] to create your first character", list_x, list_y + 70.0, 16.0, LIGHTGRAY);
+            self.draw_text_sharp("No characters yet!", list_x, list_y + 30.0, 16.0, GRAY);
+            self.draw_text_sharp("Press [N] to create your first character", list_x, list_y + 55.0, 16.0, LIGHTGRAY);
         } else {
             for (i, character) in self.characters.iter().enumerate() {
                 let y = list_y + i as f32 * item_height;
                 let is_selected = i == self.selected_index;
+                let is_hovered = point_in_rect(mx, my, list_x, y, 500.0, item_height - 5.0);
 
                 // Background
                 let bg_color = if is_selected {
                     Color::from_rgba(60, 80, 120, 255)
+                } else if is_hovered {
+                    Color::from_rgba(50, 55, 80, 255)
                 } else {
                     Color::from_rgba(40, 40, 60, 255)
                 };
@@ -833,6 +864,8 @@ impl Screen for CharacterSelectScreen {
 
                 if is_selected {
                     draw_rectangle_lines(list_x, y, 500.0, item_height - 5.0, 2.0, WHITE);
+                } else if is_hovered {
+                    draw_rectangle_lines(list_x, y, 500.0, item_height - 5.0, 1.0, GRAY);
                 }
 
                 // Character preview sprite (scale to fit in the row)
@@ -902,13 +935,35 @@ impl Screen for CharacterSelectScreen {
             let no_x = box_x + 250.0;
 
             // Yes button
-            draw_rectangle(yes_x, yes_y, button_w, button_h, Color::from_rgba(100, 40, 40, 255));
-            draw_rectangle_lines(yes_x, yes_y, button_w, button_h, 2.0, RED);
+            let yes_hovered = point_in_rect(mx, my, yes_x, yes_y, button_w, button_h);
+            let yes_bg = if yes_hovered {
+                Color::from_rgba(140, 60, 60, 255)
+            } else {
+                Color::from_rgba(100, 40, 40, 255)
+            };
+            let yes_border = if yes_hovered {
+                Color::from_rgba(255, 100, 100, 255)
+            } else {
+                RED
+            };
+            draw_rectangle(yes_x, yes_y, button_w, button_h, yes_bg);
+            draw_rectangle_lines(yes_x, yes_y, button_w, button_h, 2.0, yes_border);
             self.draw_text_sharp("Yes, delete", yes_x + 8.0, yes_y + 20.0, 16.0, WHITE);
 
             // No button
-            draw_rectangle(no_x, yes_y, button_w, button_h, Color::from_rgba(60, 60, 80, 255));
-            draw_rectangle_lines(no_x, yes_y, button_w, button_h, 2.0, LIGHTGRAY);
+            let no_hovered = point_in_rect(mx, my, no_x, yes_y, button_w, button_h);
+            let no_bg = if no_hovered {
+                Color::from_rgba(80, 80, 110, 255)
+            } else {
+                Color::from_rgba(60, 60, 80, 255)
+            };
+            let no_border = if no_hovered {
+                WHITE
+            } else {
+                LIGHTGRAY
+            };
+            draw_rectangle(no_x, yes_y, button_w, button_h, no_bg);
+            draw_rectangle_lines(no_x, yes_y, button_w, button_h, 2.0, no_border);
             self.draw_text_sharp("No, cancel", no_x + 8.0, yes_y + 20.0, 16.0, WHITE);
             return;
         }
@@ -918,25 +973,69 @@ impl Screen for CharacterSelectScreen {
         let button_height = 30.0;
 
         // Play button
-        draw_rectangle(list_x, inst_y - 10.0, 100.0, button_height, Color::from_rgba(40, 100, 60, 255));
-        draw_rectangle_lines(list_x, inst_y - 10.0, 100.0, button_height, 2.0, GREEN);
+        let play_hovered = point_in_rect(mx, my, list_x, inst_y - 10.0, 100.0, button_height);
+        let play_bg = if play_hovered {
+            Color::from_rgba(60, 140, 90, 255)
+        } else {
+            Color::from_rgba(40, 100, 60, 255)
+        };
+        let play_border = if play_hovered {
+            Color::from_rgba(100, 255, 150, 255)
+        } else {
+            GREEN
+        };
+        draw_rectangle(list_x, inst_y - 10.0, 100.0, button_height, play_bg);
+        draw_rectangle_lines(list_x, inst_y - 10.0, 100.0, button_height, 2.0, play_border);
         self.draw_text_sharp("Play", list_x + 10.0, inst_y + 10.0, 16.0, WHITE);
 
         // New button
         if self.characters.len() < MAX_CHARACTERS {
-            draw_rectangle(list_x + 120.0, inst_y - 10.0, 70.0, button_height, Color::from_rgba(80, 80, 40, 255));
-            draw_rectangle_lines(list_x + 120.0, inst_y - 10.0, 70.0, button_height, 2.0, YELLOW);
+            let new_hovered = point_in_rect(mx, my, list_x + 120.0, inst_y - 10.0, 70.0, button_height);
+            let new_bg = if new_hovered {
+                Color::from_rgba(120, 120, 60, 255)
+            } else {
+                Color::from_rgba(80, 80, 40, 255)
+            };
+            let new_border = if new_hovered {
+                Color::from_rgba(255, 255, 100, 255)
+            } else {
+                YELLOW
+            };
+            draw_rectangle(list_x + 120.0, inst_y - 10.0, 70.0, button_height, new_bg);
+            draw_rectangle_lines(list_x + 120.0, inst_y - 10.0, 70.0, button_height, 2.0, new_border);
             self.draw_text_sharp("New", list_x + 130.0, inst_y + 10.0, 16.0, WHITE);
         }
 
         // Delete button
-        draw_rectangle(list_x + 210.0, inst_y - 10.0, 90.0, button_height, Color::from_rgba(100, 40, 40, 255));
-        draw_rectangle_lines(list_x + 210.0, inst_y - 10.0, 90.0, button_height, 2.0, RED);
+        let delete_hovered = point_in_rect(mx, my, list_x + 210.0, inst_y - 10.0, 90.0, button_height);
+        let delete_bg = if delete_hovered {
+            Color::from_rgba(140, 60, 60, 255)
+        } else {
+            Color::from_rgba(100, 40, 40, 255)
+        };
+        let delete_border = if delete_hovered {
+            Color::from_rgba(255, 100, 100, 255)
+        } else {
+            RED
+        };
+        draw_rectangle(list_x + 210.0, inst_y - 10.0, 90.0, button_height, delete_bg);
+        draw_rectangle_lines(list_x + 210.0, inst_y - 10.0, 90.0, button_height, 2.0, delete_border);
         self.draw_text_sharp("Delete", list_x + 220.0, inst_y + 10.0, 16.0, WHITE);
 
         // Logout button
-        draw_rectangle(list_x + 330.0, inst_y - 10.0, 100.0, button_height, Color::from_rgba(60, 60, 80, 255));
-        draw_rectangle_lines(list_x + 330.0, inst_y - 10.0, 100.0, button_height, 2.0, LIGHTGRAY);
+        let logout_hovered = point_in_rect(mx, my, list_x + 330.0, inst_y - 10.0, 100.0, button_height);
+        let logout_bg = if logout_hovered {
+            Color::from_rgba(80, 80, 110, 255)
+        } else {
+            Color::from_rgba(60, 60, 80, 255)
+        };
+        let logout_border = if logout_hovered {
+            WHITE
+        } else {
+            LIGHTGRAY
+        };
+        draw_rectangle(list_x + 330.0, inst_y - 10.0, 100.0, button_height, logout_bg);
+        draw_rectangle_lines(list_x + 330.0, inst_y - 10.0, 100.0, button_height, 2.0, logout_border);
         self.draw_text_sharp("Logout", list_x + 340.0, inst_y + 10.0, 16.0, WHITE);
 
         self.draw_text_sharp("[W/S] Navigate", list_x, inst_y + 28.0, 16.0, DARKGRAY);
@@ -1329,6 +1428,9 @@ impl Screen for CharacterCreateScreen {
 
     fn render(&self) {
         let (sw, sh) = virtual_screen_size();
+        let (input_pos, _, _) = get_input_state();
+        let mx = input_pos.x;
+        let my = input_pos.y;
 
         // Background
         clear_background(Color::from_rgba(25, 25, 35, 255));
@@ -1526,16 +1628,38 @@ impl Screen for CharacterCreateScreen {
         let button_w = (form_w - 10.0) / 2.0;
 
         // Create button
-        draw_rectangle(form_x, buttons_y, button_w, 36.0, Color::from_rgba(40, 100, 60, 255));
-        draw_rectangle_lines(form_x, buttons_y, button_w, 36.0, 2.0, Color::from_rgba(60, 140, 80, 255));
+        let create_hovered = point_in_rect(mx, my, form_x, buttons_y, button_w, 36.0);
+        let create_bg = if create_hovered {
+            Color::from_rgba(60, 140, 90, 255)
+        } else {
+            Color::from_rgba(40, 100, 60, 255)
+        };
+        let create_border = if create_hovered {
+            Color::from_rgba(100, 200, 120, 255)
+        } else {
+            Color::from_rgba(60, 140, 80, 255)
+        };
+        draw_rectangle(form_x, buttons_y, button_w, 36.0, create_bg);
+        draw_rectangle_lines(form_x, buttons_y, button_w, 36.0, 2.0, create_border);
         let create_text = "Create";
         let create_width = self.measure_text_sharp(create_text, 16.0).width;
         self.draw_text_sharp(create_text, form_x + button_w / 2.0 - create_width / 2.0, buttons_y + 24.0, 16.0, WHITE);
 
         // Cancel button
         let cancel_x = form_x + button_w + 10.0;
-        draw_rectangle(cancel_x, buttons_y, button_w, 36.0, Color::from_rgba(80, 60, 60, 255));
-        draw_rectangle_lines(cancel_x, buttons_y, button_w, 36.0, 2.0, Color::from_rgba(120, 80, 80, 255));
+        let cancel_hovered = point_in_rect(mx, my, cancel_x, buttons_y, button_w, 36.0);
+        let cancel_bg = if cancel_hovered {
+            Color::from_rgba(120, 80, 80, 255)
+        } else {
+            Color::from_rgba(80, 60, 60, 255)
+        };
+        let cancel_border = if cancel_hovered {
+            Color::from_rgba(180, 120, 120, 255)
+        } else {
+            Color::from_rgba(120, 80, 80, 255)
+        };
+        draw_rectangle(cancel_x, buttons_y, button_w, 36.0, cancel_bg);
+        draw_rectangle_lines(cancel_x, buttons_y, button_w, 36.0, 2.0, cancel_border);
         let cancel_text = "Cancel";
         let cancel_width = self.measure_text_sharp(cancel_text, 16.0).width;
         self.draw_text_sharp(cancel_text, cancel_x + button_w / 2.0 - cancel_width / 2.0, buttons_y + 24.0, 16.0, WHITE);
