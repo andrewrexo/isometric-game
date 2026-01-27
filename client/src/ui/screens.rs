@@ -568,7 +568,7 @@ impl Screen for LoginScreen {
         self.draw_text_sharp(toggle_text, toggle_x + (btn_w - toggle_w) / 2.0, buttons_y + 24.0, font_size, WHITE);
 
         // Version (bottom right, native 16pt for crisp rendering)
-        self.draw_text_sharp("v0.1.0", sw - 60.0, sh - 10.0, 16.0, DARKGRAY);
+        self.draw_text_sharp("v1.0.1", sw - 60.0, sh - 10.0, 16.0, DARKGRAY);
     }
 }
 

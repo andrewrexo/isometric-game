@@ -321,5 +321,9 @@ pub fn run_game_frame(
     renderer.render_transition_overlay(game_state);
 
     // 7. Render touch controls (mobile only)
-    input_handler.render_touch_controls();
+    // Hide action buttons when panels are open
+    let hide_action_buttons = game_state.ui_state.inventory_open
+        || game_state.ui_state.character_panel_open
+        || game_state.ui_state.skills_open;
+    input_handler.render_touch_controls(hide_action_buttons);
 }

@@ -2175,7 +2175,8 @@ impl InputHandler {
     }
 
     /// Render touch controls overlay (call after all other rendering)
-    pub fn render_touch_controls(&self) {
-        self.touch_controls.render();
+    /// Set hide_action_buttons to true when panels like inventory are open
+    pub fn render_touch_controls(&self, hide_action_buttons: bool) {
+        self.touch_controls.render(hide_action_buttons);
     }
 }

@@ -501,14 +501,17 @@ impl TouchControls {
     }
 
     /// Render all touch controls
-    pub fn render(&self) {
+    /// Set hide_action_buttons to true when panels like inventory are open
+    pub fn render(&self, hide_action_buttons: bool) {
         if !self.enabled {
             return;
         }
 
         self.dpad.render();
-        self.attack_button.render();
-        self.interact_button.render();
+        if !hide_action_buttons {
+            self.attack_button.render();
+            self.interact_button.render();
+        }
     }
 
     /// Get current D-pad direction
