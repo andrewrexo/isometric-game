@@ -53,12 +53,12 @@ impl Direction {
     }
 }
 
-// Movement speed in tiles per second (must match server: 300ms per tile)
-pub const TILES_PER_SECOND: f32 = 3.33;
+// Movement speed in tiles per second (must match server: 250ms per tile)
+pub const TILES_PER_SECOND: f32 = 4.0;
 
 // Linear interpolation speed - must match server movement rate
-// Server: 300ms per tile = 3.33 tiles per second
-const VISUAL_SPEED: f32 = 3.33;
+// Server: 250ms per tile = 4 tiles per second
+const VISUAL_SPEED: f32 = 4.0;
 
 #[derive(Debug, Clone)]
 pub struct Player {
