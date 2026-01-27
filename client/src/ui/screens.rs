@@ -1017,7 +1017,7 @@ impl Screen for CharacterSelectScreen {
                     format!("{}m played", minutes)
                 };
                 let time_x = (list_x + list_w - 160.0).max(text_x + 120.0);
-                self.draw_text_sharp(&time_str, time_x, y + 36.0, 16.0, DARKGRAY);
+                self.draw_text_sharp(&time_str, time_x, y + 36.0, 16.0, LIGHTGRAY);
             }
 
             // Disable scissor clipping
