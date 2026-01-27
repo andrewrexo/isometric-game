@@ -11,7 +11,7 @@ use super::common::*;
 const CHARACTER_PANEL_PADDING: f32 = 12.0;
 const CHARACTER_HEADER_HEIGHT: f32 = 24.0;
 const CHARACTER_GRID_WIDTH: f32 = 3.0 * EQUIP_SLOT_SIZE + 2.0 * EQUIP_SLOT_SPACING; // 122
-const CHARACTER_GRID_HEIGHT: f32 = 4.0 * EQUIP_SLOT_SIZE + 3.0 * EQUIP_SLOT_SPACING + 16.0; // 180
+const CHARACTER_GRID_HEIGHT: f32 = 4.0 * EQUIP_SLOT_SIZE + 3.0 * EQUIP_SLOT_SPACING + 26.0; // 190
 const CHARACTER_PANEL_WIDTH: f32 = 240.0; // Unified width to match inventory and other UI panels
 const CHARACTER_PANEL_HEIGHT: f32 = FRAME_THICKNESS * 2.0 + CHARACTER_HEADER_HEIGHT + CHARACTER_PANEL_PADDING + CHARACTER_GRID_HEIGHT + CHARACTER_PANEL_PADDING; // ~262
 const STATS_SECTION_GAP: f32 = 8.0; // Gap between equipment grid and stats
@@ -147,9 +147,18 @@ impl Renderer {
         // Get player stats (native font size for crisp rendering)
         if let Some(player) = state.get_local_player() {
             let line_height = 24.0 * scale;
-            let label_x = stats_x + 18.0 * scale;
-            let value_x = label_x + self.measure_text_sharp("DEF", 16.0).width + 4.0;
-            let mut text_y = stats_y + 18.0 * scale;
+            // Center stats horizontally in the space right of the equipment grid
+            let available_width = panel_x + panel_width - frame_thickness - stats_x;
+            let label_w = self.measure_text_sharp("DEF", 16.0).width;
+            let gap = 4.0;
+            // Estimate widest value (e.g. "+99")
+            let value_w = self.measure_text_sharp("+99", 16.0).width;
+            let total_stats_w = label_w + gap + value_w;
+            let label_x = stats_x + (available_width - total_stats_w) / 2.0;
+            let value_x = label_x + label_w + gap;
+            // Center stats vertically in the grid height
+            let total_stats_h = 3.0 * line_height - (line_height - 16.0); // 3 lines
+            let mut text_y = stats_y + (CHARACTER_GRID_HEIGHT * scale - total_stats_h) / 2.0 + 16.0;
 
             // Equipment bonuses
             let atk_bonus = player.attack_bonus(&state.item_registry);
@@ -157,16 +166,6 @@ impl Renderer {
             let def_bonus = player.defence_bonus(&state.item_registry);
 
             // Stats list (font stays at native 16.0 for crisp text)
-            self.draw_text_sharp("HP", label_x, text_y, 16.0, HEALTH_GREEN_MID);
-            let hp_val = format!("{}/{}", player.hp, player.max_hp);
-            self.draw_text_sharp(&hp_val, value_x, text_y, 16.0, HEALTH_GREEN_MID);
-            text_y += line_height;
-
-            self.draw_text_sharp("Lv", label_x, text_y, 16.0, TEXT_NORMAL);
-            let lv_val = format!("{}", player.combat_level());
-            self.draw_text_sharp(&lv_val, value_x, text_y, 16.0, TEXT_NORMAL);
-            text_y += line_height;
-
             self.draw_text_sharp("ATK", label_x, text_y, 16.0, CATEGORY_EQUIPMENT);
             let atk_val = format!("+{}", atk_bonus);
             self.draw_text_sharp(&atk_val, value_x, text_y, 16.0, CATEGORY_EQUIPMENT);
