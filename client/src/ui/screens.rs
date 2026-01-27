@@ -285,8 +285,8 @@ impl Screen for LoginScreen {
         let spacing = 10.0;             // More spacing
 
         // Calculate positions flowing from top (must match render)
-        let logo_h = 50.0;
-        let start_y = logo_h + 20.0;
+        let logo_h = 60.0;
+        let start_y = logo_h + 30.0;
         let username_y = start_y;
         let username_field_y = username_y + 16.0;  // Box position (after label)
         let password_y = username_field_y + box_height + spacing;
@@ -437,8 +437,8 @@ impl Screen for LoginScreen {
         let font_size = 16.0;           // Native font size for crisp rendering
 
         // Calculate positions flowing from top
-        let logo_h = 50.0;
-        let start_y = logo_h + 20.0;
+        let logo_h = 60.0;
+        let start_y = logo_h + 30.0;
 
         // Logo (smaller for compact layout)
         if let Some(logo) = &self.logo {
@@ -470,7 +470,7 @@ impl Screen for LoginScreen {
             LoginMode::Register => "Register",
         };
         let sub_width = self.measure_text_sharp(subtitle, 16.0).width;
-        self.draw_text_sharp(subtitle, (sw - sub_width) / 2.0, logo_h + 8.0, 16.0, GRAY);
+        self.draw_text_sharp(subtitle, (sw - sub_width) / 2.0, logo_h + 12.0, 16.0, GRAY);
 
         // Username field
         let username_y = start_y;
