@@ -284,14 +284,28 @@ impl Screen for LoginScreen {
         let btn_height = 36.0;          // Taller buttons
         let spacing = 10.0;             // More spacing
 
-        // Calculate positions flowing from top (must match render)
-        let logo_h = 60.0;
-        let start_y = logo_h + 30.0;
-        let username_y = start_y;
-        let username_field_y = username_y + 12.0;  // Box position (after label) - reduced from 16.0
-        let password_y = username_field_y + box_height + spacing + 10.0; // Added 10.0 extra margin
-        let password_field_y = password_y + 12.0;  // Box position (after label) - reduced from 16.0
-        let buttons_y = password_field_y + box_height + spacing + 24.0;
+        // Calculate form height (subtitle + inputs + buttons, excluding logo)
+        let logo_h = 46.0;
+        let logo_margin = 4.0; // gap between logo bottom and subtitle
+        let subtitle_h = 16.0;
+        let form_gap = 8.0; // gap between subtitle and first field
+        let label_h = 12.0;  // label to field gap
+        let field_gap = spacing + 4.0; // between fields
+        let buttons_gap = spacing + 14.0; // between last field and buttons
+
+        let form_content_h = subtitle_h + form_gap
+            + label_h + box_height  // username
+            + field_gap + label_h + box_height  // password
+            + buttons_gap + btn_height; // buttons
+
+        // Center the form content vertically, then place logo above it
+        let form_content_top = ((sh - form_content_h) / 2.0).max(logo_h + logo_margin + 6.0);
+
+        let username_y = form_content_top + subtitle_h + form_gap;
+        let username_field_y = username_y + label_h;
+        let password_y = username_field_y + box_height + field_gap;
+        let password_field_y = password_y + label_h;
+        let buttons_y = password_field_y + box_height + buttons_gap;
 
         // Handle touch/click on input fields and buttons
         if clicked {
@@ -439,21 +453,33 @@ impl Screen for LoginScreen {
         let spacing = 10.0;             // More spacing
         let font_size = 16.0;           // Native font size for crisp rendering
 
-        // Calculate positions flowing from top
-        let logo_h = 60.0;
-        let start_y = logo_h + 30.0;
+        // Calculate form height and center vertically (must match update)
+        let logo_h = 46.0;
+        let logo_margin = 4.0;
+        let subtitle_h = 16.0;
+        let form_gap = 8.0;
+        let label_h = 12.0;
+        let field_gap = spacing + 4.0;
+        let buttons_gap = spacing + 14.0;
 
-        // Logo (smaller for compact layout)
+        let form_content_h = subtitle_h + form_gap
+            + label_h + box_height
+            + field_gap + label_h + box_height
+            + buttons_gap + btn_height;
+
+        let form_content_top = ((sh - form_content_h) / 2.0).max(logo_h + logo_margin + 6.0);
+
+        // Logo (placed above the centered form content)
+        let logo_y = form_content_top - logo_margin - logo_h;
         if let Some(logo) = &self.logo {
             let logo_scale = 0.15;
             let logo_w = logo.width() * logo_scale;
             let logo_actual_h = logo.height() * logo_scale;
             let logo_x = (sw - logo_w) / 2.0;
-            let logo_y: f32 = 8.0;
             draw_texture_ex(
                 logo,
                 logo_x.floor(),
-                logo_y.floor(),
+                logo_y.max(4.0).floor(),
                 WHITE,
                 DrawTextureParams {
                     dest_size: Some(vec2(logo_w.floor(), logo_actual_h.floor())),
@@ -464,7 +490,7 @@ impl Screen for LoginScreen {
             // Fallback title (native 16pt for crisp rendering)
             let title = "NEW AEVEN";
             let title_width = self.measure_text_sharp(title, 16.0).width;
-            self.draw_text_sharp(title, (sw - title_width) / 2.0, 30.0, 16.0, WHITE);
+            self.draw_text_sharp(title, (sw - title_width) / 2.0, logo_y.max(4.0) + 22.0, 16.0, WHITE);
         }
 
         // Subtitle (use native 16pt for crisp rendering)
@@ -473,15 +499,15 @@ impl Screen for LoginScreen {
             LoginMode::Register => "Register",
         };
         let sub_width = self.measure_text_sharp(subtitle, 16.0).width;
-        self.draw_text_sharp(subtitle, (sw - sub_width) / 2.0, logo_h + 12.0, 16.0, GRAY);
+        self.draw_text_sharp(subtitle, (sw - sub_width) / 2.0, form_content_top, 16.0, GRAY);
 
         // Username field
-        let username_y = start_y;
+        let username_y = form_content_top + subtitle_h + form_gap;
         let username_active = self.active_field == LoginField::Username;
         let username_color = if username_active { Color::from_rgba(80, 120, 180, 255) } else { Color::from_rgba(60, 60, 80, 255) };
 
         self.draw_text_sharp("Username", box_x, username_y, font_size, LIGHTGRAY);
-        let field_y = username_y + 12.0; // Reduced from 16.0
+        let field_y = username_y + label_h;
         draw_rectangle(box_x, field_y, box_width, box_height, username_color);
         draw_rectangle_lines(box_x, field_y, box_width, box_height, 2.0, if username_active { WHITE } else { GRAY });
 
@@ -495,12 +521,12 @@ impl Screen for LoginScreen {
         self.draw_text_sharp(&username_display, box_x + 10.0, field_y + 27.0, font_size, text_color);
 
         // Password field
-        let password_y = field_y + box_height + spacing + 10.0; // Added 10.0 extra margin
+        let password_y = field_y + box_height + field_gap;
         let password_active = self.active_field == LoginField::Password;
         let password_color = if password_active { Color::from_rgba(80, 120, 180, 255) } else { Color::from_rgba(60, 60, 80, 255) };
 
         self.draw_text_sharp("Password", box_x, password_y, font_size, LIGHTGRAY);
-        let pass_field_y = password_y + 12.0; // Reduced from 16.0
+        let pass_field_y = password_y + label_h;
         draw_rectangle(box_x, pass_field_y, box_width, box_height, password_color);
         draw_rectangle_lines(box_x, pass_field_y, box_width, box_height, 2.0, if password_active { WHITE } else { GRAY });
 
@@ -520,8 +546,8 @@ impl Screen for LoginScreen {
             self.draw_text_sharp(error, box_x, error_y + 14.0, 16.0, RED);
         }
 
-        // Buttons row - Login and Toggle side by side
-        let buttons_y = pass_field_y + box_height + spacing + 24.0;
+        // Buttons row - directly below form
+        let buttons_y = pass_field_y + box_height + buttons_gap;
         let btn_w = (box_width - spacing) / 2.0;
 
         // Login/Register button (left)
@@ -568,7 +594,7 @@ impl Screen for LoginScreen {
         self.draw_text_sharp(toggle_text, toggle_x + (btn_w - toggle_w) / 2.0, buttons_y + 24.0, font_size, WHITE);
 
         // Version (bottom right, native 16pt for crisp rendering)
-        self.draw_text_sharp("v1.0.1", sw - 60.0, sh - 10.0, 16.0, DARKGRAY);
+        self.draw_text_sharp("v1.0.2", sw - 60.0, sh - 10.0, 16.0, DARKGRAY);
     }
 }
 
