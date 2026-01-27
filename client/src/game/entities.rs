@@ -53,12 +53,12 @@ impl Direction {
     }
 }
 
-// Movement speed in tiles per second (must match server: 250ms per tile = 15 frames at 60fps)
-pub const TILES_PER_SECOND: f32 = 4.0;
+// Movement speed in tiles per second (must match server: 300ms per tile)
+pub const TILES_PER_SECOND: f32 = 3.33;
 
 // Linear interpolation speed - must match server movement rate
-// Server: 250ms per tile = 4 tiles per second
-const VISUAL_SPEED: f32 = 4.0;
+// Server: 300ms per tile = 3.33 tiles per second
+const VISUAL_SPEED: f32 = 3.33;
 
 #[derive(Debug, Clone)]
 pub struct Player {
@@ -306,6 +306,18 @@ impl Player {
     /// Smooth visual interpolation toward target position
     /// Simple server-authoritative model - just interpolate toward target
     pub fn interpolate_visual(&mut self, delta: f32) {
+        // Aggressive tile snapping: if very close to a tile center, snap to it
+        // This prevents floating-point drift accumulation during rapid direction changes
+        let snap_threshold = 0.08;
+        let nearest_tile_x = self.x.round();
+        let nearest_tile_y = self.y.round();
+        if (self.x - nearest_tile_x).abs() < snap_threshold {
+            self.x = nearest_tile_x;
+        }
+        if (self.y - nearest_tile_y).abs() < snap_threshold {
+            self.y = nearest_tile_y;
+        }
+
         let dx = self.target_x - self.x;
         let dy = self.target_y - self.y;
         let dist = (dx * dx + dy * dy).sqrt();

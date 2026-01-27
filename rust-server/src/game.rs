@@ -20,10 +20,10 @@ use crate::world::World;
 // Constants
 // ============================================================================
 
-const TICK_RATE: f32 = 20.0;
+const TICK_RATE: f32 = 10.0;
 
-// Grid-based movement: ticks between tile moves (5 ticks * 50ms = 250ms = 15 frames at 60fps)
-const MOVE_COOLDOWN_TICKS: u64 = 5;
+// Grid-based movement: ticks between tile moves (3 ticks * 100ms = 300ms per tile)
+const MOVE_COOLDOWN_TICKS: u64 = 3;
 
 const MAP_WIDTH: u32 = 32;
 const MAP_HEIGHT: u32 = 32;
