@@ -61,3 +61,6 @@ lto = true
 [profile.release-wasm]
 inherits = "release"
 opt-level = "z"
+
+[patch.crates-io]
+miniquad = { git = "https://github.com/not-fl3/miniquad", branch = "master" }
