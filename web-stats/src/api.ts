@@ -46,10 +46,16 @@ export interface Item {
   equipment: Equipment | null
 }
 
+async function get<T>(path: string): Promise<T> {
+  const r = await fetch(`${BASE}${path}`)
+  if (!r.ok) throw new Error(`API error: ${r.status}`)
+  return r.json()
+}
+
 export const api = {
-  overview: (): Promise<Overview> => fetch(`${BASE}/overview`).then(r => r.json()),
-  online: (): Promise<OnlinePlayer[]> => fetch(`${BASE}/online`).then(r => r.json()),
-  leaderboard: (sort = 'combat_level', limit = 50): Promise<LeaderboardEntry[]> =>
-    fetch(`${BASE}/leaderboard?sort=${sort}&limit=${limit}`).then(r => r.json()),
-  items: (): Promise<Item[]> => fetch(`${BASE}/items`).then(r => r.json()),
+  overview: () => get<Overview>('/overview'),
+  online: () => get<OnlinePlayer[]>('/online'),
+  leaderboard: (sort = 'combat_level', limit = 50) =>
+    get<LeaderboardEntry[]>(`/leaderboard?sort=${sort}&limit=${limit}`),
+  items: () => get<Item[]>('/items'),
 }

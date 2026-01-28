@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../api'
+import { api, type LeaderboardEntry } from '../api'
 
 const TABS = [
   { label: 'Combat Level', sort: 'combat_level', field: 'combat_level' as const },
   { label: 'Total Level', sort: 'total_level', field: 'total_level' as const },
   { label: 'Hitpoints', sort: 'hitpoints_level', field: 'hitpoints_level' as const },
-  { label: 'Combat Skill', sort: 'combat_skill', field: 'combat_skill_level' as const },
+  { label: 'Combat Skill', sort: 'combat_skill_level', field: 'combat_skill_level' as const },
 ]
 
 function formatTime(seconds: number) {
@@ -27,10 +27,11 @@ export function Leaderboards() {
   })
 
   const filtered = useMemo(() => {
-    if (!data) return []
-    if (!search) return data
+    if (!data) return [] as { rank: number; entry: LeaderboardEntry }[]
+    const ranked = data.map((entry, i) => ({ rank: i + 1, entry }))
+    if (!search) return ranked
     const q = search.toLowerCase()
-    return data.filter(e => e.name.toLowerCase().includes(q))
+    return ranked.filter(r => r.entry.name.toLowerCase().includes(q))
   }, [data, search])
 
   const rankStyle = (rank: number) => {
@@ -78,7 +79,7 @@ export function Leaderboards() {
       />
 
       {/* Table */}
-      <div className="bg-[#1a1d28] rounded-lg border border-[#2a2d38] overflow-hidden">
+      <div className="bg-[#1a1d28] rounded-lg border border-[#2a2d38] overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-[#141722]">
@@ -105,8 +106,7 @@ export function Leaderboards() {
                 </td>
               </tr>
             ) : (
-              filtered.map((entry, i) => {
-                const rank = i + 1
+              filtered.map(({ rank, entry }) => {
                 return (
                   <tr key={entry.name} className={`border-b border-[#2a2d38] hover:bg-[#141722] transition-colors ${rankStyle(rank)}`}>
                     <td className={`px-4 py-3 font-mono font-bold ${rankColor(rank)}`}>{rank}</td>

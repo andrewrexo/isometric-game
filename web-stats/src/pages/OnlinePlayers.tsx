@@ -54,7 +54,7 @@ export function OnlinePlayers() {
         )}
       </div>
 
-      <div className="bg-[#1a1d28] rounded-lg border border-[#2a2d38] overflow-hidden">
+      <div className="bg-[#1a1d28] rounded-lg border border-[#2a2d38] overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-[#141722]">

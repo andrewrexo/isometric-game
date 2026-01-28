@@ -1146,7 +1146,7 @@ async fn stats_items(State(state): State<AppState>) -> impl IntoResponse {
             display_name: item.display_name.clone(),
             sprite: item.sprite.clone(),
             description: item.description.clone(),
-            category: format!("{:?}", item.category),
+            category: format!("{:?}", item.category).to_lowercase(),
             max_stack: item.max_stack,
             base_price: item.base_price,
             sellable: item.sellable,
