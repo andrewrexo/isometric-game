@@ -61,6 +61,10 @@ pub struct Database {
 }
 
 impl Database {
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
     pub async fn new(database_url: &str) -> Result<Self, sqlx::Error> {
         let pool = SqlitePoolOptions::new()
             .max_connections(5)

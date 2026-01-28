@@ -23,6 +23,9 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 use uuid::Uuid;
+use crate::skills::Skills;
+use crate::data::item_def::EquipmentSlot;
+use sqlx::Row;
 
 mod chunk;
 mod crafting;
@@ -989,6 +992,184 @@ async fn matchmake_join_or_create(
     }).into_response()
 }
 
+// ============================================================================
+// Stats API Handlers (public, read-only)
+// ============================================================================
+
+#[derive(Serialize)]
+struct StatsOverview {
+    online_players: usize,
+    total_characters: i64,
+    total_accounts: i64,
+}
+
+async fn stats_overview(State(state): State<AppState>) -> impl IntoResponse {
+    // Count online players from rooms
+    let mut online = 0usize;
+    for entry in state.rooms.iter() {
+        online += entry.value().player_count().await;
+    }
+
+    // Count total characters and accounts from DB
+    let pool = state.db.pool();
+    let total_characters: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM characters")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    let total_accounts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    Json(StatsOverview {
+        online_players: online,
+        total_characters,
+        total_accounts,
+    })
+}
+
+#[derive(Serialize)]
+struct OnlinePlayer {
+    name: String,
+    combat_level: i32,
+    hitpoints_level: i32,
+    combat_skill_level: i32,
+    total_level: i32,
+}
+
+async fn stats_online(State(state): State<AppState>) -> impl IntoResponse {
+    let mut players = Vec::new();
+    for entry in state.rooms.iter() {
+        for p in entry.value().get_all_players().await {
+            players.push(OnlinePlayer {
+                name: p.name.clone(),
+                combat_level: p.skills.combat_level(),
+                hitpoints_level: p.skills.hitpoints.level,
+                combat_skill_level: p.skills.combat.level,
+                total_level: p.skills.total_level(),
+            });
+        }
+    }
+    Json(players)
+}
+
+#[derive(Deserialize)]
+struct LeaderboardQuery {
+    #[serde(default = "default_leaderboard_sort")]
+    sort: String,
+    #[serde(default = "default_leaderboard_limit")]
+    limit: usize,
+}
+
+fn default_leaderboard_sort() -> String { "combat_level".to_string() }
+fn default_leaderboard_limit() -> usize { 50 }
+
+#[derive(Serialize)]
+struct LeaderboardEntry {
+    name: String,
+    combat_level: i32,
+    hitpoints_level: i32,
+    combat_skill_level: i32,
+    total_level: i32,
+    played_time: i64,
+}
+
+async fn stats_leaderboard(
+    State(state): State<AppState>,
+    Query(query): Query<LeaderboardQuery>,
+) -> impl IntoResponse {
+    let pool = state.db.pool();
+    let rows = sqlx::query("SELECT name, skills_json, played_time FROM characters")
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+    let mut entries: Vec<LeaderboardEntry> = rows
+        .iter()
+        .filter_map(|row| {
+            let name: String = row.try_get("name").ok()?;
+            let skills_json: String = row.try_get("skills_json").unwrap_or_default();
+            let played_time: i64 = row.try_get("played_time").unwrap_or(0);
+            let skills: Skills = serde_json::from_str(&skills_json).unwrap_or_default();
+            Some(LeaderboardEntry {
+                name,
+                combat_level: skills.combat_level(),
+                hitpoints_level: skills.hitpoints.level,
+                combat_skill_level: skills.combat.level,
+                total_level: skills.total_level(),
+                played_time,
+            })
+        })
+        .collect();
+
+    match query.sort.as_str() {
+        "combat_level" => entries.sort_by(|a, b| b.combat_level.cmp(&a.combat_level)),
+        "hitpoints_level" => entries.sort_by(|a, b| b.hitpoints_level.cmp(&a.hitpoints_level)),
+        "combat_skill_level" => entries.sort_by(|a, b| b.combat_skill_level.cmp(&a.combat_skill_level)),
+        "played_time" => entries.sort_by(|a, b| b.played_time.cmp(&a.played_time)),
+        _ => entries.sort_by(|a, b| b.total_level.cmp(&a.total_level)),
+    }
+
+    entries.truncate(query.limit.min(100));
+    Json(entries)
+}
+
+#[derive(Serialize)]
+struct StatsEquipment {
+    slot_type: String,
+    attack_level_required: i32,
+    defence_level_required: i32,
+    attack_bonus: i32,
+    strength_bonus: i32,
+    defence_bonus: i32,
+    weapon_type: String,
+    range: i32,
+}
+
+#[derive(Serialize)]
+struct StatsItem {
+    id: String,
+    display_name: String,
+    sprite: String,
+    description: String,
+    category: String,
+    max_stack: i32,
+    base_price: i32,
+    sellable: bool,
+    equipment: Option<StatsEquipment>,
+}
+
+async fn stats_items(State(state): State<AppState>) -> impl IntoResponse {
+    let items: Vec<StatsItem> = state.item_registry.all().map(|item| {
+        StatsItem {
+            id: item.id.clone(),
+            display_name: item.display_name.clone(),
+            sprite: item.sprite.clone(),
+            description: item.description.clone(),
+            category: format!("{:?}", item.category),
+            max_stack: item.max_stack,
+            base_price: item.base_price,
+            sellable: item.sellable,
+            equipment: item.equipment.as_ref().and_then(|eq| {
+                if eq.slot_type == EquipmentSlot::None {
+                    return None;
+                }
+                Some(StatsEquipment {
+                    slot_type: eq.slot_type.as_str().to_string(),
+                    attack_level_required: eq.attack_level_required,
+                    defence_level_required: eq.defence_level_required,
+                    attack_bonus: eq.attack_bonus,
+                    strength_bonus: eq.strength_bonus,
+                    defence_bonus: eq.defence_bonus,
+                    weapon_type: format!("{:?}", eq.weapon_type),
+                    range: eq.range,
+                })
+            }),
+        }
+    }).collect();
+    Json(items)
+}
+
 async fn health_check() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "ok",
@@ -1892,6 +2073,11 @@ async fn main() {
         .route("/matchmake/joinOrCreate/:room", post(matchmake_join_or_create))
         // WebSocket
         .route("/:room_id", get(ws_handler))
+        // Stats API (public, read-only)
+        .route("/api/stats/overview", get(stats_overview))
+        .route("/api/stats/online", get(stats_online))
+        .route("/api/stats/leaderboard", get(stats_leaderboard))
+        .route("/api/stats/items", get(stats_items))
         // In development, you may want CorsLayer::permissive()
         // For production, specify allowed origins explicitly
         .layer(
