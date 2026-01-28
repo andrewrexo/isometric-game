@@ -396,9 +396,12 @@ impl Renderer {
             }
         }
 
-        if let Some(texture) = self.item_sprites.get(item_id) {
-            let icon_width = texture.width();
-            let icon_height = texture.height();
+        if let Some((texture, source_rect)) = self.item_sprites.get(item_id) {
+            let (icon_width, icon_height) = if let Some(r) = source_rect {
+                (r.w, r.h)
+            } else {
+                (texture.width(), texture.height())
+            };
             let offset_x = (slot_width - icon_width) / 2.0;
             // If drawing with backdrop, bring up Y by 1px
             let y_draw = if with_backdrop { y - 1.0 } else { y };
@@ -409,7 +412,10 @@ impl Renderer {
                 x + offset_x,
                 y_draw + offset_y,
                 WHITE,
-                DrawTextureParams::default(),
+                DrawTextureParams {
+                    source: source_rect,
+                    ..Default::default()
+                },
             );
         } else {
             let item_def = state.item_registry.get_or_placeholder(item_id);
@@ -426,9 +432,12 @@ impl Renderer {
         let (mx, my) = mouse_position();
 
         // Get the item texture to determine its size
-        if let Some(texture) = self.item_sprites.get(&drag.item_id) {
-            let icon_width = texture.width();
-            let icon_height = texture.height();
+        if let Some((texture, source_rect)) = self.item_sprites.get(&drag.item_id) {
+            let (icon_width, icon_height) = if let Some(r) = source_rect {
+                (r.w, r.h)
+            } else {
+                (texture.width(), texture.height())
+            };
 
             // Center the item on cursor
             let x = mx - icon_width / 2.0;
@@ -440,7 +449,10 @@ impl Renderer {
                 x,
                 y,
                 Color::new(1.0, 1.0, 1.0, 0.7),
-                DrawTextureParams::default(),
+                DrawTextureParams {
+                    source: source_rect,
+                    ..Default::default()
+                },
             );
         } else {
             // Fallback for items without textures - draw colored placeholder

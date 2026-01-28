@@ -61,7 +61,23 @@ pub fn asset_path(path: &str) -> String {
     }
 }
 
-/// Sprite manifest for Android (where we can't scan directories)
+/// Rectangle within a sprite atlas
+#[derive(serde::Deserialize, Clone, Debug)]
+pub struct SpriteRect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+/// Atlas info from the manifest: file path + sprite rectangles
+#[derive(serde::Deserialize, Clone, Debug)]
+pub struct SpriteAtlasInfo {
+    pub file: String,
+    pub sprites: HashMap<String, SpriteRect>,
+}
+
+/// Sprite manifest for Android/WASM (where we can't scan directories)
 #[derive(serde::Deserialize, Default)]
 pub struct SpriteManifest {
     #[serde(default)]
@@ -76,26 +92,58 @@ pub struct SpriteManifest {
     pub objects: Vec<String>,
     #[serde(default)]
     pub walls: Vec<String>,
+    #[serde(default)]
+    pub objects_atlas: Option<SpriteAtlasInfo>,
+    #[serde(default)]
+    pub walls_atlas: Option<SpriteAtlasInfo>,
+    #[serde(default)]
+    pub inventory_atlas: Option<SpriteAtlasInfo>,
 }
 
 impl SpriteManifest {
+    /// Log to browser console (WASM only)
+    #[cfg(target_arch = "wasm32")]
+    fn console_log(msg: &str) {
+        use sapp_jsutils::JsObject;
+        extern "C" { fn console_log(msg: JsObject); }
+        let js_msg = JsObject::string(msg);
+        unsafe { console_log(js_msg); }
+    }
+
     /// Load the sprite manifest from the assets folder
     pub async fn load() -> Self {
         let path = asset_path("assets/sprite_manifest.json");
         match load_file(&path).await {
             Ok(data) => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let preview = String::from_utf8_lossy(&data[..200.min(data.len())]);
+                    Self::console_log(&format!("MANIFEST: loaded {} bytes, starts with: {}", data.len(), preview));
+
+                    // Check if raw JSON contains atlas key
+                    let raw = String::from_utf8_lossy(&data);
+                    Self::console_log(&format!("MANIFEST: contains objects_atlas: {}", raw.contains("objects_atlas")));
+                }
                 match serde_json::from_slice(&data) {
                     Ok(manifest) => {
-                        log::info!("Loaded sprite manifest");
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            let m: &SpriteManifest = &manifest;
+                            Self::console_log(&format!("MANIFEST: parsed OK, objects_atlas={}, objects={}", m.objects_atlas.is_some(), m.objects.len()));
+                        }
                         manifest
                     }
                     Err(e) => {
+                        #[cfg(target_arch = "wasm32")]
+                        Self::console_log(&format!("MANIFEST: parse FAILED: {}", e));
                         log::warn!("Failed to parse sprite manifest: {}", e);
                         Self::default()
                     }
                 }
             }
             Err(e) => {
+                #[cfg(target_arch = "wasm32")]
+                Self::console_log(&format!("MANIFEST: load FAILED: {}", e));
                 log::warn!("Failed to load sprite manifest: {}", e);
                 Self::default()
             }

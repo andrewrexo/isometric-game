@@ -4,7 +4,7 @@ use macroquad::material::{load_material, gl_use_material, gl_use_default_materia
 use macroquad::miniquad::UniformDesc;
 use macroquad::miniquad::ShaderSource;
 use std::collections::HashMap;
-use crate::util::{asset_path, SpriteManifest, virtual_screen_size};
+use crate::util::{asset_path, SpriteManifest, SpriteAtlasInfo, virtual_screen_size};
 use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction, DragSource, Wall, WallEdge};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
@@ -107,6 +107,40 @@ const HEALTH_RED_DARK: Color = Color::new(0.55, 0.12, 0.12, 1.0);        // Ruby
 const HEALTH_RED_MID: Color = Color::new(0.75, 0.18, 0.18, 1.0);         // Ruby bright
 const HEALTH_RED_LIGHT: Color = Color::new(0.90, 0.35, 0.35, 1.0);       // Ruby highlight
 
+/// A sprite atlas: one texture containing many sprites, with rect lookups
+pub struct SpriteAtlas {
+    pub texture: Texture2D,
+    pub rects: HashMap<String, Rect>,
+}
+
+impl SpriteAtlas {
+    /// Look up a sprite by key, returning the atlas texture and source rect
+    pub fn get(&self, key: &str) -> Option<(&Texture2D, Rect)> {
+        self.rects.get(key).map(|r| (&self.texture, *r))
+    }
+}
+
+/// Sprite storage: either an atlas (WASM) or individual textures (desktop)
+pub enum SpriteStore {
+    Atlas(SpriteAtlas),
+    Individual(HashMap<String, Texture2D>),
+}
+
+impl SpriteStore {
+    /// Look up a sprite, returning (texture, source_rect).
+    /// For individual textures, source_rect covers the whole texture.
+    pub fn get(&self, key: &str) -> Option<(&Texture2D, Option<Rect>)> {
+        match self {
+            SpriteStore::Atlas(atlas) => {
+                atlas.get(key).map(|(tex, rect)| (tex, Some(rect)))
+            }
+            SpriteStore::Individual(map) => {
+                map.get(key).map(|tex| (tex, None))
+            }
+        }
+    }
+}
+
 pub struct Renderer {
     player_color: Color,
     local_player_color: Color,
@@ -120,12 +154,12 @@ pub struct Renderer {
     equipment_sprites: HashMap<String, Texture2D>,
     /// Weapon sprite sheets by item ID (e.g., "goblin_axe")
     weapon_sprites: HashMap<String, Texture2D>,
-    /// Item inventory sprites by item ID (sprite sheets with icon on left half)
-    pub(crate) item_sprites: HashMap<String, Texture2D>,
-    /// Map object sprites by filename number (e.g., "101" -> Texture2D)
-    object_sprites: HashMap<String, Texture2D>,
-    /// Wall sprites by filename number (e.g., "101" -> Texture2D)
-    wall_sprites: HashMap<String, Texture2D>,
+    /// Item inventory sprites by item ID
+    pub(crate) item_sprites: SpriteStore,
+    /// Map object sprites by filename number (e.g., "101")
+    object_sprites: SpriteStore,
+    /// Wall sprites by filename number (e.g., "101")
+    wall_sprites: SpriteStore,
     /// NPC sprites by entity type (e.g., "pig" -> Texture2D)
     npc_sprites: HashMap<String, Texture2D>,
     /// Multi-size pixel font for sharp text rendering at various sizes
@@ -250,56 +284,128 @@ impl Renderer {
         }
         log::info!("Loaded {} hair sprite variants", hair_sprites.len());
 
-        // On WASM/Android, load sprite categories with per-sprite progress.
+        // Helper to load an atlas texture and build a SpriteStore
+        async fn load_atlas(atlas_info: &SpriteAtlasInfo) -> Option<SpriteAtlas> {
+            let path = asset_path(&format!("assets/{}", atlas_info.file));
+            match load_texture(&path).await {
+                Ok(tex) => {
+                    tex.set_filter(FilterMode::Nearest);
+                    let rects = atlas_info.sprites.iter().map(|(key, sr)| {
+                        (key.clone(), Rect::new(sr.x as f32, sr.y as f32, sr.w as f32, sr.h as f32))
+                    }).collect();
+                    log::info!("Loaded atlas {} ({}x{}, {} sprites)", atlas_info.file, tex.width(), tex.height(), atlas_info.sprites.len());
+                    Some(SpriteAtlas { texture: tex, rects })
+                }
+                Err(e) => {
+                    log::warn!("Failed to load atlas {}: {}", path, e);
+                    None
+                }
+            }
+        }
+
+        // Load individual sprites into a HashMap (for non-atlas categories)
+        async fn load_individual_sprites(
+            items: &[String],
+            base: &str,
+            loaded: &mut usize,
+            total: usize,
+            label: &str,
+        ) -> HashMap<String, Texture2D> {
+            let mut sprites = HashMap::new();
+            for item in items {
+                let key = item.rsplit('/').next().unwrap_or(item).to_string();
+                let path = asset_path(&format!("{}/{}.png", base, item));
+                match load_texture(&path).await {
+                    Ok(tex) => {
+                        tex.set_filter(FilterMode::Nearest);
+                        sprites.insert(key, tex);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load sprite {}: {}", path, e);
+                    }
+                }
+                *loaded += 1;
+                #[cfg(target_arch = "wasm32")]
+                Renderer::update_loading(*loaded, total, label);
+            }
+            log::info!("Loaded {} sprites for {}", sprites.len(), label);
+            sprites
+        }
+
+        // On WASM/Android, load sprite categories - use atlases for objects/walls/inventory.
         // On desktop, use the fast directory-scanning loader.
         #[cfg(any(target_os = "android", target_arch = "wasm32"))]
         let (equipment_sprites, weapon_sprites, item_sprites, object_sprites, wall_sprites, npc_sprites) = {
-            struct CatInfo<'a> {
-                label: &'a str,
-                items: &'a [String],
-                base: &'a str,
-            }
-            let categories = [
-                CatInfo { label: "Loading equipment...", items: &manifest.equipment, base: "assets/sprites" },
-                CatInfo { label: "Loading weapons...", items: &manifest.weapons, base: "assets/sprites/weapons" },
-                CatInfo { label: "Loading items...", items: &manifest.inventory, base: "assets/sprites/inventory" },
-                CatInfo { label: "Loading objects...", items: &manifest.objects, base: "assets/sprites/objects" },
-                CatInfo { label: "Loading walls...", items: &manifest.walls, base: "assets/sprites/walls" },
-                CatInfo { label: "Loading NPCs...", items: &manifest.enemies, base: "assets/sprites/enemies" },
-            ];
+            // Load equipment (individual - animation spritesheets)
+            set_loading!("Loading equipment...");
+            let equipment = load_individual_sprites(&manifest.equipment, "assets/sprites", &mut loaded, total, "Loading equipment...").await;
 
-            let mut all_maps: Vec<HashMap<String, Texture2D>> = Vec::new();
-            for cat in &categories {
-                set_loading!(cat.label);
-                let mut sprites = HashMap::new();
-                for item in cat.items {
-                    let key = item.rsplit('/').next().unwrap_or(item).to_string();
-                    let path = asset_path(&format!("{}/{}.png", cat.base, item));
-                    match load_texture(&path).await {
-                        Ok(tex) => {
-                            tex.set_filter(FilterMode::Nearest);
-                            sprites.insert(key, tex);
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to load sprite {}: {}", path, e);
-                        }
-                    }
-                    loaded += 1;
+            // Load weapons (individual - animation spritesheets)
+            set_loading!("Loading weapons...");
+            let weapons = load_individual_sprites(&manifest.weapons, "assets/sprites/weapons", &mut loaded, total, "Loading weapons...").await;
+
+            // Load items - atlas if available
+            set_loading!("Loading items...");
+            let items: SpriteStore = if let Some(ref atlas_info) = manifest.inventory_atlas {
+                if let Some(atlas) = load_atlas(atlas_info).await {
+                    loaded += manifest.inventory.len();
                     #[cfg(target_arch = "wasm32")]
-                    Self::update_loading(loaded, total, cat.label);
+                    Self::update_loading(loaded, total, "Loading items...");
+                    SpriteStore::Atlas(atlas)
+                } else {
+                    SpriteStore::Individual(load_individual_sprites(&manifest.inventory, "assets/sprites/inventory", &mut loaded, total, "Loading items...").await)
                 }
-                log::info!("Loaded {} sprites for {}", sprites.len(), cat.label);
-                all_maps.push(sprites);
-            }
+            } else {
+                SpriteStore::Individual(load_individual_sprites(&manifest.inventory, "assets/sprites/inventory", &mut loaded, total, "Loading items...").await)
+            };
 
-            (
-                all_maps.remove(0),
-                all_maps.remove(0),
-                all_maps.remove(0),
-                all_maps.remove(0),
-                all_maps.remove(0),
-                all_maps.remove(0),
-            )
+            // Load objects - atlas if available
+            set_loading!("Loading objects...");
+            #[cfg(target_arch = "wasm32")]
+            {
+                use sapp_jsutils::JsObject;
+                let msg = if manifest.objects_atlas.is_some() {
+                    "ATLAS: objects_atlas IS present in manifest"
+                } else {
+                    "ATLAS: objects_atlas is NOT present in manifest"
+                };
+                let js_msg = JsObject::string(msg);
+                extern "C" { fn console_log(msg: JsObject); }
+                unsafe { console_log(js_msg); }
+            }
+            let objects: SpriteStore = if let Some(ref atlas_info) = manifest.objects_atlas {
+                if let Some(atlas) = load_atlas(atlas_info).await {
+                    loaded += manifest.objects.len();
+                    #[cfg(target_arch = "wasm32")]
+                    Self::update_loading(loaded, total, "Loading objects...");
+                    SpriteStore::Atlas(atlas)
+                } else {
+                    SpriteStore::Individual(load_individual_sprites(&manifest.objects, "assets/sprites/objects", &mut loaded, total, "Loading objects...").await)
+                }
+            } else {
+                SpriteStore::Individual(load_individual_sprites(&manifest.objects, "assets/sprites/objects", &mut loaded, total, "Loading objects...").await)
+            };
+
+            // Load walls - atlas if available
+            set_loading!("Loading walls...");
+            let walls: SpriteStore = if let Some(ref atlas_info) = manifest.walls_atlas {
+                if let Some(atlas) = load_atlas(atlas_info).await {
+                    loaded += manifest.walls.len();
+                    #[cfg(target_arch = "wasm32")]
+                    Self::update_loading(loaded, total, "Loading walls...");
+                    SpriteStore::Atlas(atlas)
+                } else {
+                    SpriteStore::Individual(load_individual_sprites(&manifest.walls, "assets/sprites/walls", &mut loaded, total, "Loading walls...").await)
+                }
+            } else {
+                SpriteStore::Individual(load_individual_sprites(&manifest.walls, "assets/sprites/walls", &mut loaded, total, "Loading walls...").await)
+            };
+
+            // Load NPCs (individual - animation spritesheets)
+            set_loading!("Loading NPCs...");
+            let npcs = load_individual_sprites(&manifest.enemies, "assets/sprites/enemies", &mut loaded, total, "Loading NPCs...").await;
+
+            (equipment, weapons, items, objects, walls, npcs)
         };
 
         #[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
@@ -308,9 +414,9 @@ impl Renderer {
 
             let equipment = load_sprites_from_dir_or_manifest("assets/sprites/equipment", &manifest.equipment, "assets/sprites").await;
             let weapons = load_sprites_from_dir_or_manifest("assets/sprites/weapons", &manifest.weapons, "assets/sprites/weapons").await;
-            let items = load_sprites_from_dir_or_manifest("assets/sprites/inventory", &manifest.inventory, "assets/sprites/inventory").await;
-            let objects = load_sprites_from_dir_or_manifest("assets/sprites/objects", &manifest.objects, "assets/sprites/objects").await;
-            let walls = load_sprites_from_dir_or_manifest("assets/sprites/walls", &manifest.walls, "assets/sprites/walls").await;
+            let items = SpriteStore::Individual(load_sprites_from_dir_or_manifest("assets/sprites/inventory", &manifest.inventory, "assets/sprites/inventory").await);
+            let objects = SpriteStore::Individual(load_sprites_from_dir_or_manifest("assets/sprites/objects", &manifest.objects, "assets/sprites/objects").await);
+            let walls = SpriteStore::Individual(load_sprites_from_dir_or_manifest("assets/sprites/walls", &manifest.walls, "assets/sprites/walls").await);
             let npcs = load_sprites_from_dir_or_manifest("assets/sprites/enemies", &manifest.enemies, "assets/sprites/enemies").await;
             (equipment, weapons, items, objects, walls, npcs)
         };
@@ -473,7 +579,7 @@ impl Renderer {
     }
 
     /// Get the sprite texture for a map object by its gid
-    fn get_object_sprite(&self, gid: u32) -> Option<&Texture2D> {
+    fn get_object_sprite(&self, gid: u32) -> Option<(&Texture2D, Option<Rect>)> {
         if gid < OBJECTS_FIRSTGID {
             return None;
         }
@@ -485,13 +591,10 @@ impl Renderer {
 
     /// Get the sprite texture for a wall by its gid
     /// Wall gid = WALLS_FIRSTGID + file_id, where file_id starts at 101
-    fn get_wall_sprite(&self, gid: u32) -> Option<&Texture2D> {
+    fn get_wall_sprite(&self, gid: u32) -> Option<(&Texture2D, Option<Rect>)> {
         if gid < WALLS_FIRSTGID {
             return None;
         }
-        // gid = firstGid + fileId, so fileId = gid - firstGid
-        // But mapper does: gid = firstGid + fileId where fileId is the actual filename (101, 102, etc)
-        // So for gid=102 with firstGid=1: fileId = 102 - 1 = 101
         let file_id = gid - WALLS_FIRSTGID;
         let key = file_id.to_string();
         self.wall_sprites.get(&key)
@@ -2813,10 +2916,15 @@ impl Renderer {
         let item_y = screen_y - 8.0 * zoom - height_offset * zoom;
 
         // Try to use item sprite, fall back to colored rectangle
-        if let Some(texture) = self.item_sprites.get(&item.item_id) {
-            // Use full texture, centered on the ground position
-            let icon_width = texture.width() * zoom;
-            let icon_height = texture.height() * zoom;
+        if let Some((texture, source_rect)) = self.item_sprites.get(&item.item_id) {
+            // Use texture (or atlas region), centered on the ground position
+            let (sprite_w, sprite_h) = if let Some(r) = source_rect {
+                (r.w, r.h)
+            } else {
+                (texture.width(), texture.height())
+            };
+            let icon_width = sprite_w * zoom;
+            let icon_height = sprite_h * zoom;
 
             draw_texture_ex(
                 texture,
@@ -2825,6 +2933,7 @@ impl Renderer {
                 WHITE,
                 DrawTextureParams {
                     dest_size: Some(Vec2::new(icon_width, icon_height)),
+                    source: source_rect,
                     ..Default::default()
                 },
             );
@@ -2981,9 +3090,12 @@ impl Renderer {
         let zoom = camera.zoom;
 
         // Try to get the sprite for this gid
-        if let Some(texture) = self.get_object_sprite(obj.gid) {
-            let tex_width = texture.width();
-            let tex_height = texture.height();
+        if let Some((texture, source_rect)) = self.get_object_sprite(obj.gid) {
+            let (tex_width, tex_height) = if let Some(r) = source_rect {
+                (r.w, r.h)
+            } else {
+                (texture.width(), texture.height())
+            };
 
             // Scale the sprite (round to avoid fractional scaling artifacts)
             let scaled_width = (tex_width * zoom).round();
@@ -3001,6 +3113,7 @@ impl Renderer {
                 WHITE,
                 DrawTextureParams {
                     dest_size: Some(Vec2::new(scaled_width, scaled_height)),
+                    source: source_rect,
                     ..Default::default()
                 },
             );
@@ -3048,9 +3161,12 @@ impl Renderer {
         let bottom_vertex_y = (screen_y + (TILE_HEIGHT / 2.0) * zoom).round();
 
         // Try to get the wall sprite for this gid
-        if let Some(texture) = self.get_wall_sprite(wall.gid) {
-            let tex_width = texture.width();
-            let tex_height = texture.height();
+        if let Some((texture, source_rect)) = self.get_wall_sprite(wall.gid) {
+            let (tex_width, tex_height) = if let Some(r) = source_rect {
+                (r.w, r.h)
+            } else {
+                (texture.width(), texture.height())
+            };
 
             let scaled_width = (tex_width * zoom).round();
             let scaled_height = (tex_height * zoom).round();
@@ -3073,6 +3189,7 @@ impl Renderer {
                 WHITE,
                 DrawTextureParams {
                     dest_size: Some(Vec2::new(scaled_width, scaled_height)),
+                    source: source_rect,
                     ..Default::default()
                 },
             );

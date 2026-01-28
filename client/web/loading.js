@@ -22,6 +22,11 @@ miniquad_add_plugin({
             if (el) el.textContent = label;
         };
 
+        importObject.env.console_log = function (msg_js) {
+            var msg = consume_js_object(msg_js);
+            console.log(msg);
+        };
+
         importObject.env.loading_hide = function () {
             var overlay = document.getElementById("loading-overlay");
             if (overlay) {
