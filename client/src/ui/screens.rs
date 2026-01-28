@@ -2,8 +2,9 @@ use macroquad::prelude::*;
 use macroquad::miniquad::window::show_keyboard;
 use std::collections::HashMap;
 
-#[cfg(not(target_arch = "wasm32"))]
 use crate::auth::{AuthClient, AuthSession, CharacterInfo};
+#[cfg(target_arch = "wasm32")]
+use crate::auth::AuthResult;
 use crate::audio::AudioManager;
 use crate::render::BitmapFont;
 use crate::util::{asset_path, virtual_screen_size};
@@ -159,13 +160,10 @@ pub enum ScreenState {
     /// Stay on current screen
     Continue,
     /// Move to character select with auth session
-    #[cfg(not(target_arch = "wasm32"))]
     ToCharacterSelect(AuthSession),
     /// Move to character creation screen
-    #[cfg(not(target_arch = "wasm32"))]
     ToCharacterCreate(AuthSession),
     /// Start the game with the selected character
-    #[cfg(not(target_arch = "wasm32"))]
     StartGame {
         session: AuthSession,
         character_id: i64,
@@ -203,7 +201,6 @@ pub struct LoginScreen {
     active_field: LoginField,
     mode: LoginMode,
     error_message: Option<String>,
-    #[cfg(not(target_arch = "wasm32"))]
     auth_client: AuthClient,
     font: BitmapFont,
     logo: Option<Texture2D>,
@@ -212,10 +209,11 @@ pub struct LoginScreen {
     stars: Vec<(f32, f32, f32)>, // (x, y, phase)
     shooting_stars: Vec<ShootingStar>,
     // Server status
-    #[cfg(not(target_arch = "wasm32"))]
     server_url: String,
     server_online: bool,
     last_ping_time: f32,
+    #[cfg(target_arch = "wasm32")]
+    loading: bool,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -248,17 +246,17 @@ impl LoginScreen {
             active_field: LoginField::Username,
             mode: LoginMode::Login,
             error_message: None,
-            #[cfg(not(target_arch = "wasm32"))]
             auth_client: AuthClient::new(server_url),
             font: BitmapFont::default(),
             logo: None,
             frame_counter: 0.0,
             stars,
             shooting_stars: Vec::with_capacity(4),
-            #[cfg(not(target_arch = "wasm32"))]
             server_url: server_url.to_string(),
             server_online: false,
             last_ping_time: -10.0, // trigger immediate ping
+            #[cfg(target_arch = "wasm32")]
+            loading: false,
         }
     }
 
@@ -359,6 +357,31 @@ impl Screen for LoginScreen {
                 .is_ok();
         }
 
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Poll pending auth requests
+            if let Some(result) = self.auth_client.poll() {
+                self.loading = false;
+                match result {
+                    AuthResult::Login(Ok(session)) | AuthResult::Register(Ok(session)) => {
+                        return ScreenState::ToCharacterSelect(session);
+                    }
+                    AuthResult::Login(Err(e)) | AuthResult::Register(Err(e)) => {
+                        self.error_message = Some(e.to_string());
+                    }
+                    AuthResult::HealthCheck(online) => {
+                        self.server_online = online;
+                    }
+                    _ => {}
+                }
+            }
+            // Periodic health check
+            if self.frame_counter - self.last_ping_time > 5.0 && !self.auth_client.is_busy() {
+                self.last_ping_time = self.frame_counter;
+                self.auth_client.start_health_check();
+            }
+        }
+
         // Layout constants (must match render)
         let box_width = sw.min(340.0);  // Wider inputs
         let box_height = 40.0;          // Taller inputs
@@ -427,6 +450,14 @@ impl Screen for LoginScreen {
                             Err(e) => {
                                 self.error_message = Some(e.to_string());
                             }
+                        }
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    if !self.auth_client.is_busy() {
+                        self.loading = true;
+                        match self.mode {
+                            LoginMode::Login => self.auth_client.start_login(&self.username, &self.password),
+                            LoginMode::Register => self.auth_client.start_register(&self.username, &self.password),
                         }
                     }
                 } else if self.username.len() < 3 {
@@ -502,8 +533,12 @@ impl Screen for LoginScreen {
             }
 
             #[cfg(target_arch = "wasm32")]
-            {
-                self.error_message = Some("Network not available in WASM".to_string());
+            if !self.auth_client.is_busy() {
+                self.loading = true;
+                match self.mode {
+                    LoginMode::Login => self.auth_client.start_login(&self.username, &self.password),
+                    LoginMode::Register => self.auth_client.start_register(&self.username, &self.password),
+                }
             }
         }
 
@@ -738,10 +773,8 @@ impl Screen for LoginScreen {
 // ============================================================================
 
 /// Maximum characters per account
-#[cfg(not(target_arch = "wasm32"))]
 const MAX_CHARACTERS: usize = 3;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub struct CharacterSelectScreen {
     session: AuthSession,
     characters: Vec<CharacterInfo>,
@@ -756,15 +789,21 @@ pub struct CharacterSelectScreen {
     list_scroll_offset: f32,
     touch_scroll_id: Option<u64>,
     touch_scroll_last_y: f32,
+    #[cfg(target_arch = "wasm32")]
+    loading: bool,
+    #[cfg(target_arch = "wasm32")]
+    needs_initial_load: bool,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl CharacterSelectScreen {
     pub fn new(session: AuthSession, server_url: &str) -> Self {
         let auth_client = AuthClient::new(server_url);
 
-        // Load characters
+        // Load characters (native: blocking, WASM: deferred via polling)
+        #[cfg(not(target_arch = "wasm32"))]
         let characters = auth_client.get_characters(&session.token).unwrap_or_default();
+        #[cfg(target_arch = "wasm32")]
+        let characters = Vec::new();
 
         Self {
             session,
@@ -779,6 +818,10 @@ impl CharacterSelectScreen {
             list_scroll_offset: 0.0,
             touch_scroll_id: None,
             touch_scroll_last_y: 0.0,
+            #[cfg(target_arch = "wasm32")]
+            loading: false,
+            #[cfg(target_arch = "wasm32")]
+            needs_initial_load: true,
         }
     }
 
@@ -798,11 +841,19 @@ impl CharacterSelectScreen {
 
     /// Refresh the character list from the server
     pub fn refresh_characters(&mut self) {
-        if let Ok(chars) = self.auth_client.get_characters(&self.session.token) {
-            self.characters = chars;
-            if self.selected_index >= self.characters.len() && !self.characters.is_empty() {
-                self.selected_index = self.characters.len() - 1;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Ok(chars) = self.auth_client.get_characters(&self.session.token) {
+                self.characters = chars;
+                if self.selected_index >= self.characters.len() && !self.characters.is_empty() {
+                    self.selected_index = self.characters.len() - 1;
+                }
             }
+        }
+        #[cfg(target_arch = "wasm32")]
+        if !self.auth_client.is_busy() {
+            self.loading = true;
+            self.auth_client.start_get_characters(&self.session.token);
         }
     }
 
@@ -816,9 +867,40 @@ impl CharacterSelectScreen {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterSelectScreen {
     fn update(&mut self, _audio: &AudioManager) -> ScreenState {
+        // WASM: poll pending requests and handle initial character load
+        #[cfg(target_arch = "wasm32")]
+        {
+            if self.needs_initial_load && !self.auth_client.is_busy() {
+                self.needs_initial_load = false;
+                self.loading = true;
+                self.auth_client.start_get_characters(&self.session.token);
+            }
+            if let Some(result) = self.auth_client.poll() {
+                self.loading = false;
+                match result {
+                    AuthResult::Characters(Ok(chars)) => {
+                        self.characters = chars;
+                        if self.selected_index >= self.characters.len() && !self.characters.is_empty() {
+                            self.selected_index = self.characters.len() - 1;
+                        }
+                    }
+                    AuthResult::Characters(Err(e)) => {
+                        self.error_message = Some(e.to_string());
+                    }
+                    AuthResult::CharacterDeleted(Ok(())) => {
+                        // Refresh after delete
+                        self.refresh_characters();
+                    }
+                    AuthResult::CharacterDeleted(Err(e)) => {
+                        self.error_message = Some(e.to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         let (sw, sh) = virtual_screen_size();
         let (input_pos, clicked, _is_touch) = get_input_state();
         let mx = input_pos.x;
@@ -884,8 +966,16 @@ impl Screen for CharacterSelectScreen {
             if is_key_pressed(KeyCode::Y) {
                 if !self.characters.is_empty() {
                     let char_id = self.characters[self.selected_index].id;
-                    if self.auth_client.delete_character(&self.session.token, char_id).is_ok() {
-                        self.refresh_characters();
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        if self.auth_client.delete_character(&self.session.token, char_id).is_ok() {
+                            self.refresh_characters();
+                        }
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    if !self.auth_client.is_busy() {
+                        self.loading = true;
+                        self.auth_client.start_delete_character(&self.session.token, char_id);
                     }
                 }
                 self.confirm_delete = false;
@@ -909,8 +999,16 @@ impl Screen for CharacterSelectScreen {
                 if point_in_rect(mx, my, yes_x, yes_y, 100.0, 30.0) {
                     if !self.characters.is_empty() {
                         let char_id = self.characters[self.selected_index].id;
-                        if self.auth_client.delete_character(&self.session.token, char_id).is_ok() {
-                            self.refresh_characters();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            if self.auth_client.delete_character(&self.session.token, char_id).is_ok() {
+                                self.refresh_characters();
+                            }
+                        }
+                        #[cfg(target_arch = "wasm32")]
+                        if !self.auth_client.is_busy() {
+                            self.loading = true;
+                            self.auth_client.start_delete_character(&self.session.token, char_id);
                         }
                     }
                     self.confirm_delete = false;
@@ -985,7 +1083,8 @@ impl Screen for CharacterSelectScreen {
 
             // Logout button
             if point_in_rect(mx, my, list_x + 330.0, inst_y - 10.0, 100.0, 30.0) {
-                let _ = self.auth_client.logout(&self.session.token);
+                #[cfg(not(target_arch = "wasm32"))]
+                { let _ = self.auth_client.logout(&self.session.token); }
                 return ScreenState::ToLogin;
             }
         }
@@ -1016,7 +1115,8 @@ impl Screen for CharacterSelectScreen {
 
         // Keyboard: Logout
         if is_key_pressed(KeyCode::Escape) {
-            let _ = self.auth_client.logout(&self.session.token);
+            #[cfg(not(target_arch = "wasm32"))]
+            { let _ = self.auth_client.logout(&self.session.token); }
             return ScreenState::ToLogin;
         }
 
@@ -1325,13 +1425,10 @@ impl Screen for CharacterSelectScreen {
 // Character Create Screen
 // ============================================================================
 
-#[cfg(not(target_arch = "wasm32"))]
 const GENDERS: [&str; 2] = ["male", "female"];
 
-#[cfg(not(target_arch = "wasm32"))]
 const SKINS: [&str; 7] = ["tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"];
 
-#[cfg(not(target_arch = "wasm32"))]
 pub struct CharacterCreateScreen {
     session: AuthSession,
     name: String,
@@ -1348,12 +1445,13 @@ pub struct CharacterCreateScreen {
     scroll_y: f32,
     last_touch_y: Option<f32>,
     touch_detected: bool,
+    #[cfg(target_arch = "wasm32")]
+    loading: bool,
 }
 
 const HAIR_STYLES: usize = 3;  // 0, 1, 2
 const HAIR_COLORS: usize = 10; // 0-9 (20 frames / 2 front-back pairs)
 
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(PartialEq, Clone, Copy)]
 enum CreateField {
     Name,
@@ -1363,7 +1461,6 @@ enum CreateField {
     HairColor,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl CharacterCreateScreen {
     pub fn new(session: AuthSession, server_url: &str) -> Self {
         Self {
@@ -1382,6 +1479,8 @@ impl CharacterCreateScreen {
             scroll_y: 0.0,
             last_touch_y: None,
             touch_detected: false,
+            #[cfg(target_arch = "wasm32")]
+            loading: false,
         }
     }
 
@@ -1428,9 +1527,25 @@ impl CharacterCreateScreen {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl Screen for CharacterCreateScreen {
     fn update(&mut self, audio: &AudioManager) -> ScreenState {
+        // WASM: poll pending requests
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(result) = self.auth_client.poll() {
+                self.loading = false;
+                match result {
+                    AuthResult::CharacterCreated(Ok(_)) => {
+                        return ScreenState::ToCharacterSelect(self.session.clone());
+                    }
+                    AuthResult::CharacterCreated(Err(e)) => {
+                        self.error_message = Some(e.to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         let (sw, sh) = virtual_screen_size();
         let (input_pos, clicked, _is_touch) = get_input_state();
         let mx = input_pos.x;
@@ -1606,6 +1721,7 @@ impl Screen for CharacterCreateScreen {
                 let hair_style = self.hair_style_index.map(|i| i as i32);
                 let hair_color = if self.hair_style_index.is_some() { Some(self.hair_color_index as i32) } else { None };
 
+                #[cfg(not(target_arch = "wasm32"))]
                 match self.auth_client.create_character(&self.session.token, name, gender, skin, hair_style, hair_color) {
                     Ok(_) => {
                         return ScreenState::ToCharacterSelect(self.session.clone());
@@ -1613,6 +1729,11 @@ impl Screen for CharacterCreateScreen {
                     Err(e) => {
                         self.error_message = Some(e.to_string());
                     }
+                }
+                #[cfg(target_arch = "wasm32")]
+                if !self.auth_client.is_busy() {
+                    self.loading = true;
+                    self.auth_client.start_create_character(&self.session.token, name, gender, skin, hair_style, hair_color);
                 }
             }
 
@@ -1738,6 +1859,7 @@ impl Screen for CharacterCreateScreen {
             let hair_style = self.hair_style_index.map(|i| i as i32);
             let hair_color = if self.hair_style_index.is_some() { Some(self.hair_color_index as i32) } else { None };
 
+            #[cfg(not(target_arch = "wasm32"))]
             match self.auth_client.create_character(&self.session.token, name, gender, skin, hair_style, hair_color) {
                 Ok(_) => {
                     return ScreenState::ToCharacterSelect(self.session.clone());
@@ -1745,6 +1867,11 @@ impl Screen for CharacterCreateScreen {
                 Err(e) => {
                     self.error_message = Some(e.to_string());
                 }
+            }
+            #[cfg(target_arch = "wasm32")]
+            if !self.auth_client.is_busy() {
+                self.loading = true;
+                self.auth_client.start_create_character(&self.session.token, name, gender, skin, hair_style, hair_color);
             }
         }
 

@@ -14,7 +14,6 @@ pub mod game;
 pub mod render;
 pub mod network;
 pub mod input;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod auth;
 pub mod ui;
 pub mod audio;
@@ -26,9 +25,7 @@ use network::NetworkClient;
 use render::Renderer;
 use input::InputHandler;
 
-#[cfg(not(target_arch = "wasm32"))]
 use ui::{Screen, ScreenState, LoginScreen, CharacterSelectScreen, CharacterCreateScreen};
-#[cfg(not(target_arch = "wasm32"))]
 use auth::AuthSession;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -237,15 +234,180 @@ async fn async_main() {
         }
     }
 
-    // WASM build - networked game mode
+    // WASM build - full auth flow
     #[cfg(target_arch = "wasm32")]
     {
-        let mut game_state = GameState::new();
-        let mut network = NetworkClient::new_guest(WS_URL);
-        let mut input_handler = InputHandler::new();
+        use crate::auth::AuthResult;
+
+        // Start menu music
+        audio.play_music("assets/audio/menu.ogg").await;
+
+        let mut login_screen = LoginScreen::new(SERVER_URL);
+        login_screen.load_font().await;
+
+        enum WasmAppState {
+            Login(LoginScreen),
+            CharacterSelect(CharacterSelectScreen),
+            CharacterCreate(CharacterCreateScreen),
+            Matchmaking {
+                auth_client: crate::auth::AuthClient,
+                session: AuthSession,
+                character_name: String,
+            },
+            Playing {
+                game_state: GameState,
+                network: NetworkClient,
+                input_handler: InputHandler,
+            },
+            GuestMode {
+                game_state: GameState,
+                network: NetworkClient,
+                input_handler: InputHandler,
+            },
+        }
+
+        let mut app_state = WasmAppState::Login(login_screen);
 
         loop {
-            run_game_frame(&mut game_state, &mut network, &mut input_handler, &renderer, &mut audio);
+            match &mut app_state {
+                WasmAppState::Login(screen) => {
+                    let result = screen.update(&audio);
+                    screen.render();
+
+                    match result {
+                        ScreenState::ToCharacterSelect(session) => {
+                            audio.play_sfx("login_success");
+                            let mut char_screen = CharacterSelectScreen::new(session, SERVER_URL);
+                            char_screen.load_font().await;
+                            app_state = WasmAppState::CharacterSelect(char_screen);
+                        }
+                        ScreenState::StartGuestMode => {
+                            let mut game_state = GameState::new();
+                            game_state.ui_state.audio_volume = audio.music_volume();
+                            game_state.ui_state.audio_sfx_volume = audio.sfx_volume();
+                            game_state.ui_state.audio_muted = audio.is_muted();
+                            let network = NetworkClient::new_guest(WS_URL);
+                            let input_handler = InputHandler::new();
+
+                            audio.play_music("assets/audio/start.ogg").await;
+
+                            app_state = WasmAppState::GuestMode {
+                                game_state,
+                                network,
+                                input_handler,
+                            };
+                        }
+                        _ => {}
+                    }
+                }
+
+                WasmAppState::CharacterSelect(screen) => {
+                    let result = screen.update(&audio);
+                    screen.render();
+
+                    match result {
+                        ScreenState::StartGame { session, character_id, character_name } => {
+                            // Start matchmaking via auth client
+                            let mut auth_client = crate::auth::AuthClient::new(SERVER_URL);
+                            auth_client.start_matchmake(&session.token, character_id, "game_room");
+                            app_state = WasmAppState::Matchmaking {
+                                auth_client,
+                                session,
+                                character_name,
+                            };
+                        }
+                        ScreenState::ToCharacterCreate(session) => {
+                            let mut create_screen = CharacterCreateScreen::new(session, SERVER_URL);
+                            create_screen.load_font().await;
+                            app_state = WasmAppState::CharacterCreate(create_screen);
+                        }
+                        ScreenState::ToLogin => {
+                            let mut login_screen = LoginScreen::new(SERVER_URL);
+                            login_screen.load_font().await;
+                            app_state = WasmAppState::Login(login_screen);
+                        }
+                        _ => {}
+                    }
+                }
+
+                WasmAppState::CharacterCreate(screen) => {
+                    let result = screen.update(&audio);
+                    screen.render();
+
+                    match result {
+                        ScreenState::ToCharacterSelect(session) => {
+                            let mut char_screen = CharacterSelectScreen::new(session, SERVER_URL);
+                            char_screen.load_font().await;
+                            app_state = WasmAppState::CharacterSelect(char_screen);
+                        }
+                        _ => {}
+                    }
+                }
+
+                WasmAppState::Matchmaking { auth_client, session, character_name } => {
+                    // Draw a simple "Connecting..." screen
+                    clear_background(Color::from_rgba(25, 25, 35, 255));
+                    let (sw, sh) = (screen_width(), screen_height());
+                    draw_text("Connecting to server...", sw / 2.0 - 100.0, sh / 2.0, 20.0, WHITE);
+
+                    if let Some(result) = auth_client.poll() {
+                        match result {
+                            AuthResult::Matchmake(Ok((room_id, session_token))) => {
+                                let mut game_state = GameState::new();
+                                game_state.selected_character_name = Some(character_name.clone());
+                                game_state.ui_state.audio_volume = audio.music_volume();
+                                game_state.ui_state.audio_sfx_volume = audio.sfx_volume();
+                                game_state.ui_state.audio_muted = audio.is_muted();
+
+                                // Store matchmaking results in localStorage for WASM network client
+                                {
+                                    let storage = &mut quad_storage::STORAGE.lock().unwrap();
+                                    storage.set("roomId", &room_id);
+                                    storage.set("sessionToken", &session_token);
+                                }
+
+                                // NetworkClient::new_authenticated will read roomId/sessionToken from localStorage
+                                let network = NetworkClient::new_authenticated(
+                                    WS_URL,
+                                    &session.token,
+                                    0,
+                                );
+                                let input_handler = InputHandler::new();
+
+                                audio.play_music("assets/audio/start.ogg").await;
+
+                                app_state = WasmAppState::Playing {
+                                    game_state,
+                                    network,
+                                    input_handler,
+                                };
+                            }
+                            AuthResult::Matchmake(Err(e)) => {
+                                log::error!("Matchmaking failed: {}", e);
+                                // Go back to character select
+                                let mut char_screen = CharacterSelectScreen::new(session.clone(), SERVER_URL);
+                                char_screen.load_font().await;
+                                app_state = WasmAppState::CharacterSelect(char_screen);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                WasmAppState::Playing { game_state, network, input_handler } |
+                WasmAppState::GuestMode { game_state, network, input_handler } => {
+                    run_game_frame(game_state, network, input_handler, &renderer, &mut audio);
+
+                    if game_state.disconnect_requested || game_state.reconnection_failed {
+                        audio.play_music("assets/audio/menu.ogg").await;
+                        network.disconnect();
+                        let mut login_screen = LoginScreen::new(SERVER_URL);
+                        login_screen.load_font().await;
+                        app_state = WasmAppState::Login(login_screen);
+                    }
+                }
+            }
+
             next_frame().await;
         }
     }
