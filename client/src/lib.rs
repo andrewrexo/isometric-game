@@ -12,19 +12,16 @@ pub use mobile_scale::MobileScaler;
 
 pub mod game;
 pub mod render;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod network;
 pub mod input;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod auth;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod ui;
 pub mod audio;
 mod app;
 
 use audio::AudioManager;
 use game::GameState;
-#[cfg(not(target_arch = "wasm32"))]
 use network::NetworkClient;
 use render::Renderer;
 use input::InputHandler;
@@ -34,7 +31,9 @@ use ui::{Screen, ScreenState, LoginScreen, CharacterSelectScreen, CharacterCreat
 #[cfg(not(target_arch = "wasm32"))]
 use auth::AuthSession;
 
-use app::{window_conf, SERVER_URL, WS_URL, DEV_MODE, AppState, run_game_frame};
+#[cfg(not(target_arch = "wasm32"))]
+use app::AppState;
+use app::{window_conf, SERVER_URL, WS_URL, DEV_MODE, run_game_frame};
 
 // For Android, we need to export quad_main as the entry point
 // miniquad's JNI code (in MainActivity.java) spawns a thread that calls quad_main
@@ -44,8 +43,15 @@ pub extern "C" fn quad_main() {
     macroquad::Window::from_config(window_conf(), async_main());
 }
 
+// WASM entry point - miniquad's JS bundle calls the exported `main` function
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub extern "C" fn main() {
+    macroquad::Window::from_config(window_conf(), async_main());
+}
+
 // Desktop entry point (not used when building as library, but needed for binary builds)
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
 #[macroquad::main(window_conf)]
 async fn main() {
     async_main().await;
@@ -65,8 +71,7 @@ async fn async_main() {
         }
     }));
 
-    #[cfg(target_arch = "wasm32")]
-    console_error_panic_hook::set_once();
+    // On WASM, macroquad/miniquad handles panic logging to console
 
     let renderer = Renderer::new().await;
     let mut audio = AudioManager::new().await;
@@ -232,60 +237,15 @@ async fn async_main() {
         }
     }
 
-    // WASM build - offline demo mode
+    // WASM build - networked game mode
     #[cfg(target_arch = "wasm32")]
     {
         let mut game_state = GameState::new();
-
-        use game::Player;
-        let player = Player::new("local".to_string(), "WebPlayer".to_string(), 5.0, 5.0, "male".to_string(), "tan".to_string());
-        game_state.players.insert("local".to_string(), player);
-        game_state.local_player_id = Some("local".to_string());
-
+        let mut network = NetworkClient::new_guest(WS_URL);
         let mut input_handler = InputHandler::new();
 
         loop {
-            let delta = get_frame_time();
-
-            if is_key_pressed(KeyCode::F3) {
-                game_state.debug_mode = !game_state.debug_mode;
-            }
-
-            if game_state.debug_mode {
-                if let Some(local_id) = &game_state.local_player_id.clone() {
-                    if let Some(player) = game_state.players.get_mut(local_id) {
-                        if is_key_pressed(KeyCode::F5) {
-                            player.gender = match player.gender.as_str() {
-                                "male" => "female".to_string(),
-                                _ => "male".to_string(),
-                            };
-                        }
-                        if is_key_pressed(KeyCode::F6) {
-                            let skins = ["tan", "pale", "brown", "purple", "orc", "ghost", "skeleton"];
-                            let current_idx = skins.iter().position(|&s| s == player.skin).unwrap_or(0);
-                            let next_idx = (current_idx + 1) % skins.len();
-                            player.skin = skins[next_idx].to_string();
-                        }
-                    }
-                }
-            }
-
-            clear_background(Color::from_rgba(30, 30, 40, 255));
-            let (layout, _render_timings) = renderer.render(&game_state);
-
-            let _ = input_handler.process(&mut game_state, &layout, &mut audio);
-
-            let (input_dx, input_dy) = input_handler.get_movement();
-            game_state.update(delta, input_dx, input_dy);
-
-            if game_state.debug_mode {
-                renderer.draw_text_sharp(&format!("FPS: {}", get_fps()), 10.0, 20.0, 16.0, WHITE);
-                renderer.draw_text_sharp("WASM Demo (no network)", 10.0, 40.0, 16.0, YELLOW);
-                if let Some(player) = game_state.get_local_player() {
-                    renderer.draw_text_sharp(&format!("Appearance: {} {} (F5/F6 to cycle)", player.gender, player.skin), 10.0, 60.0, 16.0, Color::from_rgba(150, 200, 255, 255));
-                }
-            }
-
+            run_game_frame(&mut game_state, &mut network, &mut input_handler, &renderer, &mut audio);
             next_frame().await;
         }
     }

@@ -44,8 +44,8 @@ dirs = "5.0"
 
 # WASM dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1"
 quad-storage = "0.1"
+sapp-jsutils = "0.1"
 
 [profile.dev]
 opt-level = 0

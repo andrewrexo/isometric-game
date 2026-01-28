@@ -5,7 +5,6 @@ use macroquad::prelude::*;
 use std::time::{Duration, Instant};
 
 use crate::game::GameState;
-#[cfg(not(target_arch = "wasm32"))]
 use crate::network::NetworkClient;
 use crate::render::Renderer;
 use crate::input::{InputHandler, InputCommand};
@@ -63,7 +62,6 @@ pub enum AppState {
 }
 
 /// Run a single frame of gameplay
-#[cfg(not(target_arch = "wasm32"))]
 pub fn run_game_frame(
     game_state: &mut GameState,
     network: &mut NetworkClient,
