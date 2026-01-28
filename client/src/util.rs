@@ -103,40 +103,43 @@ impl SpriteManifest {
     }
 }
 
-/// Load sprites from a directory (desktop) or manifest (Android)
-pub async fn load_sprites_from_dir_or_manifest(
+/// Progress callback for sprite loading: (loaded_count, total_count)
+pub type LoadProgress = dyn FnMut(usize, usize);
+
+/// Load sprites from a directory (desktop) or manifest (Android/WASM).
+/// Calls `on_progress(loaded, total)` after each sprite is loaded.
+pub async fn load_sprites_with_progress(
     dir_path: &str,
     manifest_items: &[String],
     base_path_for_manifest: &str,
+    on_progress: &mut LoadProgress,
 ) -> HashMap<String, Texture2D> {
     let mut sprites = HashMap::new();
 
     #[cfg(any(target_os = "android", target_arch = "wasm32"))]
     {
+        let total = manifest_items.len();
         // On Android/WASM, use the manifest
-        for item in manifest_items {
-            // For equipment, the manifest includes subdirectory (e.g., "equipment/body/admin_robes")
-            // Extract just the filename for the key
+        for (i, item) in manifest_items.iter().enumerate() {
             let key = item.rsplit('/').next().unwrap_or(item).to_string();
             let path = asset_path(&format!("{}/{}.png", base_path_for_manifest, item));
 
             match load_texture(&path).await {
                 Ok(tex) => {
                     tex.set_filter(FilterMode::Nearest);
-                    log::debug!("Loaded sprite: {}", key);
                     sprites.insert(key, tex);
                 }
                 Err(e) => {
                     log::warn!("Failed to load sprite {}: {}", path, e);
                 }
             }
+            on_progress(i + 1, total);
         }
     }
 
     #[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
     {
-        // On desktop, scan the directory
-        let _ = manifest_items; // Unused on desktop
+        let _ = manifest_items;
         let _ = base_path_for_manifest;
 
         fn scan_dir(dir: &str, sprites: &mut Vec<(String, String)>) {
@@ -157,19 +160,29 @@ pub async fn load_sprites_from_dir_or_manifest(
         let mut found = Vec::new();
         scan_dir(dir_path, &mut found);
 
-        for (key, path) in found {
+        let total = found.len();
+        for (i, (key, path)) in found.into_iter().enumerate() {
             match load_texture(&path).await {
                 Ok(tex) => {
                     tex.set_filter(FilterMode::Nearest);
-                    log::debug!("Loaded sprite: {}", key);
                     sprites.insert(key, tex);
                 }
                 Err(e) => {
                     log::warn!("Failed to load sprite {}: {}", path, e);
                 }
             }
+            on_progress(i + 1, total);
         }
     }
 
     sprites
+}
+
+/// Load sprites without progress (convenience wrapper)
+pub async fn load_sprites_from_dir_or_manifest(
+    dir_path: &str,
+    manifest_items: &[String],
+    base_path_for_manifest: &str,
+) -> HashMap<String, Texture2D> {
+    load_sprites_with_progress(dir_path, manifest_items, base_path_for_manifest, &mut |_, _| {}).await
 }

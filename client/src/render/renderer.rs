@@ -4,7 +4,7 @@ use macroquad::material::{load_material, gl_use_material, gl_use_default_materia
 use macroquad::miniquad::UniformDesc;
 use macroquad::miniquad::ShaderSource;
 use std::collections::HashMap;
-use crate::util::{asset_path, SpriteManifest, load_sprites_from_dir_or_manifest, virtual_screen_size};
+use crate::util::{asset_path, SpriteManifest, virtual_screen_size};
 use crate::game::{GameState, Player, Camera, ConnectionStatus, LayerType, GroundItem, ChunkLayerType, CHUNK_SIZE, MapObject, ChatChannel, Direction, DragSource, Wall, WallEdge};
 use crate::game::npc::{Npc, NpcState};
 use crate::game::tilemap::get_tile_color;
@@ -149,21 +149,69 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    /// Update the HTML loading overlay progress (WASM only, no-op on other platforms).
+    #[cfg(target_arch = "wasm32")]
+    fn update_loading(loaded: usize, total: usize, label: &str) {
+        use sapp_jsutils::JsObject;
+        extern "C" {
+            fn loading_set_progress(pct_times_100: i32);
+            fn loading_set_label(label: JsObject);
+            fn loading_hide();
+        }
+        let pct = if total > 0 { (loaded as f64 / total as f64 * 10000.0) as i32 } else { 0 };
+        unsafe {
+            loading_set_progress(pct);
+            loading_set_label(JsObject::string(label));
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn hide_loading() {
+        extern "C" {
+            fn loading_hide();
+        }
+        unsafe { loading_hide(); }
+    }
+
     pub async fn new() -> Self {
-        // Try to load the tileset texture
+        // Load manifest first to compute total sprite count
+        let manifest = SpriteManifest::load().await;
+
+        // Fixed assets: 1 tileset + 14 players + 3 hair + 1 font + 8 UI textures + 1 shader = 28
+        const FIXED_ASSETS: usize = 28;
+        let manifest_total = manifest.equipment.len()
+            + manifest.weapons.len()
+            + manifest.inventory.len()
+            + manifest.objects.len()
+            + manifest.walls.len()
+            + manifest.enemies.len();
+        let total = FIXED_ASSETS + manifest_total;
+        let mut loaded: usize = 0;
+
+        // On WASM, update the HTML overlay. On other platforms, no-op.
+        macro_rules! set_loading {
+            ($label:expr) => {
+                #[cfg(target_arch = "wasm32")]
+                Self::update_loading(loaded, total, $label);
+            };
+        }
+
+        set_loading!("Loading tileset...");
+
         let tileset = match load_texture(&asset_path("assets/sprites/tiles.png")).await {
             Ok(tex) => {
                 tex.set_filter(FilterMode::Nearest);
-                log::info!("Loaded tileset: {}x{}", tex.width(), tex.height());
                 Some(tex)
             }
             Err(e) => {
-                log::warn!("Failed to load tileset: {}. Using fallback colors.", e);
+                log::warn!("Failed to load tileset: {}", e);
                 None
             }
         };
+        loaded += 1;
 
-        // Load all player sprite sheets for each appearance combination
+        set_loading!("Loading player sprites...");
+
         let mut player_sprites = HashMap::new();
         for gender in GENDERS {
             for skin in SKINS {
@@ -172,92 +220,107 @@ impl Renderer {
                 match load_texture(&path).await {
                     Ok(tex) => {
                         tex.set_filter(FilterMode::Nearest);
-                        log::debug!("Loaded player sprite: {}", key);
                         player_sprites.insert(key, tex);
                     }
                     Err(e) => {
                         log::warn!("Failed to load player sprite {}: {}", path, e);
                     }
                 }
+                loaded += 1;
+                set_loading!("Loading player sprites...");
             }
         }
         log::info!("Loaded {} player sprite variants", player_sprites.len());
 
-        // Load hair sprites from assets/sprites/hair/
+        set_loading!("Loading hair sprites...");
+
         let mut hair_sprites = HashMap::new();
         for style in 0..3 {
             let path = asset_path(&format!("assets/sprites/hair/hair_{}.png", style));
             match load_texture(&path).await {
                 Ok(tex) => {
                     tex.set_filter(FilterMode::Nearest);
-                    log::info!("Loaded hair sprite: style {} ({}x{})", style, tex.width(), tex.height());
                     hair_sprites.insert(style, tex);
                 }
                 Err(e) => {
                     log::warn!("Failed to load hair sprite {}: {}", path, e);
                 }
             }
+            loaded += 1;
         }
         log::info!("Loaded {} hair sprite variants", hair_sprites.len());
 
-        // Load sprite manifest (used on Android, ignored on desktop)
-        let manifest = SpriteManifest::load().await;
+        // On WASM/Android, load sprite categories with per-sprite progress.
+        // On desktop, use the fast directory-scanning loader.
+        #[cfg(any(target_os = "android", target_arch = "wasm32"))]
+        let (equipment_sprites, weapon_sprites, item_sprites, object_sprites, wall_sprites, npc_sprites) = {
+            struct CatInfo<'a> {
+                label: &'a str,
+                items: &'a [String],
+                base: &'a str,
+            }
+            let categories = [
+                CatInfo { label: "Loading equipment...", items: &manifest.equipment, base: "assets/sprites" },
+                CatInfo { label: "Loading weapons...", items: &manifest.weapons, base: "assets/sprites/weapons" },
+                CatInfo { label: "Loading items...", items: &manifest.inventory, base: "assets/sprites/inventory" },
+                CatInfo { label: "Loading objects...", items: &manifest.objects, base: "assets/sprites/objects" },
+                CatInfo { label: "Loading walls...", items: &manifest.walls, base: "assets/sprites/walls" },
+                CatInfo { label: "Loading NPCs...", items: &manifest.enemies, base: "assets/sprites/enemies" },
+            ];
 
-        // Load equipment sprites
-        let equipment_sprites = load_sprites_from_dir_or_manifest(
-            "assets/sprites/equipment",
-            &manifest.equipment,
-            "assets/sprites",
-        ).await;
-        log::info!("Loaded {} equipment sprite variants", equipment_sprites.len());
+            let mut all_maps: Vec<HashMap<String, Texture2D>> = Vec::new();
+            for cat in &categories {
+                set_loading!(cat.label);
+                let mut sprites = HashMap::new();
+                for item in cat.items {
+                    let key = item.rsplit('/').next().unwrap_or(item).to_string();
+                    let path = asset_path(&format!("{}/{}.png", cat.base, item));
+                    match load_texture(&path).await {
+                        Ok(tex) => {
+                            tex.set_filter(FilterMode::Nearest);
+                            sprites.insert(key, tex);
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to load sprite {}: {}", path, e);
+                        }
+                    }
+                    loaded += 1;
+                    #[cfg(target_arch = "wasm32")]
+                    Self::update_loading(loaded, total, cat.label);
+                }
+                log::info!("Loaded {} sprites for {}", sprites.len(), cat.label);
+                all_maps.push(sprites);
+            }
 
-        // Load weapon sprites
-        let weapon_sprites = load_sprites_from_dir_or_manifest(
-            "assets/sprites/weapons",
-            &manifest.weapons,
-            "assets/sprites/weapons",
-        ).await;
-        log::info!("Loaded {} weapon sprite variants", weapon_sprites.len());
+            (
+                all_maps.remove(0),
+                all_maps.remove(0),
+                all_maps.remove(0),
+                all_maps.remove(0),
+                all_maps.remove(0),
+                all_maps.remove(0),
+            )
+        };
 
-        // Load item inventory sprites
-        let item_sprites = load_sprites_from_dir_or_manifest(
-            "assets/sprites/inventory",
-            &manifest.inventory,
-            "assets/sprites/inventory",
-        ).await;
-        log::info!("Loaded {} item sprite variants", item_sprites.len());
+        #[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
+        let (equipment_sprites, weapon_sprites, item_sprites, object_sprites, wall_sprites, npc_sprites) = {
+            use crate::util::load_sprites_from_dir_or_manifest;
 
-        // Load map object sprites
-        let object_sprites = load_sprites_from_dir_or_manifest(
-            "assets/sprites/objects",
-            &manifest.objects,
-            "assets/sprites/objects",
-        ).await;
-        log::info!("Loaded {} object sprite variants", object_sprites.len());
+            let equipment = load_sprites_from_dir_or_manifest("assets/sprites/equipment", &manifest.equipment, "assets/sprites").await;
+            let weapons = load_sprites_from_dir_or_manifest("assets/sprites/weapons", &manifest.weapons, "assets/sprites/weapons").await;
+            let items = load_sprites_from_dir_or_manifest("assets/sprites/inventory", &manifest.inventory, "assets/sprites/inventory").await;
+            let objects = load_sprites_from_dir_or_manifest("assets/sprites/objects", &manifest.objects, "assets/sprites/objects").await;
+            let walls = load_sprites_from_dir_or_manifest("assets/sprites/walls", &manifest.walls, "assets/sprites/walls").await;
+            let npcs = load_sprites_from_dir_or_manifest("assets/sprites/enemies", &manifest.enemies, "assets/sprites/enemies").await;
+            (equipment, weapons, items, objects, walls, npcs)
+        };
 
-        // Load wall sprites
-        let wall_sprites = load_sprites_from_dir_or_manifest(
-            "assets/sprites/walls",
-            &manifest.walls,
-            "assets/sprites/walls",
-        ).await;
-        log::info!("Loaded {} wall sprites", wall_sprites.len());
+        set_loading!("Loading fonts...");
 
-        // Load NPC sprites
-        let npc_sprites = load_sprites_from_dir_or_manifest(
-            "assets/sprites/enemies",
-            &manifest.enemies,
-            "assets/sprites/enemies",
-        ).await;
-        log::info!("Loaded {} NPC sprite variants", npc_sprites.len());
-
-        // Load monogram pixel font at multiple sizes for crisp rendering
         let font = BitmapFont::load_or_default("assets/fonts/monogram/ttf/monogram-extended.ttf").await;
-        if font.is_loaded() {
-            log::info!("Loaded monogram bitmap font at multiple sizes");
-        } else {
-            log::warn!("Failed to load monogram font, using default");
-        }
+        loaded += 1;
+
+        set_loading!("Loading UI...");
 
         // Load quest complete banner texture
         let quest_complete_texture = match load_texture(&asset_path("assets/ui/quest_complete.png")).await {
@@ -347,6 +410,8 @@ impl Renderer {
             }
         };
 
+        set_loading!("Loading shaders...");
+
         // Load head+hair composite shader material
         let head_hair_material = match load_material(
             ShaderSource::Glsl {
@@ -371,6 +436,9 @@ impl Renderer {
                 None
             }
         };
+
+        #[cfg(target_arch = "wasm32")]
+        Self::hide_loading();
 
         Self {
             player_color: Color::from_rgba(100, 150, 255, 255),

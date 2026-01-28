@@ -27,32 +27,75 @@
         top: 0;
         left: 0;
       }
-      #loading {
+      #loading-overlay {
         position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #1e1e28;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
         color: #fff;
         font-family: monospace;
-        font-size: 18px;
-        text-align: center;
+        transition: opacity 0.3s;
+      }
+      #loading-overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loading-title {
+        font-size: 24px;
+        margin-bottom: 24px;
+      }
+      #loading-bar-bg {
+        width: 50%;
+        max-width: 400px;
+        height: 16px;
+        background: #3c3c50;
+        border: 2px solid #8c8ca0;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      #loading-bar-fill {
+        height: 100%;
+        width: 0%;
+        background: #64c878;
+        transition: width 0.15s;
+      }
+      #loading-pct {
+        font-size: 16px;
+        margin-top: 8px;
+        color: #b4b4c8;
+      }
+      #loading-label {
+        font-size: 14px;
+        margin-top: 4px;
+        color: #8c8ca0;
       }
     </style>
   </head>
   <body>
-    <div id="loading">Loading game...</div>
+    <div id="loading-overlay">
+      <div id="loading-title">Loading...</div>
+      <div id="loading-bar-bg">
+        <div id="loading-bar-fill"></div>
+      </div>
+      <div id="loading-pct">0%</div>
+      <div id="loading-label">Initializing...</div>
+    </div>
     <canvas id="glcanvas" tabindex="1"></canvas>
     <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
     <script src="sapp_jsutils.js"></script>
     <script src="quad-storage.js"></script>
     <script src="auth.js"></script>
     <script src="network.js"></script>
+    <script src="loading.js"></script>
     <script>
       load("isometric_client.wasm");
-      // Hide loading after a short delay
-      setTimeout(() => {
-        document.getElementById("loading").style.display = "none";
-      }, 500);
     </script>
   </body>
 </html>
