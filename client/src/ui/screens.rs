@@ -186,6 +186,17 @@ pub trait Screen {
 // Login Screen
 // ============================================================================
 
+/// A shooting star streak across the night sky
+struct ShootingStar {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    life: f32,
+    max_life: f32,
+    length: f32, // trail length in pixels
+}
+
 pub struct LoginScreen {
     username: String,
     password: String,
@@ -196,6 +207,15 @@ pub struct LoginScreen {
     auth_client: AuthClient,
     font: BitmapFont,
     logo: Option<Texture2D>,
+    // Animation state
+    frame_counter: f32,
+    stars: Vec<(f32, f32, f32)>, // (x, y, phase)
+    shooting_stars: Vec<ShootingStar>,
+    // Server status
+    #[cfg(not(target_arch = "wasm32"))]
+    server_url: String,
+    server_online: bool,
+    last_ping_time: f32,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -212,6 +232,16 @@ enum LoginMode {
 
 impl LoginScreen {
     pub fn new(server_url: &str) -> Self {
+        // Generate stars with deterministic pseudo-random positions
+        let mut stars = Vec::with_capacity(60);
+        for i in 0..60 {
+            let fi = i as f32;
+            let x = ((fi * 137.5) % 1000.0) / 1000.0; // fraction of screen width
+            let y = ((fi * 97.3 + 23.0) % 1000.0) / 1000.0; // full screen
+            let phase = ((fi * 53.7) % 1000.0) / 1000.0 * std::f32::consts::TAU;
+            stars.push((x, y, phase));
+        }
+
         Self {
             username: String::new(),
             password: String::new(),
@@ -222,6 +252,13 @@ impl LoginScreen {
             auth_client: AuthClient::new(server_url),
             font: BitmapFont::default(),
             logo: None,
+            frame_counter: 0.0,
+            stars,
+            shooting_stars: Vec::with_capacity(4),
+            #[cfg(not(target_arch = "wasm32"))]
+            server_url: server_url.to_string(),
+            server_online: false,
+            last_ping_time: -10.0, // trigger immediate ping
         }
     }
 
@@ -276,6 +313,51 @@ impl Screen for LoginScreen {
         let (input_pos, clicked, _is_touch) = get_input_state();
         let mx = input_pos.x;
         let my = input_pos.y;
+
+        // Update animation
+        let dt = get_frame_time();
+        self.frame_counter += dt;
+
+        // Update shooting stars
+        self.shooting_stars.retain_mut(|s| {
+            s.x += s.vx * dt;
+            s.y += s.vy * dt;
+            s.life -= dt / s.max_life;
+            s.life > 0.0
+        });
+
+        // Spawn shooting stars occasionally
+        if self.shooting_stars.len() < 2 {
+            let pseudo = (self.frame_counter * 173.0) as u32;
+            // ~1 every 3-5 seconds on average
+            if pseudo % 200 == 0 {
+                let start_x = ((pseudo as f32 * 0.371) % 0.6 + 0.1) * sw;
+                let start_y = ((pseudo as f32 * 0.529) % 0.2 + 0.02) * sh;
+                let angle = 0.4 + ((pseudo as f32 * 0.213) % 0.4); // downward-right angle
+                let speed = 200.0 + ((pseudo as f32 * 0.617) % 150.0);
+                let life = 0.6 + ((pseudo as f32 * 0.823) % 0.6);
+                self.shooting_stars.push(ShootingStar {
+                    x: start_x,
+                    y: start_y,
+                    vx: angle.cos() * speed,
+                    vy: angle.sin() * speed,
+                    life: 1.0,
+                    max_life: life,
+                    length: 20.0 + ((pseudo as f32 * 0.419) % 20.0),
+                });
+            }
+        }
+
+        // Ping server every 5 seconds
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.frame_counter - self.last_ping_time > 5.0 {
+            self.last_ping_time = self.frame_counter;
+            let health_url = format!("{}/health", self.server_url);
+            self.server_online = ureq::get(&health_url)
+                .timeout(std::time::Duration::from_secs(2))
+                .call()
+                .is_ok();
+        }
 
         // Layout constants (must match render)
         let box_width = sw.min(340.0);  // Wider inputs
@@ -433,27 +515,56 @@ impl Screen for LoginScreen {
         let (input_pos, _, _) = get_input_state();
         let mx = input_pos.x;
         let my = input_pos.y;
+        let t = self.frame_counter;
 
-        // Background
-        clear_background(Color::from_rgba(25, 25, 35, 255));
+        // === ANIMATED BACKGROUND SCENE ===
 
-        // Draw decorative grid lines (fewer for performance)
-        for i in 0..10 {
-            let alpha = 0.05 + (i as f32 * 0.01);
-            let color = Color::new(0.3, 0.4, 0.5, alpha);
-            draw_line(0.0, i as f32 * 30.0, sw, i as f32 * 30.0, 1.0, color);
-            draw_line(i as f32 * 70.0, 0.0, i as f32 * 70.0, sh, 1.0, color);
+        // Night sky gradient (full screen)
+        let sky_steps = 20;
+        for i in 0..sky_steps {
+            let frac = i as f32 / sky_steps as f32;
+            let r = (10.0 + frac * 15.0) as u8;
+            let g = (12.0 + frac * 8.0) as u8;
+            let b = (40.0 - frac * 10.0) as u8;
+            let y = frac * sh;
+            let h = sh / sky_steps as f32 + 1.0;
+            draw_rectangle(0.0, y, sw, h, Color::from_rgba(r, g, b, 255));
         }
 
-        // Layout constants (must match update)
-        let box_width = sw.min(340.0);  // Wider inputs
-        let box_height = 40.0;          // Taller inputs
-        let box_x = (sw - box_width) / 2.0;
-        let btn_height = 36.0;          // Taller buttons
-        let spacing = 10.0;             // More spacing
-        let font_size = 16.0;           // Native font size for crisp rendering
+        // Twinkling stars
+        for &(sx, sy, phase) in &self.stars {
+            let alpha = ((t * 1.5 + phase).sin() * 0.5 + 0.5) * 0.9 + 0.1;
+            let size = if alpha > 0.7 { 2.0 } else { 1.0 };
+            draw_rectangle(
+                sx * sw, sy * sh, size, size,
+                Color::new(1.0, 1.0, 0.95, alpha),
+            );
+        }
 
-        // Calculate form height and center vertically (must match update)
+        // Shooting stars
+        for s in &self.shooting_stars {
+            let alpha = s.life.min(1.0);
+            let speed = (s.vx * s.vx + s.vy * s.vy).sqrt();
+            let dx = -s.vx / speed * s.length;
+            let dy = -s.vy / speed * s.length;
+            // Bright head
+            draw_line(s.x, s.y, s.x + dx * 0.3, s.y + dy * 0.3, 2.0,
+                Color::new(1.0, 1.0, 1.0, alpha));
+            // Fading tail
+            draw_line(s.x + dx * 0.3, s.y + dy * 0.3, s.x + dx, s.y + dy, 1.0,
+                Color::new(0.8, 0.85, 1.0, alpha * 0.4));
+        }
+
+        // === FORM OVERLAY ===
+
+        // Layout constants (must match update) - all floored to avoid subpixel rendering
+        let box_width = sw.min(340.0).floor();
+        let box_height = 40.0;
+        let box_x = ((sw - box_width) / 2.0).floor();
+        let btn_height = 36.0;
+        let spacing = 10.0;
+        let font_size = 16.0;
+
         let logo_h = 46.0;
         let logo_margin = 4.0;
         let subtitle_h = 16.0;
@@ -467,12 +578,22 @@ impl Screen for LoginScreen {
             + field_gap + label_h + box_height
             + buttons_gap + btn_height;
 
-        let form_content_top = ((sh - form_content_h) / 2.0).max(logo_h + logo_margin + 6.0);
+        let form_content_top = ((sh - form_content_h) / 2.0).max(logo_h + logo_margin + 6.0).floor();
 
-        // Logo (placed above the centered form content)
-        let logo_y = form_content_top - logo_margin - logo_h;
+        // Semi-transparent panel behind the form
+        let panel_padding = 20.0;
+        let panel_x = (box_x - panel_padding).floor();
+        let panel_y = (form_content_top - panel_padding).floor();
+        let panel_w = (box_width + panel_padding * 2.0).floor();
+        let panel_h = (form_content_h + panel_padding * 2.0).floor();
+
+        // Panel background (no border)
+        draw_rectangle(panel_x, panel_y, panel_w, panel_h, Color::from_rgba(20, 20, 35, 180));
+
+        // Logo (placed above the panel)
+        let logo_y = panel_y - logo_margin - logo_h;
         if let Some(logo) = &self.logo {
-            let logo_scale = 0.15;
+            let logo_scale = 0.25;
             let logo_w = logo.width() * logo_scale;
             let logo_actual_h = logo.height() * logo_scale;
             let logo_x = (sw - logo_w) / 2.0;
@@ -487,27 +608,25 @@ impl Screen for LoginScreen {
                 },
             );
         } else {
-            // Fallback title (native 16pt for crisp rendering)
             let title = "NEW AEVEN";
             let title_width = self.measure_text_sharp(title, 16.0).width;
             self.draw_text_sharp(title, (sw - title_width) / 2.0, logo_y.max(4.0) + 22.0, 16.0, WHITE);
         }
 
-        // Subtitle (use native 16pt for crisp rendering)
+        // Subtitle
         let subtitle = match self.mode {
             LoginMode::Login => "Login",
             LoginMode::Register => "Register",
         };
-        let sub_width = self.measure_text_sharp(subtitle, 16.0).width;
-        self.draw_text_sharp(subtitle, (sw - sub_width) / 2.0, form_content_top, 16.0, GRAY);
+        self.draw_text_sharp(subtitle, box_x, form_content_top, 16.0, GRAY);
 
         // Username field
-        let username_y = form_content_top + subtitle_h + form_gap;
+        let username_y = (form_content_top + subtitle_h + form_gap).floor();
         let username_active = self.active_field == LoginField::Username;
-        let username_color = if username_active { Color::from_rgba(80, 120, 180, 255) } else { Color::from_rgba(60, 60, 80, 255) };
+        let username_color = if username_active { Color::from_rgba(60, 90, 140, 200) } else { Color::from_rgba(40, 40, 60, 180) };
 
         self.draw_text_sharp("Username", box_x, username_y, font_size, LIGHTGRAY);
-        let field_y = username_y + label_h;
+        let field_y = (username_y + label_h).floor();
         draw_rectangle(box_x, field_y, box_width, box_height, username_color);
         draw_rectangle_lines(box_x, field_y, box_width, box_height, 2.0, if username_active { WHITE } else { GRAY });
 
@@ -521,12 +640,12 @@ impl Screen for LoginScreen {
         self.draw_text_sharp(&username_display, box_x + 10.0, field_y + 27.0, font_size, text_color);
 
         // Password field
-        let password_y = field_y + box_height + field_gap;
+        let password_y = (field_y + box_height + field_gap).floor();
         let password_active = self.active_field == LoginField::Password;
-        let password_color = if password_active { Color::from_rgba(80, 120, 180, 255) } else { Color::from_rgba(60, 60, 80, 255) };
+        let password_color = if password_active { Color::from_rgba(60, 90, 140, 200) } else { Color::from_rgba(40, 40, 60, 180) };
 
         self.draw_text_sharp("Password", box_x, password_y, font_size, LIGHTGRAY);
-        let pass_field_y = password_y + label_h;
+        let pass_field_y = (password_y + label_h).floor();
         draw_rectangle(box_x, pass_field_y, box_width, box_height, password_color);
         draw_rectangle_lines(box_x, pass_field_y, box_width, box_height, 2.0, if password_active { WHITE } else { GRAY });
 
@@ -540,15 +659,15 @@ impl Screen for LoginScreen {
         let text_color = if self.password.is_empty() && !password_active { DARKGRAY } else { WHITE };
         self.draw_text_sharp(&password_display, box_x + 10.0, pass_field_y + 27.0, font_size, text_color);
 
-        // Error message (use native 16pt for crisp rendering)
+        // Error message
         if let Some(ref error) = self.error_message {
             let error_y = pass_field_y + box_height + 4.0;
             self.draw_text_sharp(error, box_x, error_y + 14.0, 16.0, RED);
         }
 
-        // Buttons row - directly below form
-        let buttons_y = pass_field_y + box_height + buttons_gap;
-        let btn_w = (box_width - spacing) / 2.0;
+        // Buttons row
+        let buttons_y = (pass_field_y + box_height + buttons_gap).floor();
+        let btn_w = ((box_width - spacing) / 2.0).floor();
 
         // Login/Register button (left)
         let enter_text = match self.mode {
@@ -568,15 +687,17 @@ impl Screen for LoginScreen {
         };
         draw_rectangle(box_x, buttons_y, btn_w, btn_height, login_bg);
         draw_rectangle_lines(box_x, buttons_y, btn_w, btn_height, 2.0, login_border);
+        // Double-line border trick for rounded look
+        draw_rectangle_lines(box_x + 1.0, buttons_y + 1.0, btn_w - 2.0, btn_height - 2.0, 1.0, Color::new(1.0, 1.0, 1.0, 0.1));
         let enter_w = self.measure_text_sharp(enter_text, font_size).width;
-        self.draw_text_sharp(enter_text, box_x + (btn_w - enter_w) / 2.0, buttons_y + 24.0, font_size, WHITE);
+        self.draw_text_sharp(enter_text, (box_x + (btn_w - enter_w) / 2.0).floor(), buttons_y + 24.0, font_size, WHITE);
 
         // Toggle mode button (right)
         let toggle_text = match self.mode {
             LoginMode::Login => "Register",
             LoginMode::Register => "Login",
         };
-        let toggle_x = box_x + btn_w + spacing;
+        let toggle_x = (box_x + btn_w + spacing).floor();
         let toggle_hovered = point_in_rect(mx, my, toggle_x, buttons_y, btn_w, btn_height);
         let toggle_bg = if toggle_hovered {
             Color::from_rgba(120, 120, 60, 255)
@@ -590,11 +711,25 @@ impl Screen for LoginScreen {
         };
         draw_rectangle(toggle_x, buttons_y, btn_w, btn_height, toggle_bg);
         draw_rectangle_lines(toggle_x, buttons_y, btn_w, btn_height, 2.0, toggle_border);
+        draw_rectangle_lines(toggle_x + 1.0, buttons_y + 1.0, btn_w - 2.0, btn_height - 2.0, 1.0, Color::new(1.0, 1.0, 1.0, 0.1));
         let toggle_w = self.measure_text_sharp(toggle_text, font_size).width;
-        self.draw_text_sharp(toggle_text, toggle_x + (btn_w - toggle_w) / 2.0, buttons_y + 24.0, font_size, WHITE);
+        self.draw_text_sharp(toggle_text, (toggle_x + (btn_w - toggle_w) / 2.0).floor(), buttons_y + 24.0, font_size, WHITE);
 
-        // Version (bottom right, native 16pt for crisp rendering)
-        self.draw_text_sharp(&format!("v{}", env!("CARGO_PKG_VERSION")), sw - 60.0, sh - 10.0, 16.0, DARKGRAY);
+        // Version (bottom right)
+        let version_text = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let version_w = self.measure_text_sharp(&version_text, 16.0).width;
+        self.draw_text_sharp(&version_text, (sw - version_w - 10.0).floor(), sh - 10.0, 16.0, DARKGRAY);
+
+        // Server status (bottom left)
+        let status_dot_color = if self.server_online {
+            Color::from_rgba(80, 200, 80, 255)
+        } else {
+            Color::from_rgba(200, 60, 60, 255)
+        };
+        let status_text = if self.server_online { "Connected" } else { "Disconnected" };
+        let status_y = sh - 10.0;
+        draw_rectangle(10.0, status_y - 6.0, 6.0, 6.0, status_dot_color);
+        self.draw_text_sharp(status_text, 20.0, status_y, 16.0, DARKGRAY);
     }
 }
 

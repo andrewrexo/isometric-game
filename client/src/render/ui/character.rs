@@ -154,11 +154,9 @@ impl Renderer {
             // Estimate widest value (e.g. "+99")
             let value_w = self.measure_text_sharp("+99", 16.0).width;
             let total_stats_w = label_w + gap + value_w;
-            let label_x = stats_x + (available_width - total_stats_w) / 2.0;
+            let label_x = stats_x + (available_width - total_stats_w) / 2.0 + 6.0;
             let value_x = label_x + label_w + gap;
-            // Center stats vertically in the grid height
-            let total_stats_h = 3.0 * line_height - (line_height - 16.0); // 3 lines
-            let mut text_y = stats_y + (CHARACTER_GRID_HEIGHT * scale - total_stats_h) / 2.0 + 16.0;
+            let mut text_y = stats_y + 18.0 * scale;
 
             // Equipment bonuses
             let atk_bonus = player.attack_bonus(&state.item_registry);
