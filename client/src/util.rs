@@ -111,9 +111,9 @@ pub async fn load_sprites_from_dir_or_manifest(
 ) -> HashMap<String, Texture2D> {
     let mut sprites = HashMap::new();
 
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_arch = "wasm32"))]
     {
-        // On Android, use the manifest
+        // On Android/WASM, use the manifest
         for item in manifest_items {
             // For equipment, the manifest includes subdirectory (e.g., "equipment/body/admin_robes")
             // Extract just the filename for the key
@@ -133,7 +133,7 @@ pub async fn load_sprites_from_dir_or_manifest(
         }
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_arch = "wasm32")))]
     {
         // On desktop, scan the directory
         let _ = manifest_items; // Unused on desktop
